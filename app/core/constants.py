@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+CAMERA_ROLES = ("top", "fixed_side", "rotating_arm")
+
+CAMERA_NAMES = {
+    "top": "CHLOROCULUS EYE-TOP",
+    "fixed_side": "CHLOROCULUS EYE-SIDE",
+    "rotating_arm": "CHLOROCULUS EYE-ARM",
+}
+
+METADATA_FIELDS = (
+    "project_name",
+    "project_name_zh",
+    "device_name",
+    "session_id",
+    "cycle_id",
+    "camera_id",
+    "camera_name",
+    "timestamp",
+    "angle_deg",
+    "motor_position_deg",
+    "file_path",
+    "status",
+    "error_message",
+)

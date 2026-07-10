@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+data/captures/*
+data/calibration/*
+data/database/*
+data/logs/*
+data/temp/*
+!data/captures/.gitkeep
+!data/calibration/.gitkeep
+!data/database/.gitkeep
+!data/logs/.gitkeep
+!data/temp/.gitkeep

@@ -1,0 +1,30 @@
+{
+  "files.associations": {
+    "**/templates/**/*.html": "django-html",
+    "*.css": "tailwindcss"
+  },
+
+  "tailwindCSS.includeLanguages": {
+    "django-html": "html"
+  },
+
+  "emmet.includeLanguages": {
+    "django-html": "html"
+  },
+
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+
+  "[django-html]": {
+    "editor.quickSuggestions": {
+      "other": "on",
+      "comments": "off",
+      "strings": "on"
+    }
+  },
+  "cSpell.words": [
+    "AUTOSCOPY",
+    "PHYTO"
+  ]
+}

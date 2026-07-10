@@ -1,0 +1,31 @@
+[project]
+name = "phyto-autoscopy"
+version = "0.1.0"
+description = "Phyto-Autoscopy / CHLOROCULUS local multi-view plant capture and rotation control system."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "websockets",
+  "jinja2",
+  "python-multipart",
+  "opencv-python",
+  "numpy",
+  "Phidget22",
+  "pydantic",
+  "pydantic-settings",
+  "sqlalchemy",
+  "aiofiles",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
