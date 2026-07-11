@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from _bootstrap import bootstrap
+
+bootstrap()
+
 from app.core.config import load_settings
 
 

@@ -3,6 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from _bootstrap import bootstrap
+
+bootstrap()
+
 from app.core.config import load_settings
 from app.hardware.cameras.camera_manager import OpenCVCameraManager
 from app.hardware.cameras.mock_camera import MockCameraManager

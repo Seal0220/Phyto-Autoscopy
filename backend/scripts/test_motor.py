@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import argparse
 
+from _bootstrap import bootstrap
+
+bootstrap()
+
 from app.core.config import load_settings
 from app.hardware.motor.mock_motor import MockMotorController
 from app.hardware.motor.phidget_stepper import PhidgetStepperController

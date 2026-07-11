@@ -4,12 +4,12 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 
-from .test_support import write_test_config
+from .test_support import authorized_headers, write_test_config
 
 
 def test_rotation_cycle_captures_mock_arm_frames(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), headers=authorized_headers()) as client:
         assert client.post("/api/motor/engage").status_code == 200
         response = client.post(
             "/api/capture/rotation-cycle",

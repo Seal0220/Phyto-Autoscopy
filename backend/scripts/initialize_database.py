@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from _bootstrap import bootstrap
+
+bootstrap()
+
 from app.core.config import load_settings
 from app.database.connection import Database
 from app.database.schema import initialize_schema

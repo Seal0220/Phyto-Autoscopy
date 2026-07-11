@@ -1,14 +1,10 @@
 fastapi
 uvicorn
 websockets
-jinja2
-python-multipart
 opencv-python
 numpy
 Phidget22
 pydantic
-pydantic-settings
 sqlalchemy
-aiofiles
 pytest
 httpx

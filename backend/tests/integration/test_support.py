@@ -4,12 +4,24 @@ import json
 from pathlib import Path
 
 
+TEST_BFF_TOKEN = "test-bff-token"
+
+
+def authorized_headers() -> dict[str, str]:
+    return {
+        "X-Phyto-BFF-Token": TEST_BFF_TOKEN,
+        "X-Phyto-Actor": "pytest-operator",
+        "X-Phyto-Role": "operator",
+    }
+
+
 def write_test_config(tmp_path: Path, monkeypatch) -> Path:
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     data_dir = tmp_path / "data"
     monkeypatch.setenv("PHYTO_AUTOSCOPY_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("PHYTO_AUTOSCOPY_MOCK", "1")
+    monkeypatch.setenv("PHYTO_AUTOSCOPY_BFF_TOKEN", TEST_BFF_TOKEN)
 
     (config_dir / "default.json").write_text(
         json.dumps(
@@ -28,7 +40,6 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                     "logs_dir": str(data_dir / "logs"),
                     "temp_dir": str(data_dir / "temp"),
                 },
-                "web": {"title": "CHLOROCULUS Control Interface"},
             },
             ensure_ascii=False,
         ),
