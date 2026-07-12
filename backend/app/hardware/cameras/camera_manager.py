@@ -70,20 +70,20 @@ class OpenCVCameraManager:
     def capture(self, camera_id: str) -> CameraFrame:
         config = self.registry.get(camera_id)
         if not config.enabled:
-            raise CameraError(f"Camera {camera_id} is disabled")
+            raise CameraError(f"相機 {camera_id} 尚未啟用。")
 
         try:
             import cv2  # type: ignore
         except ImportError as exc:
             self._last_error[camera_id] = str(exc)
-            raise CameraError(f"OpenCV is not installed: {exc}") from exc
+            raise CameraError("尚未安裝 OpenCV 相機驅動程式。") from exc
 
         with self._lock:
             capture = cv2.VideoCapture(config.device_index, cv2.CAP_DSHOW)
             try:
                 if not capture or not capture.isOpened():
                     self._connected[camera_id] = False
-                    raise CameraError(f"Camera {camera_id} is not connected")
+                    raise CameraError(f"相機 {camera_id} 未連線。")
 
                 capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.width)
                 capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.height)
@@ -91,7 +91,7 @@ class OpenCVCameraManager:
 
                 ok, frame = capture.read()
                 if not ok:
-                    raise CameraError(f"Camera {camera_id} frame read failed")
+                    raise CameraError(f"相機 {camera_id} 讀取影像失敗。")
 
                 ok, encoded = cv2.imencode(
                     ".jpg",
@@ -99,7 +99,7 @@ class OpenCVCameraManager:
                     [int(cv2.IMWRITE_JPEG_QUALITY), config.jpeg_quality],
                 )
                 if not ok:
-                    raise CameraError(f"Camera {camera_id} JPEG encode failed")
+                    raise CameraError(f"相機 {camera_id} 影像編碼失敗。")
 
                 self._connected[camera_id] = True
                 self._last_error[camera_id] = None

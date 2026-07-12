@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 from app.core.config import AppSettings
-from app.core.constants import METADATA_FIELDS
+from app.core.constants import METADATA_FIELDS, MODE_CAPTURE_LOG_FIELDS
 
 
 class StorageService:
@@ -36,10 +36,12 @@ class StorageService:
     def session_dir(self, session_id: str) -> Path:
         return self.settings.paths.captures_dir / session_id
 
-    def create_session_layout(self, session_id: str) -> Path:
+    def create_session_layout(self, session_id: str, include_camera_dirs: bool = True) -> Path:
         session_dir = self.session_dir(session_id)
-        for relative in ("top", "fixed_side", "rotating_arm"):
-            (session_dir / relative).mkdir(parents=True, exist_ok=True)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        if include_camera_dirs:
+            for relative in ("top", "fixed_side", "rotating_arm"):
+                (session_dir / relative).mkdir(parents=True, exist_ok=True)
 
         metadata_path = session_dir / "metadata.csv"
         if not metadata_path.exists():
@@ -50,6 +52,25 @@ class StorageService:
 
     def session_json_path(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "session.json"
+
+    def create_mode_layout(self, session_id: str, mode_folder: str) -> Path:
+        mode_dir = self.session_dir(session_id) / "modes" / mode_folder
+        for camera_id in ("top", "fixed_side", "rotating_arm"):
+            (mode_dir / camera_id).mkdir(parents=True, exist_ok=True)
+        log_path = mode_dir / "capture_log.csv"
+        if not log_path.exists():
+            with log_path.open("w", newline="", encoding="utf-8-sig") as handle:
+                csv.DictWriter(handle, fieldnames=MODE_CAPTURE_LOG_FIELDS).writeheader()
+        return mode_dir
+
+    def mode_log_path(self, session_id: str, mode_folder: str) -> Path:
+        return self.session_dir(session_id) / "modes" / mode_folder / "capture_log.csv"
+
+    def append_mode_log(self, session_id: str, mode_folder: str, record: dict) -> None:
+        log_path = self.mode_log_path(session_id, mode_folder)
+        with log_path.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=MODE_CAPTURE_LOG_FIELDS)
+            writer.writerow({field: record.get(field) for field in MODE_CAPTURE_LOG_FIELDS})
 
     def metadata_path(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "metadata.csv"
@@ -73,6 +94,21 @@ class StorageService:
         folder.mkdir(parents=True, exist_ok=True)
         next_index = len(list(folder.glob("*.jpg"))) + 1
         return folder / f"{next_index:06d}.jpg"
+
+    def next_mode_capture_path(
+        self,
+        session_id: str,
+        mode_folder: str,
+        camera_id: str,
+        cycle_id: int,
+        capture_index: int,
+        angle_deg: float,
+    ) -> Path:
+        folder = self.session_dir(session_id) / "modes" / mode_folder / camera_id
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder / (
+            f"cycle_{cycle_id:06d}_capture_{capture_index:06d}_angle_{angle_deg:06.2f}.jpg"
+        )
 
     def relative_to_session(self, session_id: str, path: Path) -> str:
         return path.relative_to(self.session_dir(session_id)).as_posix()

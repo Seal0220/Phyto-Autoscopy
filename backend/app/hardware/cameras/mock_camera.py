@@ -40,7 +40,7 @@ def make_mock_jpeg(camera_id: str, sequence: int) -> bytes:
     )
     ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
     if not ok:
-        raise RuntimeError("Mock JPEG encode failed")
+        raise RuntimeError("模擬相機影像編碼失敗。")
     return encoded.tobytes()
 
 

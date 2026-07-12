@@ -8,12 +8,12 @@ const FORWARDED_REQUEST_HEADERS = ["accept", "content-type"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "content-disposition", "cache-control"];
 
 function unauthorizedResponse() {
-  return NextResponse.json({ detail: "Authentication required." }, { status: 401 });
+  return NextResponse.json({ detail: "請先登入。" }, { status: 401 });
 }
 
 function errorResponse(error) {
   console.error("BFF request failed", error);
-  return NextResponse.json({ detail: "Backend service is unavailable." }, { status: 502 });
+  return NextResponse.json({ detail: "後端服務暫時無法使用。" }, { status: 502 });
 }
 
 function safeBackendPath(path) {
@@ -43,7 +43,7 @@ export async function proxyToBackend(request, backendPath) {
   if (BODY_METHODS.has(request.method)) {
     body = await request.arrayBuffer();
     if (body.byteLength > 1_000_000) {
-      return NextResponse.json({ detail: "Request body is too large." }, { status: 413 });
+      return NextResponse.json({ detail: "請求資料過大。" }, { status: 413 });
     }
   }
 

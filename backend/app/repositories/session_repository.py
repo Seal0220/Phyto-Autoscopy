@@ -27,16 +27,16 @@ class SessionRepository:
         )
 
     def list(self) -> list[SessionSummary]:
-        rows = self.database.connection.execute(
+        rows = self.database.fetchall(
             "SELECT session_id, created_at, status, session_path FROM sessions ORDER BY created_at DESC"
-        ).fetchall()
+        )
         return [SessionSummary(**dict(row)) for row in rows]
 
     def get(self, session_id: str) -> SessionSummary | None:
-        row = self.database.connection.execute(
+        row = self.database.fetchone(
             "SELECT session_id, created_at, status, session_path FROM sessions WHERE session_id=?",
             (session_id,),
-        ).fetchone()
+        )
         return SessionSummary(**dict(row)) if row else None
 
     def delete(self, session_id: str) -> None:

@@ -70,7 +70,14 @@ async def lifespan(app: FastAPI):
         session_service,
     )
     preview_service = PreviewService(camera_manager)
-    experiment_service = ExperimentService(settings, session_service)
+    experiment_service = ExperimentService(
+        settings,
+        session_service,
+        motor_controller,
+        capture_service,
+        rotation_service,
+        storage,
+    )
     health_service = HealthService(settings)
 
     context = AppContext(

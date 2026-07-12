@@ -50,7 +50,7 @@ _ACTOR_PATTERN = re.compile(r"^[A-Za-z0-9_.@:-]{1,96}$")
 def _configured_bff_token() -> str:
     token = os.environ.get("PHYTO_AUTOSCOPY_BFF_TOKEN", "").strip()
     if not token:
-        raise SecurityConfigurationError("Backend BFF token is not configured.")
+        raise SecurityConfigurationError("後端服務驗證尚未完成設定。")
     return token
 
 
@@ -58,22 +58,22 @@ def authenticate_bff_headers(headers: Mapping[str, str]) -> Principal:
     """Authenticate only the trusted Next.js server, never a localhost client."""
     supplied_token = headers.get("x-phyto-bff-token", "")
     if not supplied_token or not compare_digest(supplied_token, _configured_bff_token()):
-        raise AuthenticationError("Missing or invalid backend credential.")
+        raise AuthenticationError("後端服務驗證失敗。")
 
     actor = headers.get("x-phyto-actor", "").strip()
     if not _ACTOR_PATTERN.fullmatch(actor):
-        raise AuthenticationError("Missing or invalid actor identity.")
+        raise AuthenticationError("使用者身分驗證失敗。")
 
     role = headers.get("x-phyto-role", "").strip().lower()
     permissions = ROLE_PERMISSIONS.get(role)
     if permissions is None:
-        raise AuthorizationError("Unknown role.")
+        raise AuthorizationError("找不到使用者角色。")
     return Principal(actor=actor, role=role, permissions=permissions)
 
 
 def ensure_permission(principal: Principal, permission: str) -> None:
     if "*" not in principal.permissions and permission not in principal.permissions:
-        raise AuthorizationError(f"Role '{principal.role}' cannot perform {permission}.")
+        raise AuthorizationError("目前的使用者角色沒有執行此操作的權限。")
 
 
 def permission_for_http(method: str, path: str) -> str:
@@ -106,7 +106,7 @@ def permission_for_websocket_action(action: str) -> str:
         return "hardware:operate"
     if action.startswith("experiment.") or action.startswith("capture."):
         return "experiment:operate"
-    raise AuthorizationError("Unknown WebSocket action.")
+    raise AuthorizationError("不支援的即時操作。")
 
 
 @dataclass(frozen=True)
@@ -144,13 +144,13 @@ class WebSocketTicketStore:
 
     def consume(self, ticket: str | None) -> Principal:
         if not ticket:
-            raise AuthenticationError("Missing WebSocket ticket.")
+            raise AuthenticationError("缺少即時連線票證。")
         now = monotonic()
         with self._lock:
             self._purge_expired(now)
             issued = self._tickets.pop(self._key(ticket), None)
         if issued is None:
-            raise AuthenticationError("Invalid or expired WebSocket ticket.")
+            raise AuthenticationError("即時連線票證無效或已過期。")
         return issued.principal
 
 
@@ -167,7 +167,7 @@ class SlidingWindowRateLimiter:
             while bucket and bucket[0] <= cutoff:
                 bucket.popleft()
             if len(bucket) >= limit:
-                raise RateLimitError("Request rate limit exceeded.")
+                raise RateLimitError("操作過於頻繁，請稍後再試。")
             bucket.append(now)
 
 
@@ -193,5 +193,5 @@ def get_request_principal(request: object) -> Principal:
     state = getattr(request, "state", None)
     principal = getattr(state, "principal", None)
     if not isinstance(principal, Principal):
-        raise AuthenticationError("Authenticated principal is unavailable.")
+        raise AuthenticationError("無法取得已驗證的使用者身分。")
     return principal

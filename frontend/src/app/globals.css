@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+hr {
+  color: rgba(255,255,255,0.1);
+  margin: 1.25rem 0;
+}

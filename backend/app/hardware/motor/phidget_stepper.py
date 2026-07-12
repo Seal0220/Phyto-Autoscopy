@@ -30,7 +30,7 @@ class PhidgetStepperController:
             from Phidget22.Devices.Stepper import Stepper  # type: ignore
         except ImportError as exc:
             self.state.last_error = str(exc)
-            raise MotorError(f"Phidget22 is not installed: {exc}") from exc
+            raise MotorError("尚未安裝 Phidget22 馬達驅動程式。") from exc
 
         stepper = Stepper()
         stepper.openWaitForAttachment(5000)
@@ -88,12 +88,11 @@ class PhidgetStepperController:
 
     def engage(self) -> MotorStatus:
         with self._lock:
-            if self.state.emergency_stopped:
-                raise MotorError("Motor is emergency-stopped; restart the app before moving again")
             self.connect()
             self._apply_profile()
             self._stepper.setEngaged(True)
             self.state.engaged = True
+            self.state.emergency_stopped = False
             self.state.last_error = None
             return self.status()
 
@@ -108,7 +107,7 @@ class PhidgetStepperController:
     def set_origin(self) -> MotorStatus:
         with self._lock:
             if self.state.moving:
-                raise MotorError("Cannot set origin while motor is moving")
+                raise MotorError("馬達移動中，無法設定原點。")
             if self._stepper is not None and hasattr(self._stepper, "setPosition"):
                 self._stepper.setPosition(self.profile.degrees_to_steps(self.settings.origin_deg))
             self.state.command_position_deg = self.settings.origin_deg
@@ -118,9 +117,9 @@ class PhidgetStepperController:
         with self._lock:
             self.safety.validate_angle(angle_deg)
             if self.state.emergency_stopped:
-                raise MotorError("Motor is emergency-stopped")
+                raise MotorError("馬達已緊急停止，請先重新啟用馬達。")
             if not self.state.engaged:
-                raise MotorError("Motor must be engaged before movement")
+                raise MotorError("移動前請先啟用馬達。")
             self.connect()
             target_steps = self.profile.degrees_to_steps(angle_deg)
             self._stepper.setTargetPosition(target_steps)
@@ -129,7 +128,7 @@ class PhidgetStepperController:
             while self._stepper.getIsMoving():
                 if time.monotonic() - started > self.settings.movement_timeout_seconds:
                     self.stop()
-                    raise MotorError("Motor movement timed out")
+                    raise MotorError("馬達移動逾時。")
                 time.sleep(0.05)
             self.state.command_position_deg = angle_deg
             self.state.moving = False

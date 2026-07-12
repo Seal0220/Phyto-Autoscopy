@@ -23,3 +23,22 @@ METADATA_FIELDS = (
     "status",
     "error_message",
 )
+
+MODE_CAPTURE_LOG_FIELDS = (
+    "mode_id",
+    "mode_type",
+    "cycle_id",
+    "capture_index",
+    "elapsed_seconds",
+    "trigger_value",
+    "target_angle_deg",
+    "commanded_angle_deg",
+    "actual_angle_deg",
+    "angle_error_deg",
+    "camera_id",
+    "image_name",
+    "file_path",
+    "captured_at",
+    "status",
+    "error_message",
+)

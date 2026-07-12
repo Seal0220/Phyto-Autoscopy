@@ -45,10 +45,9 @@ class MockMotorController:
 
     def engage(self) -> MotorStatus:
         with self._lock:
-            if self.state.emergency_stopped:
-                raise MotorError("Motor is emergency-stopped; clear by restarting the app")
             self.state.connected = True
             self.state.engaged = True
+            self.state.emergency_stopped = False
             self.state.last_error = None
             return self.status()
 
@@ -61,7 +60,7 @@ class MockMotorController:
     def set_origin(self) -> MotorStatus:
         with self._lock:
             if self.state.moving:
-                raise MotorError("Cannot set origin while motor is moving")
+                raise MotorError("馬達移動中，無法設定原點。")
             self.state.command_position_deg = self.settings.origin_deg
             return self.status()
 
@@ -69,9 +68,9 @@ class MockMotorController:
         with self._lock:
             self.safety.validate_angle(angle_deg)
             if self.state.emergency_stopped:
-                raise MotorError("Motor is emergency-stopped")
+                raise MotorError("馬達已緊急停止，請先重新啟用馬達。")
             if not self.state.engaged:
-                raise MotorError("Motor must be engaged before movement")
+                raise MotorError("移動前請先啟用馬達。")
             self.state.moving = True
             self.state.command_position_deg = angle_deg
             self.state.moving = False

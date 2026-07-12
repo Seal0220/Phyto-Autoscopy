@@ -24,14 +24,16 @@ class RotationService:
 
     def angle_sequence(self, start_deg: float, end_deg: float, step_deg: float) -> list[float]:
         if step_deg <= 0:
-            raise MotorSafetyError("rotation_step_deg must be greater than 0")
+            raise MotorSafetyError("旋轉步進角度必須大於 0。")
         if end_deg < start_deg:
-            raise MotorSafetyError("rotation_end_deg must be greater than or equal to rotation_start_deg")
+            raise MotorSafetyError("旋轉結束角度不可小於起始角度。")
         values: list[float] = []
         current = start_deg
-        while current <= end_deg + 1e-9:
+        while current < end_deg - 1e-9:
             values.append(round(current, 3))
             current += step_deg
+        if not values or abs(values[-1] - end_deg) > 1e-9:
+            values.append(round(end_deg, 3))
         return values
 
     def capture_cycle(

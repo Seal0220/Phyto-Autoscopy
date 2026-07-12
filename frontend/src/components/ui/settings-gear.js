@@ -9,7 +9,7 @@ export default function SettingsGear({ label, open, onClick, className }) {
     <button 
     className={`group relative inline-grid size-10 shrink-0 cursor-pointer place-items-center rounded-xl border transition-[background-color,border-color,color] duration-150 
               hover:border-emerald-200/50 hover:bg-emerald-400/15 hover:text-emerald-100 focus-visible:outline-2 focus-visible:outline-emerald-300 
-              ${open ? "border-emerald-200/60 bg-emerald-400/20 text-emerald-100" : "border-white/15 bg-white/6 text-white/75"} 
+              ${open ? "border-emerald-200/60 bg-emerald-400/20 text-emerald-100" : "border-white/15 bg-white/6 text-neutral-300"}
               ${className || ""}`} type="button" aria-label={`${actionLabel}${label}`} 
     aria-expanded={open} onClick={onClick}
     >

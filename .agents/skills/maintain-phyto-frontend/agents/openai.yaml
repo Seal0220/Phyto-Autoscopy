@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Phyto Frontend"
+  short_description: "Preserve Phyto frontend styling and architecture"
+  default_prompt: "Use $maintain-phyto-frontend to update this frontend while preserving its established visual style and code boundaries."

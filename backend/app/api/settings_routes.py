@@ -27,13 +27,13 @@ def get_settings_group(group: str, context: AppContext = Depends(get_context)) -
         "logging": "logging.json",
     }
     if group not in file_map:
-        raise ConfigError(f"Unknown settings group: {group}")
+        raise ConfigError(f"找不到設定群組：{group}")
     return read_json_file(get_config_dir() / file_map[group])
 
 
 @router.post("/reset")
 def reset_settings() -> dict:
-    return {"detail": "Reset is intentionally manual for hardware safety."}
+    return {"detail": "為了硬體安全，重設必須手動執行。"}
 
 
 @router.post("/{group}")

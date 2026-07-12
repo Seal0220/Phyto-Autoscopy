@@ -1,8 +1,9 @@
 const VARIANTS = {
-  default: "border-white/15 bg-white/[0.07] text-white/85 hover:border-white/25 hover:bg-white/[0.13]",
+  default: "border-white/15 bg-white/[0.07] text-neutral-200 hover:border-white/25 hover:bg-white/[0.13]",
   primary: "border-emerald-200/35 bg-emerald-400 text-emerald-950 hover:border-emerald-100/70 hover:bg-emerald-300",
   danger: "border-rose-300/80 bg-rose-600 text-white hover:border-rose-100 hover:bg-rose-500",
-  ghost: "border-transparent bg-transparent text-white/75 hover:bg-white/15 hover:text-white",
+  ghost: "border-transparent bg-transparent text-neutral-300 hover:bg-white/15 hover:text-white",
+  dangerGhost: "border-transparent bg-transparent text-neutral-300 hover:bg-rose-500/15 hover:text-rose-200",
 };
 
 export default function Button({ className, variant = "default", type = "button", ...props }) {

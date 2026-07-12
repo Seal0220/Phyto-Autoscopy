@@ -15,7 +15,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="zh-Hant" className="scroll-smooth">
+    <html lang="zh-Hant" className="scroll-smooth" suppressHydrationWarning>
       <body className={`${chiron.variable} min-w-[320px] overflow-x-hidden bg-[#06100c] text-white antialiased [font-family:var(--font-chiron)]`}>
         {children}
       </body>

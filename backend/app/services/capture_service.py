@@ -31,6 +31,8 @@ class CaptureService:
         session_id: str | None = None,
         cycle_id: int | None = None,
         angle_deg: float | None = None,
+        mode_folder: str | None = None,
+        capture_index: int | None = None,
     ) -> CaptureResult:
         session = (
             self.sessions.ensure_active_session()
@@ -40,7 +42,22 @@ class CaptureService:
         frame = self.camera_manager.capture(camera_id)
         status = self.camera_manager.get_status(camera_id)
         motor_status = self.motor_controller.status()
-        path = self.storage.next_capture_path(session.session_id, camera_id, cycle_id, angle_deg)
+        if mode_folder is not None:
+            path = self.storage.next_mode_capture_path(
+                session.session_id,
+                mode_folder,
+                camera_id,
+                cycle_id or 1,
+                capture_index or 1,
+                0.0 if angle_deg is None else angle_deg,
+            )
+        else:
+            path = self.storage.next_capture_path(
+                session.session_id,
+                camera_id,
+                cycle_id,
+                angle_deg,
+            )
         self.storage.save_bytes(path, frame.data)
         relative_path = self.storage.relative_to_session(session.session_id, path)
 
@@ -66,3 +83,47 @@ class CaptureService:
             self.capture_camera(camera_id, session_id=session_id)
             for camera_id in ("top", "fixed_side", "rotating_arm")
         ]
+
+    def capture_camera_for_modes(
+        self,
+        camera_id: str,
+        session_id: str,
+        cycle_id: int,
+        angle_deg: float,
+        mode_outputs: list[tuple[str, int]],
+    ) -> dict[str, CaptureResult]:
+        """Capture one physical frame and persist a copy for every due schedule mode."""
+        session = self.sessions.get_session(session_id)
+        frame = self.camera_manager.capture(camera_id)
+        status = self.camera_manager.get_status(camera_id)
+        motor_status = self.motor_controller.status()
+        results: dict[str, CaptureResult] = {}
+
+        for mode_folder, capture_index in mode_outputs:
+            path = self.storage.next_mode_capture_path(
+                session.session_id,
+                mode_folder,
+                camera_id,
+                cycle_id,
+                capture_index,
+                angle_deg,
+            )
+            self.storage.save_bytes(path, frame.data)
+            relative_path = self.storage.relative_to_session(session.session_id, path)
+            record = MetadataRecord(
+                project_name=self.settings.project.name,
+                project_name_zh=self.settings.project.name_zh,
+                device_name=self.settings.project.device_name,
+                session_id=session.session_id,
+                cycle_id=cycle_id,
+                camera_id=camera_id,
+                camera_name=status.camera_name,
+                timestamp=frame.timestamp.isoformat(),
+                angle_deg=angle_deg,
+                motor_position_deg=motor_status.command_position_deg,
+                file_path=relative_path,
+                status="success",
+            )
+            self.metadata.append(record)
+            results[mode_folder] = CaptureResult(**record.model_dump())
+        return results

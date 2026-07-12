@@ -94,7 +94,7 @@ class MotorSettings(BaseModel):
     def maximum_must_exceed_minimum(cls, value: float, info: Any) -> float:
         minimum = info.data.get("minimum_angle_deg", 0.0)
         if value <= minimum:
-            raise ValueError("maximum_angle_deg must be greater than minimum_angle_deg")
+            raise ValueError("最大角度必須大於最小角度。")
         return value
 
 
@@ -112,7 +112,8 @@ class ExperimentSettings(BaseModel):
     rotation_enabled: bool = True
     rotation_start_deg: float = 0.0
     rotation_end_deg: float = 360.0
-    rotation_step_deg: float = 15.0
+    rotation_step_deg: float = 1.0
+    angle_tolerance_deg: float = 0.5
     stabilization_delay_ms: int = 800
     return_to_origin: bool = True
 
@@ -142,11 +143,11 @@ def _truthy(value: str | None) -> bool:
 
 def read_json_file(path: Path) -> dict[str, Any]:
     if not path.exists():
-        raise ConfigError(f"Missing JSON config file: {path}")
+        raise ConfigError(f"找不到設定檔：{path}")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"Invalid JSON in {path}: {exc}") from exc
+        raise ConfigError(f"設定檔格式錯誤：{path}") from exc
 
 
 def write_json_file(path: Path, payload: dict[str, Any]) -> None:
@@ -190,7 +191,7 @@ def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | P
         "default": "default.json",
     }
     if group not in file_map:
-        raise ConfigError(f"Unknown settings group: {group}")
+        raise ConfigError(f"找不到設定群組：{group}")
 
     root = get_config_dir(config_dir)
     write_json_file(root / file_map[group], payload)

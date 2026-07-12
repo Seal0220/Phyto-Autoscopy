@@ -17,8 +17,14 @@ from app.security.auth import (
     rate_limit_websocket,
     websocket_tickets,
 )
+from app.services.schedule_lock import ensure_manual_changes_allowed
 
 router = APIRouter(tags=["websocket"])
+
+SCHEDULE_ALLOWED_MANUAL_ACTIONS = frozenset({
+    "motor.emergency_stop",
+    "camera.reconnect",
+})
 
 
 def build_snapshot(context: AppContext) -> dict[str, Any]:
@@ -50,6 +56,12 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
     if action == "system.snapshot":
         return build_snapshot(context)
 
+    if (
+        action.startswith(("motor.", "camera.", "capture."))
+        and action not in SCHEDULE_ALLOWED_MANUAL_ACTIONS
+    ):
+        ensure_manual_changes_allowed(context)
+
     if action == "motor.engage":
         return context.motor_controller.engage().model_dump(mode="json")
     if action == "motor.disengage":
@@ -65,7 +77,7 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
     if action == "motor.move":
         angle_deg = float(payload["angle_deg"])
         if not math.isfinite(angle_deg):
-            raise PhytoAutoscopyError("angle_deg must be a finite number")
+            raise PhytoAutoscopyError("目標角度必須是有效數字。")
         return context.motor_controller.move_to_angle(angle_deg).model_dump(mode="json")
 
     if action == "camera.capture":
@@ -114,10 +126,10 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
                 "paths": settings["paths"],
             }
         if group not in settings:
-            raise PhytoAutoscopyError(f"Unknown settings group: {group}")
+            raise PhytoAutoscopyError(f"找不到設定群組：{group}")
         return settings[group]
 
-    raise PhytoAutoscopyError(f"Unknown WebSocket action: {action}")
+    raise PhytoAutoscopyError("不支援的即時操作。")
 
 
 @router.websocket("/ws/status")
@@ -145,7 +157,7 @@ async def status_websocket(websocket: WebSocket) -> None:
 
             if message.get("type") != "command":
                 await websocket.send_json(
-                    {"type": "error", "detail": "Unsupported WebSocket message type"}
+                    {"type": "error", "detail": "不支援的即時訊息類型。"}
                 )
                 continue
 
@@ -154,7 +166,7 @@ async def status_websocket(websocket: WebSocket) -> None:
             payload = message.get("payload") or {}
             try:
                 if not isinstance(payload, dict):
-                    raise PhytoAutoscopyError("WebSocket payload must be an object")
+                    raise PhytoAutoscopyError("即時操作資料格式錯誤。")
                 ensure_permission(principal, permission_for_websocket_action(action))
                 rate_limit_websocket(principal, "command")
                 result = await asyncio.to_thread(run_command, context, action, payload)

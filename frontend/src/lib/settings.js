@@ -1,7 +1,7 @@
 export const SETTINGS_GROUPS = [
   ["cameras", "相機"],
   ["motor", "馬達"],
-  ["experiment", "實驗"],
+  ["experiment", "排程"],
   ["logging", "紀錄"],
 ];
 
@@ -51,13 +51,8 @@ const SETTINGS_CONFIG = {
   },
   experiment: {
     experiment: {
-      capture_interval_seconds: true,
-      duration_minutes: true,
       stabilization_delay_ms: true,
-      rotation_enabled: true,
-      rotation_start_deg: true,
-      rotation_end_deg: true,
-      rotation_step_deg: true,
+      return_to_origin: true,
       capture_top: true,
       capture_fixed_side: true,
       capture_rotating_arm: true,
@@ -74,25 +69,26 @@ const FIELD_META = {
   acceleration_deg_s2: { label: "加速度限制", type: "number", min: 0.1, max: 720, step: 0.1, suffix: "度/秒²" },
   capture_fixed_side: { label: "擷取固定側視角" },
   capture_fps: { label: "擷取 FPS", type: "number", min: 1, max: 60, step: 1 },
-  capture_interval_seconds: { label: "擷取間隔", type: "number", min: 1, max: 86400, step: 1, suffix: "秒" },
+  capture_interval_seconds: { label: "擷取間隔", type: "duration", unit: "seconds", min: 1, max: 86400 },
   capture_rotating_arm: { label: "擷取旋臂視角" },
   capture_top: { label: "擷取頂視角" },
   device_index: { label: "裝置索引", type: "number", min: 0, max: 32, step: 1, description: "對應作業系統辨識到的相機編號。" },
   disengage_after_cycle: { label: "循環後釋放馬達", description: "完成一輪擷取後解除保持扭力。" },
-  duration_minutes: { label: "總時長", type: "number", min: 1, max: 10080, step: 1, suffix: "分鐘" },
+  duration_minutes: { label: "總時長", type: "duration", unit: "minutes", min: 1, max: 10080 },
   enabled: { label: "啟用" },
   height: { label: "影像高度", type: "number", min: 240, max: 4320, step: 1, suffix: "px" },
   jpeg_quality: { label: "JPEG 品質", type: "number", min: 1, max: 100, step: 1, suffix: "%", description: "數值越高，影像品質與檔案大小越高。" },
   level: { label: "紀錄層級", type: "select", options: ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] },
-  movement_timeout_seconds: { label: "移動逾時", type: "number", min: 1, max: 300, step: 1, suffix: "秒", description: "超過時間仍未完成移動時中止命令。" },
+  movement_timeout_seconds: { label: "移動逾時", type: "duration", unit: "seconds", min: 1, max: 300, description: "超過時間仍未完成移動時中止命令。" },
   origin_deg: { label: "原點角度", type: "number", min: 0, max: 360, step: 0.1, suffix: "度" },
   preview_fps: { label: "預覽 FPS", type: "number", min: 1, max: 60, step: 1, description: "只影響即時預覽的更新頻率。" },
   return_to_origin_after_cycle: { label: "循環後回到原點", description: "完成一輪擷取後自動回到原點。" },
+  return_to_origin: { label: "排程結束後回到原點", description: "整個排程完成或停止後，自動讓旋臂回到原點。" },
   rotation_enabled: { label: "啟用旋轉", description: "停用後只執行固定視角擷取。" },
   rotation_end_deg: { label: "旋轉結束角度", type: "number", min: 0, max: 360, step: 0.1, suffix: "度" },
   rotation_start_deg: { label: "旋轉起始角度", type: "number", min: 0, max: 360, step: 0.1, suffix: "度" },
   rotation_step_deg: { label: "旋轉步進角度", type: "number", min: 0.1, max: 360, step: 0.1, suffix: "度" },
-  stabilization_delay_ms: { label: "穩定等待", type: "number", min: 0, max: 60000, step: 50, suffix: "毫秒", description: "旋臂停止後，等待植物晃動減弱再拍攝。" },
+  stabilization_delay_ms: { label: "穩定等待", type: "duration", unit: "milliseconds", min: 0, max: 60000, description: "旋臂停止後，等待植物晃動減弱再拍攝。" },
   velocity_limit_deg_s: { label: "速度限制", type: "number", min: 0.1, max: 360, step: 0.1, suffix: "度/秒" },
   width: { label: "影像寬度", type: "number", min: 320, max: 7680, step: 1, suffix: "px" },
 };
@@ -108,8 +104,7 @@ const SECTION_META = {
     behavior: { title: "循環結束行為", description: "每輪擷取完成後的自動動作。" },
   },
   experiment: {
-    time: { title: "時間", description: "擷取間隔、總時長與穩定等待。" },
-    rotation: { title: "旋轉範圍", description: "分段擷取使用的預設角度。" },
+    execution: { title: "執行行為", description: "排程拍攝前後的共用硬體行為。" },
     capture: { title: "擷取視角", description: "選擇工作階段預設啟用的相機。" },
   },
   logging: {
@@ -120,7 +115,7 @@ const SECTION_META = {
 const SECTION_ORDER = {
   cameras: ["top", "fixed_side", "rotating_arm"],
   motor: ["movement", "behavior"],
-  experiment: ["time", "rotation", "capture"],
+  experiment: ["execution", "capture"],
   logging: ["root"],
 };
 
@@ -188,10 +183,7 @@ function sectionFor(group, path) {
     if (["capture_top", "capture_fixed_side", "capture_rotating_arm"].includes(key)) {
       return "capture";
     }
-    if (["rotation_enabled", "rotation_start_deg", "rotation_end_deg", "rotation_step_deg"].includes(key)) {
-      return "rotation";
-    }
-    return "time";
+    return "execution";
   }
   return "root";
 }
@@ -217,7 +209,7 @@ export function serializeSettingsPayload(group, payload) {
   const next = cloneValue(payload);
   for (const leaf of visibleSettings(group, next)) {
     const meta = fieldMeta(leaf);
-    if (meta.type === "number") {
+    if (["number", "duration"].includes(meta.type)) {
       const number = Number(leaf.value);
       if (!Number.isFinite(number)) {
         throw new Error(`${meta.label} 必須是有效數字。`);

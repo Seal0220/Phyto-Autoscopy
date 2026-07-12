@@ -11,7 +11,8 @@
     "rotation_enabled": true,
     "rotation_start_deg": 0,
     "rotation_end_deg": 360,
-    "rotation_step_deg": 15,
+    "rotation_step_deg": 1,
+    "angle_tolerance_deg": 0.5,
     "stabilization_delay_ms": 800,
     "return_to_origin": true
   }

@@ -10,6 +10,7 @@ from app.models.camera_models import (
     CaptureRequest,
     CaptureResult,
 )
+from app.services.schedule_lock import ensure_manual_changes_allowed
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -43,6 +44,7 @@ def capture_camera(
     request: CaptureRequest | None = None,
     context: AppContext = Depends(get_context),
 ) -> CaptureResult:
+    ensure_manual_changes_allowed(context)
     request = request or CaptureRequest()
     return context.capture_service.capture_camera(
         camera_id,
@@ -57,6 +59,7 @@ def capture_all(
     request: CaptureRequest | None = None,
     context: AppContext = Depends(get_context),
 ) -> list[CaptureResult]:
+    ensure_manual_changes_allowed(context)
     request = request or CaptureRequest()
     return context.capture_service.capture_all(session_id=request.session_id)
 
@@ -72,6 +75,7 @@ def update_camera_settings(
     update: CameraSettingsUpdate,
     context: AppContext = Depends(get_context),
 ) -> dict:
+    ensure_manual_changes_allowed(context)
     current = context.settings.cameras[camera_id]
     for key, value in update.model_dump(exclude_none=True).items():
         setattr(current, key, value)

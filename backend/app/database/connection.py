@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from threading import RLock
 from typing import Iterable
 
 
@@ -10,6 +11,7 @@ class Database:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._connection: sqlite3.Connection | None = None
+        self._lock = RLock()
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -19,11 +21,21 @@ class Database:
         return self._connection
 
     def execute(self, sql: str, parameters: Iterable[object] = ()) -> sqlite3.Cursor:
-        cursor = self.connection.execute(sql, tuple(parameters))
-        self.connection.commit()
-        return cursor
+        with self._lock:
+            cursor = self.connection.execute(sql, tuple(parameters))
+            self.connection.commit()
+            return cursor
+
+    def fetchone(self, sql: str, parameters: Iterable[object] = ()) -> sqlite3.Row | None:
+        with self._lock:
+            return self.connection.execute(sql, tuple(parameters)).fetchone()
+
+    def fetchall(self, sql: str, parameters: Iterable[object] = ()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.connection.execute(sql, tuple(parameters)).fetchall()
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None

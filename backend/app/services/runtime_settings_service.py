@@ -6,6 +6,7 @@ from app.core.logging_config import configure_logging
 from app.core.state import AppContext
 from app.hardware.motor.motor_profile import MotorProfile
 from app.hardware.motor.motor_safety import MotorSafety
+from app.services.schedule_lock import ensure_manual_changes_allowed
 
 
 def build_candidate_settings(context: AppContext, group: str, payload: dict) -> AppSettings:
@@ -17,12 +18,13 @@ def build_candidate_settings(context: AppContext, group: str, payload: dict) -> 
         candidate_data = current
         candidate_data[group] = payload.get(group, {})
     else:
-        raise ConfigError(f"Unknown settings group: {group}")
+        raise ConfigError(f"找不到設定群組：{group}")
     return AppSettings.model_validate(candidate_data)
 
 
 def apply_runtime_settings(context: AppContext, candidate: AppSettings, group: str) -> None:
     """Apply validated configuration to the objects already serving requests."""
+    ensure_manual_changes_allowed(context)
     if group == "motor" and context.motor_controller.status().moving:
         raise ConfigError("馬達移動中，不能更新馬達設定。")
 

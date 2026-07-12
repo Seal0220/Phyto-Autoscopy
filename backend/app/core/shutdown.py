@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 def shutdown_context(context: object) -> None:
     """Best-effort cleanup for hardware, services, and database handles."""
     for attr, method in (
-        ("experiment_service", "stop"),
+        ("experiment_service", "close"),
         ("motor_controller", "stop"),
         ("motor_controller", "disengage"),
         ("motor_controller", "close"),
