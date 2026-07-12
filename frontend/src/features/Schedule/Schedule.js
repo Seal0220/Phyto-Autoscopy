@@ -6,9 +6,9 @@ import { Panel, PanelHeader } from "@/components/panels/Panel";
 import SettingsGear from "@/components/panels/SettingsGear";
 import Settings from "@/features/Settings/Settings";
 
-import CommonControls from "./components/CommonControls";
-import Modes from "./components/Modes";
-import StatusCards from "./components/StatusCards";
+import ScheduleCommonControls from "./components/ScheduleCommonControls";
+import ScheduleModes from "./components/ScheduleModes";
+import ScheduleStatusCards from "./components/ScheduleStatusCards";
 import useSchedule from "./hooks/useSchedule";
 
 export default function Schedule({
@@ -57,7 +57,7 @@ export default function Schedule({
         className="grid gap-4 p-5 max-sm:p-4"
         onSubmit={handleSubmit}
       >
-        <StatusCards
+        <ScheduleStatusCards
           experiment={experiment}
           schedule={schedule}
         />
@@ -66,12 +66,12 @@ export default function Schedule({
           className={`grid gap-4 border-0 p-0 ${scheduleActive ? "grayscale opacity-60" : ""}`}
           disabled={!canEdit}
         >
-          <CommonControls
+          <ScheduleCommonControls
             schedule={schedule}
             setSchedule={setSchedule}
           />
           <hr />
-          <Modes
+          <ScheduleModes
             schedule={schedule}
             setSchedule={setSchedule}
             canEdit={canEdit}

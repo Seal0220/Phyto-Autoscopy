@@ -85,12 +85,12 @@ frontend/src/
 │  └─ VerticalLine.js        # ungrouped shared primitive
 ├─ features/
 │  ├─ Auth/                  # LoginForm
-│  ├─ Camera/                # Camera, cameraConfig, dedicated settings and utilities
-│  ├─ Dashboard/             # application composition and Header
+│  ├─ Dashboard/             # application composition and DashboardHeader
+│  ├─ ImagePreview/          # image preview, dedicated settings and utilities
 │  ├─ Motor/                 # Motor and direct controls
 │  ├─ Notifications/         # toast/history UI and notification hook
 │  ├─ Schedule/              # Schedule, config, mode components and utilities
-│  ├─ Sessions/              # session list and settings entry
+│  ├─ RecordsStorage/        # record list, storage path settings and utilities
 │  ├─ Settings/              # general settings editor, config and utility logic
 │  └─ Status/                # live overview
 ├─ hooks/                    # truly cross-feature client lifecycles
@@ -111,7 +111,7 @@ A UI primitive should:
 
 ### 3.2 Feature folders
 
-Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`Camera`, `Schedule`, `Motor`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `Camera.js` or `Schedule.js`. Its subcomponents live in `components/` and use direct PascalCase names such as `ModeCard.js`, never redundant feature prefixes.
+Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`ImagePreview`, `Schedule`, `Motor`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `ImagePreview.js` or `Schedule.js`. Every subcomponent in `components/` uses the owning feature as a PascalCase prefix in both its filename and component identifier, such as `ImagePreviewSettings.js`, `ScheduleModeCard.js`, or `DashboardHeader.js`. This explicit prefix prevents ambiguous imports such as `Field`, `Settings`, `Header`, `Section`, or `ModeCard` when several features are open together.
 
 Use these feature-internal destinations:
 
@@ -124,7 +124,7 @@ Do not put feature UI under `src/components`, and do not put generic UI primitiv
 
 ### 3.3 Naming and entry components
 
-Do not use `section-`, `schedule-`, `camera-`, or similar redundant file prefixes. React component filenames are PascalCase. Utilities and configuration use descriptive camelCase names such as `scheduleConfig.js` and `scheduleUtils.js`. A feature entry component may select feature data, invoke hooks passed from its parent, arrange feature components, and display loading/error/empty states. It should not contain:
+Do not use lowercase or hyphenated component filenames such as `section-schedule.js` or `schedule-mode-card.js`. React component filenames and identifiers are PascalCase. A feature entry uses only the feature name, while every child component uses `<Feature><Role>` without separators. Utilities and configuration use descriptive camelCase names such as `scheduleConfig.js` and `scheduleUtils.js`. A feature entry component may select feature data, invoke hooks passed from its parent, arrange feature components, and display loading/error/empty states. It should not contain:
 
 - a locally defined reusable card or control;
 - a long option/configuration registry;
@@ -360,7 +360,7 @@ Use `ActionRow` from `components/actions/ActionRow.js` for an action-button grou
 place-self-end flex flex-wrap items-center pt-2 gap-2
 ```
 
-This keeps bottom actions right-aligned, wrapping safely, and separated from the content above. It is currently appropriate for schedule execution controls, settings save actions, and login submission. A compact camera-card footer that keeps status and its sole action on one row uses a direct inline action container rather than `ActionRow`, so it does not acquire the action-row divider.
+This keeps bottom actions right-aligned, wrapping safely, and separated from the content above. It is currently appropriate for schedule execution controls, settings save actions, and login submission. A compact image-preview footer that keeps status and its capture/reconnect actions on one row uses a direct inline action container rather than `ActionRow`, so it does not acquire the action-row divider.
 
 Do not apply `ActionRow` to panel-header tools, navigation actions, table-cell links, popup close buttons, or controls located at the top of a card.
 
@@ -522,9 +522,11 @@ Do not use a status pill where the information needs the title/content/note stru
 
 ### 6.13 Notifications
 
-All transient application messages should flow through the shared notification state and the bottom-right toast/history interface. Do not recreate a separate "近期訊息" panel inside a dashboard section.
+All transient application notifications should flow through the shared notification state and the bottom-right toast/history interface. Do not recreate a separate "近期通知" panel inside a dashboard section.
 
-Notification UI belongs in `features/Notifications`; notification state belongs in `features/Notifications/hooks/useNotifications.js`; application placement belongs in `features/Notifications/ToastViewport.js`.
+Notification UI and application placement belong in `features/Notifications/Notifications.js`; notification state belongs in `features/Notifications/hooks/useNotifications.js`.
+
+Notification interactions always use transitions: trigger, collapse, and close actions use the established 150ms color/fill transition, while history expansion/collapse and toast entry/exit use a 200ms opacity or grid-row transition. Preserve `motion-reduce:transition-none`, and keep hidden history content inert and outside keyboard focus.
 
 Use consistent tone mapping:
 
@@ -545,18 +547,18 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 `features/Dashboard/Dashboard.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings disclosure state, and feature placement. Keep feature-specific markup and transformations out of it.
 
-`features/Dashboard/components/Header.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
+`features/Dashboard/components/DashboardHeader.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
 The schedule feature is split by responsibility:
 
 - `Schedule.js`: feature entry and execution controls;
-- `components/CommonControls.js`: total duration, start angle, end angle, execution step, and angle tolerance shared by all modes;
-- `components/Modes.js`: list composition and add/remove behavior;
-- `components/ModeCard.js`: one mode container and its controls;
-- `components/ModeFields.js`: mode-specific input selection;
-- `components/StatusCards.js`: compact execution status presentation, including the live local clock shown with elapsed duration;
+- `components/ScheduleCommonControls.js`: total duration, start angle, end angle, execution step, and angle tolerance shared by all modes;
+- `components/ScheduleModes.js`: list composition and add/remove behavior;
+- `components/ScheduleModeCard.js`: one mode container and its controls;
+- `components/ScheduleModeFields.js`: mode-specific input selection;
+- `components/ScheduleStatusCards.js`: compact execution status presentation, including the live local clock shown with elapsed duration;
 - `scheduleConfig.js`: defaults and stable mode/status metadata only;
 - `lib/scheduleUtils.js`: mode lookup, validation, normalization, and payload construction.
 
@@ -568,17 +570,17 @@ Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic
 
 ### 7.3 Settings
 
-`components/panels/SettingPanel.js` is only the composed disclosure/container surface. It must not branch on a settings group, fetch data, own field layouts, or contain camera-specific markup. `features/Settings/Settings.js` owns the generic settings editor; its config, field components, and utilities remain inside the Settings feature.
+`components/panels/SettingPanel.js` is only the composed disclosure/container surface. It owns the shared `ActionRow` placement through its `footer` slot, with `px-6 pb-6` as the default footer spacing, but it must not branch on a settings group, fetch data, own field layouts, or contain feature-specific markup. `features/Settings/Settings.js` owns the generic settings editor; its config, field components, and utilities remain inside the Settings feature.
 
-`features/Camera/components/Settings.js` is an independent Camera feature component. It owns the camera-only layout: no repeated camera title, an enabled toggle across the camera column, and remaining camera inputs in a responsive grid of at most three columns. Camera settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
+`features/ImagePreview/components/ImagePreviewSettings.js` is an independent ImagePreview feature component. It owns the image-preview-only layout: no repeated camera title, an enabled toggle across each camera column, and remaining inputs in a responsive grid of at most three columns. Image preview settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
 
 Dashboard settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
 
-`features/Settings/components/Section.js` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
+`features/Settings/components/SettingsSection.js` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
 
 Do not redefine each setting field in the panel file. Preserve one authoritative control for an action/status rather than allowing separate settings and main-section controls to diverge.
 
-### 7.4 Cameras, motor, sessions, and status
+### 7.4 Image preview, motor, records storage, and status
 
 Feature entry components may arrange their domain data and actions but should reuse:
 

@@ -1,6 +1,5 @@
 "use client";
 
-import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import { TextInput } from "@/components/inputs/Input";
 import SettingPanel from "@/components/panels/SettingPanel";
@@ -9,7 +8,7 @@ import useSettings from "@/hooks/useSettings";
 import { STORAGE_PATH_FIELDS } from "../storageConfig";
 import { serializeStoragePayload } from "../lib/storageUtils";
 
-export default function StorageSettings({
+export default function RecordsStorageSettings({
   onNotify,
   open,
   locked,
@@ -34,6 +33,15 @@ export default function StorageSettings({
       label="儲存"
       open={open}
       locked={locked}
+      footer={(
+        <Button
+          variant="primary"
+          onClick={() => void saveGroup()}
+          disabled={!payload || saving || loading}
+        >
+          {saving ? "儲存中…" : "儲存路徑設定"}
+        </Button>
+      )}
     >
       {loading && !payload ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
@@ -60,15 +68,6 @@ export default function StorageSettings({
           ))}
         </div>
       ) : null}
-      <ActionRow>
-        <Button
-          variant="primary"
-          onClick={() => void saveGroup()}
-          disabled={!payload || saving || loading}
-        >
-          {saving ? "儲存中…" : "儲存路徑設定"}
-        </Button>
-      </ActionRow>
     </SettingPanel>
   );
 }

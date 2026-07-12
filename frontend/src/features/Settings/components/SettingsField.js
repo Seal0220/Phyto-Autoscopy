@@ -7,7 +7,7 @@ function fieldId(group, path) {
   return `setting-${group}-${path.join("-")}`;
 }
 
-function BooleanField({
+function SettingsBooleanField({
   leaf,
   onChange,
 }) {
@@ -23,7 +23,7 @@ function BooleanField({
   );
 }
 
-function StandardField({
+function SettingsStandardField({
   group,
   leaf,
   onChange,
@@ -38,18 +38,18 @@ function StandardField({
   return <TextInput id={id} label={meta.label} value={value} onValueChange={update} description={meta.description} />;
 }
 
-export default function Field({
+export default function SettingsField({
   group,
   leaf,
   onChange,
 }) {
   return typeof leaf.value === "boolean" ? (
-    <BooleanField
+    <SettingsBooleanField
       leaf={leaf}
       onChange={onChange}
     />
   ) : (
-    <StandardField
+    <SettingsStandardField
       group={group}
       leaf={leaf}
       onChange={onChange}

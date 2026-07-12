@@ -10,7 +10,7 @@ import {
   SCHEDULE_DURATION_FIELD,
 } from "../scheduleConfig";
 
-export default function CommonControls({
+export default function ScheduleCommonControls({
   schedule,
   setSchedule,
 }) {

@@ -1,10 +1,16 @@
+import ActionRow from "@/components/actions/ActionRow";
+
 export default function SettingPanel({
   children,
   label,
   open = false,
   locked = false,
+  footer,
+  footerClassName = "px-6 pb-6",
+  footerDividerClassName,
   className,
   contentClassName,
+  fieldsetClassName,
 }) {
   return (
     <section
@@ -17,10 +23,18 @@ export default function SettingPanel({
           className={`rounded-b-[27px] border-t border-white/10 bg-black/20 ${contentClassName || "px-6 py-6 max-sm:px-4"}`}
         >
           <fieldset
-            className={`grid min-w-0 gap-4 border-0 p-0 ${locked ? "grayscale opacity-60" : ""}`}
+            className={`grid min-w-0 border-0 p-0 ${fieldsetClassName || "gap-4"} ${locked ? "grayscale opacity-60" : ""}`}
             disabled={locked}
           >
             {children}
+            {footer ? (
+              <ActionRow
+                className={footerClassName}
+                dividerClassName={footerDividerClassName}
+              >
+                {footer}
+              </ActionRow>
+            ) : null}
           </fieldset>
         </div>
       </div>

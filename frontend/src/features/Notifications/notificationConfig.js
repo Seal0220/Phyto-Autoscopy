@@ -4,6 +4,8 @@ import {
   FiInfo,
 } from "react-icons/fi";
 
+export const NOTIFICATION_FADE_DURATION_MS = 200;
+
 export const NOTIFICATION_META = {
   success: {
     border: "border-l-emerald-300",
@@ -20,7 +22,7 @@ export const NOTIFICATION_META = {
   info: {
     border: "border-l-slate-400",
     icon: "text-slate-300",
-    label: "訊息",
+    label: "通知",
     Icon: FiInfo,
   },
 };

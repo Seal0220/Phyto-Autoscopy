@@ -1,6 +1,5 @@
 "use client";
 
-import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
@@ -9,14 +8,21 @@ import {
   serializeImagePreviewSettingsPayload,
 } from "@/features/ImagePreview/lib/imagePreviewUtils";
 
-import Field from "./Field";
+import ImagePreviewField from "./ImagePreviewField";
 
-export default function Settings({
+export default function ImagePreviewSettings({
   onNotify,
   open = false,
   locked = false,
 }) {
-  const { payload, loading, saving, loadFailed, updateField, saveGroup, } = useSettings({
+  const {
+    payload,
+    loading,
+    saving,
+    loadFailed,
+    updateField,
+    saveGroup,
+  } = useSettings({
     group: "cameras",
     onNotify,
     open,
@@ -30,6 +36,17 @@ export default function Settings({
       open={open}
       locked={locked}
       contentClassName="p-0"
+      fieldsetClassName="gap-0"
+      footerDividerClassName="mt-0! mb-4!"
+      footer={(
+        <Button
+          variant="primary"
+          onClick={() => void saveGroup()}
+          disabled={!payload || saving || loading}
+        >
+          {saving ? "儲存中…" : "儲存影像預覽設定"}
+        </Button>
+      )}
     >
       {loading && !payload ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
@@ -47,8 +64,12 @@ export default function Settings({
             imagePreviewId,
             leaves,
           }) => {
-            const enabledLeaves = leaves.filter((leaf) => leaf.path.at(-1) === "enabled");
-            const inputLeaves = leaves.filter((leaf) => leaf.path.at(-1) !== "enabled");
+            const enabledLeaves = leaves.filter(
+              (leaf) => leaf.path.at(-1) === "enabled",
+            );
+            const inputLeaves = leaves.filter(
+              (leaf) => leaf.path.at(-1) !== "enabled",
+            );
 
             return (
               <section
@@ -56,7 +77,7 @@ export default function Settings({
                 key={imagePreviewId}
               >
                 {enabledLeaves.map((leaf) => (
-                  <Field
+                  <ImagePreviewField
                     key={leaf.path.join(".")}
                     leaf={leaf}
                     onChange={updateField}
@@ -64,7 +85,7 @@ export default function Settings({
                 ))}
                 <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
                   {inputLeaves.map((leaf) => (
-                    <Field
+                    <ImagePreviewField
                       key={leaf.path.join(".")}
                       leaf={leaf}
                       onChange={updateField}
@@ -76,18 +97,6 @@ export default function Settings({
           })}
         </div>
       ) : null}
-      <ActionRow
-        className="px-6 pb-6"
-        dividerClassName="mt-0!"
-      >
-        <Button
-          variant="primary"
-          onClick={() => void saveGroup()}
-          disabled={!payload || saving || loading}
-        >
-          {saving ? "儲存中…" : "儲存影像預覽設定"}
-        </Button>
-      </ActionRow>
     </SettingPanel>
   );
 }

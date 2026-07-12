@@ -7,7 +7,7 @@ import {
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 
-import Settings from "./components/Settings";
+import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
 export default function ImagePreview({
   imagePreviewById,
@@ -80,7 +80,25 @@ export default function ImagePreview({
                     {meta.label}
                   </span>
                 </div>
-                <div className="ml-auto flex shrink-0 items-center">
+                <div className="ml-auto flex shrink-0 gap-2 items-center">
+                  <Button
+                    className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
+                    variant="primary"
+                    disabled={
+                      !isConnected
+                      || !enabled
+                      || !connected
+                      || scheduleActive
+                      || busyAction === "camera.capture"
+                    }
+                    onClick={() => void onRunAction(
+                      "camera.capture",
+                      { camera_id: imagePreviewId },
+                      `${meta.label} 已擷取單張影像。`,
+                    )}
+                  >
+                    擷取
+                  </Button>
                   <Button
                     className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
                     disabled={!isConnected || !enabled || busyAction === "camera.reconnect"}
@@ -98,7 +116,7 @@ export default function ImagePreview({
           );
         })}
       </div>
-      <Settings
+      <ImagePreviewSettings
         onNotify={onNotify}
         open={open}
         locked={scheduleActive}

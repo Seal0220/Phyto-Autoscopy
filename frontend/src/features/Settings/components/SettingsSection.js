@@ -1,9 +1,9 @@
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 
-import Field from "./Field";
+import SettingsField from "./SettingsField";
 import { sectionMeta } from "../lib/settingsUtils";
 
-export default function Section({
+export default function SettingsSection({
   group,
   section,
   leaves,
@@ -18,7 +18,7 @@ export default function Section({
       />
       <div className="grid gap-3">
         {leaves.map((leaf) => (
-          <Field
+          <SettingsField
             key={leaf.path.join(".")}
             group={group}
             leaf={leaf}

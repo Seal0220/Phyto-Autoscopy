@@ -4,7 +4,7 @@ import {
   TextInput,
 } from "@/components/inputs/Input";
 
-export default function ModeFields({
+export default function ScheduleModeFields({
   mode,
   onUpdate,
 }) {

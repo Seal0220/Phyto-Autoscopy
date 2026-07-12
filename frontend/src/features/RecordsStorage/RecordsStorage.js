@@ -3,7 +3,7 @@ import { Panel, PanelHeader } from "@/components/panels/Panel";
 import SettingsGear from "@/components/panels/SettingsGear";
 import { formatDateTime } from "@/lib/formatUtils";
 
-import StorageSettings from "./components/StorageSettings";
+import RecordsStorageSettings from "./components/RecordsStorageSettings";
 
 export default function RecordsStorage({
   records,
@@ -94,7 +94,7 @@ export default function RecordsStorage({
           </tbody>
         </table>
       </div>
-      <StorageSettings
+      <RecordsStorageSettings
         onNotify={onNotify}
         open={open}
         locked={scheduleActive}

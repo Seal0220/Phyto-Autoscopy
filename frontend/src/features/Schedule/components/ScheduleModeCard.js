@@ -9,9 +9,9 @@ import {
   SCHEDULE_MODE_LABELS,
   SCHEDULE_MODE_META,
 } from "../scheduleConfig";
-import ModeFields from "./ModeFields";
+import ScheduleModeFields from "./ScheduleModeFields";
 
-export default function ModeCard({
+export default function ScheduleModeCard({
   mode,
   index,
   canEdit,
@@ -50,7 +50,7 @@ export default function ModeCard({
           description={selectedMeta.description}
           onValueChange={onChangeType}
         />
-        <ModeFields
+        <ScheduleModeFields
           mode={mode}
           onUpdate={onUpdate}
         />

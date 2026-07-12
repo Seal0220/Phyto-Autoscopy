@@ -7,9 +7,9 @@ import {
   SCHEDULE_MODE_META,
 } from "../scheduleConfig";
 import { scheduleModeTypeFromLabel } from "../lib/scheduleUtils";
-import ModeCard from "./ModeCard";
+import ScheduleModeCard from "./ScheduleModeCard";
 
-export default function Modes({
+export default function ScheduleModes({
   schedule,
   setSchedule,
   canEdit,
@@ -96,7 +96,7 @@ export default function Modes({
       {schedule.modes.length ? (
         <div className="grid grid-cols-3 gap-3">
           {schedule.modes.map((mode, index) => (
-            <ModeCard
+            <ScheduleModeCard
               key={mode.id}
               mode={mode}
               index={index}

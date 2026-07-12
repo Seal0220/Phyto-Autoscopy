@@ -7,9 +7,9 @@ import {
 
 import ImagePreview from "@/features/ImagePreview/ImagePreview";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
-import Header from "@/features/Dashboard/components/Header";
+import DashboardHeader from "@/features/Dashboard/components/DashboardHeader";
 import Motor from "@/features/Motor/Motor";
-import ToastViewport from "@/features/Notifications/ToastViewport";
+import Notifications from "@/features/Notifications/Notifications";
 import useNotifications from "@/features/Notifications/hooks/useNotifications";
 import RecordsStorage from "@/features/RecordsStorage/RecordsStorage";
 import useRecordsStorage from "@/features/RecordsStorage/hooks/useRecordsStorage";
@@ -74,7 +74,7 @@ export default function Dashboard({ actor }) {
 
   return (
     <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <Header
+      <DashboardHeader
         actor={actor}
         isConnected={isConnected}
         emergencyStopping={busyAction === "motor.emergency_stop"}
@@ -134,7 +134,11 @@ export default function Dashboard({ actor }) {
           onLoad={loadRecords}
         />
       </div>
-      <ToastViewport toast={toast} notifications={notifications} onClose={dismissNotification} />
+      <Notifications
+        toast={toast}
+        notifications={notifications}
+        onClose={dismissNotification}
+      />
     </main>
   );
 }

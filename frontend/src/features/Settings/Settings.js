@@ -1,11 +1,10 @@
 "use client";
 
-import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
 
-import Section from "./components/Section";
+import SettingsSection from "./components/SettingsSection";
 import { groupedVisibleSettings } from "./lib/settingsUtils";
 
 export default function Settings({
@@ -34,6 +33,15 @@ export default function Settings({
       label={label}
       open={open}
       locked={locked}
+      footer={(
+        <Button
+          variant="primary"
+          onClick={() => void saveGroup()}
+          disabled={!payload || saving || loading}
+        >
+          {saving ? "儲存中…" : `儲存${label}設定`}
+        </Button>
+      )}
     >
       {loading && !payload ? <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">讀取設定中…</p> : null}
       {!loading && !payload && !loadFailed ? <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">尚無可編輯設定。</p> : null}
@@ -43,7 +51,7 @@ export default function Settings({
             section,
             leaves,
           }) => (
-            <Section
+            <SettingsSection
               key={section}
               group={group}
               section={section}
@@ -53,15 +61,6 @@ export default function Settings({
           ))}
         </div>
       ) : null}
-      <ActionRow>
-        <Button
-          variant="primary"
-          onClick={() => void saveGroup()}
-          disabled={!payload || saving || loading}
-        >
-          {saving ? "儲存中…" : `儲存${label}設定`}
-        </Button>
-      </ActionRow>
     </SettingPanel>
   );
 }

@@ -6,7 +6,7 @@ function fieldId(path) {
   return `image-preview-setting-${path.join("-")}`;
 }
 
-export default function Field({
+export default function ImagePreviewField({
   leaf,
   onChange,
 }) {

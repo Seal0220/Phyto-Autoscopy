@@ -6,7 +6,7 @@ import { formatElapsed } from "@/lib/formatUtils";
 
 import { SCHEDULE_STATUS_LABELS } from "../scheduleConfig";
 
-export default function StatusCards({
+export default function ScheduleStatusCards({
   experiment,
   schedule,
 }) {

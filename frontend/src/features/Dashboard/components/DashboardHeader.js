@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   ["records-storage", "紀錄與儲存"],
 ];
 
-export default function Header({
+export default function DashboardHeader({
   actor,
   isConnected,
   emergencyStopping,
