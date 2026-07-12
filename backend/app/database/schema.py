@@ -10,10 +10,18 @@ def initialize_schema(database: Database) -> None:
             session_id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL,
             status TEXT NOT NULL,
-            session_path TEXT NOT NULL
+            session_path TEXT NOT NULL,
+            ended_at TEXT
         )
         """
     )
+    session_columns = {
+        row["name"]
+        for row in database.fetchall("PRAGMA table_info(sessions)")
+    }
+    if "ended_at" not in session_columns:
+        database.execute("ALTER TABLE sessions ADD COLUMN ended_at TEXT")
+
     database.execute(
         """
         CREATE TABLE IF NOT EXISTS captures (

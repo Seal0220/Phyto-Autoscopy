@@ -32,10 +32,59 @@ function SettingsStandardField({
   const id = fieldId(group, leaf.path);
   const value = leaf.value ?? "";
   const update = (nextValue) => onChange(leaf.path, nextValue);
-  if (meta.type === "select") return <SelectInput id={id} label={meta.label} value={value} onValueChange={update} options={meta.options} description={meta.description} />;
-  if (meta.type === "duration") return <DurationInput id={id} label={meta.label} value={value} onValueChange={update} unit={meta.unit} description={meta.description} />;
-  if (meta.type === "number") return <NumericInput id={id} label={meta.label} value={value} onValueChange={update} min={meta.min} max={meta.max} step={meta.step} suffix={meta.suffix} description={meta.description} />;
-  return <TextInput id={id} label={meta.label} value={value} onValueChange={update} description={meta.description} />;
+
+  if (meta.type === "select") {
+    return (
+      <SelectInput
+        id={id}
+        label={meta.label}
+        value={value}
+        onValueChange={update}
+        options={meta.options}
+        description={meta.description}
+      />
+    );
+  }
+
+  if (meta.type === "duration") {
+    return (
+      <DurationInput
+        id={id}
+        label={meta.label}
+        value={value}
+        onValueChange={update}
+        unit={meta.unit}
+        description={meta.description}
+        className={meta.className}
+      />
+    );
+  }
+
+  if (meta.type === "number") {
+    return (
+      <NumericInput
+        id={id}
+        label={meta.label}
+        value={value}
+        onValueChange={update}
+        min={meta.min}
+        max={meta.max}
+        step={meta.step}
+        suffix={meta.suffix}
+        description={meta.description}
+      />
+    );
+  }
+
+  return (
+    <TextInput
+      id={id}
+      label={meta.label}
+      value={value}
+      onValueChange={update}
+      description={meta.description}
+    />
+  );
 }
 
 export default function SettingsField({

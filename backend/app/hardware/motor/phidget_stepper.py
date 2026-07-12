@@ -19,7 +19,7 @@ class PhidgetStepperController:
         self.settings = settings
         self.profile = MotorProfile(settings)
         self.safety = MotorSafety(settings)
-        self.state = MotorRuntimeState(command_position_deg=settings.origin_deg)
+        self.state = MotorRuntimeState(command_position_deg=0.0)
         self._stepper = None
         self._lock = Lock()
 
@@ -76,7 +76,6 @@ class PhidgetStepperController:
             moving=self.state.moving,
             emergency_stopped=self.state.emergency_stopped,
             command_position_deg=self.state.command_position_deg,
-            origin_deg=self.settings.origin_deg,
             minimum_angle_deg=self.settings.minimum_angle_deg,
             maximum_angle_deg=self.settings.maximum_angle_deg,
             velocity_limit_deg_s=self.settings.velocity_limit_deg_s,
@@ -108,9 +107,10 @@ class PhidgetStepperController:
         with self._lock:
             if self.state.moving:
                 raise MotorError("馬達移動中，無法設定原點。")
-            if self._stepper is not None and hasattr(self._stepper, "setPosition"):
-                self._stepper.setPosition(self.profile.degrees_to_steps(self.settings.origin_deg))
-            self.state.command_position_deg = self.settings.origin_deg
+            if self._stepper is not None:
+                current_position_steps = float(self._stepper.getPosition())
+                self._stepper.addPositionOffset(-current_position_steps)
+            self.state.command_position_deg = 0.0
             return self.status()
 
     def move_to_angle(self, angle_deg: float) -> MotorStatus:
@@ -139,7 +139,7 @@ class PhidgetStepperController:
         return self.move_to_angle(self.status().command_position_deg + delta_deg)
 
     def return_origin(self) -> MotorStatus:
-        return self.move_to_angle(self.settings.origin_deg)
+        return self.move_to_angle(0.0)
 
     def stop(self) -> MotorStatus:
         with self._lock:

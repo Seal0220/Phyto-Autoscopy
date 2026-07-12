@@ -8,6 +8,7 @@ class SessionSummary(BaseModel):
     created_at: str
     status: str
     session_path: str
+    ended_at: str | None = None
 
 
 class SessionDetail(SessionSummary):

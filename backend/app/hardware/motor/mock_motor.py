@@ -13,7 +13,7 @@ class MockMotorController:
     def __init__(self, settings: MotorSettings) -> None:
         self.settings = settings
         self.safety = MotorSafety(settings)
-        self.state = MotorRuntimeState(connected=True, command_position_deg=settings.origin_deg)
+        self.state = MotorRuntimeState(connected=True, command_position_deg=0.0)
         self._lock = Lock()
 
     def connect(self) -> None:
@@ -33,7 +33,6 @@ class MockMotorController:
             moving=self.state.moving,
             emergency_stopped=self.state.emergency_stopped,
             command_position_deg=self.state.command_position_deg,
-            origin_deg=self.settings.origin_deg,
             minimum_angle_deg=self.settings.minimum_angle_deg,
             maximum_angle_deg=self.settings.maximum_angle_deg,
             velocity_limit_deg_s=self.settings.velocity_limit_deg_s,
@@ -61,7 +60,7 @@ class MockMotorController:
         with self._lock:
             if self.state.moving:
                 raise MotorError("馬達移動中，無法設定原點。")
-            self.state.command_position_deg = self.settings.origin_deg
+            self.state.command_position_deg = 0.0
             return self.status()
 
     def move_to_angle(self, angle_deg: float) -> MotorStatus:
@@ -81,7 +80,7 @@ class MockMotorController:
         return self.move_to_angle(self.state.command_position_deg + delta_deg)
 
     def return_origin(self) -> MotorStatus:
-        return self.move_to_angle(self.settings.origin_deg)
+        return self.move_to_angle(0.0)
 
     def stop(self) -> MotorStatus:
         with self._lock:

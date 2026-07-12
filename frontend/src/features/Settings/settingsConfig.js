@@ -10,7 +10,6 @@ export const SETTINGS_CONFIG = {
       velocity_limit_deg_s: true,
       acceleration_deg_s2: true,
       movement_timeout_seconds: true,
-      origin_deg: true,
       return_to_origin_after_cycle: true,
       disengage_after_cycle: true,
     },
@@ -78,15 +77,8 @@ export const FIELD_META = {
     unit: "seconds",
     min: 1,
     max: 300,
+    className: "col-span-2",
     description: "超過時間仍未完成移動時中止命令。",
-  },
-  origin_deg: {
-    label: "原點角度",
-    type: "number",
-    min: 0,
-    max: 360,
-    step: 0.1,
-    suffix: "度",
   },
   return_to_origin_after_cycle: {
     label: "循環後回到原點",
@@ -146,7 +138,8 @@ export const SECTION_META = {
   motor: {
     movement: {
       title: "移動參數",
-      description: "速度、加速度、位置與命令逾時。",
+      description: "速度、加速度與命令逾時。",
+      fieldsClassName: "grid-cols-2",
     },
     behavior: {
       title: "循環結束行為",

@@ -81,7 +81,6 @@ class MotorSettings(BaseModel):
     maximum_velocity_limit_deg_s: float = 6.0
     acceleration_deg_s2: float = 3.0
     maximum_acceleration_deg_s2: float = 6.0
-    origin_deg: float = 0.0
     minimum_angle_deg: float = 0.0
     maximum_angle_deg: float = 360.0
     movement_timeout_seconds: int = 180

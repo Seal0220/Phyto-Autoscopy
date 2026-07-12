@@ -12,6 +12,12 @@ from app.models.session_models import SessionDetail, SessionSummary
 from app.repositories.session_repository import SessionRepository
 from app.services.storage_service import StorageService
 
+TERMINAL_SESSION_STATUSES = frozenset({
+    "completed",
+    "failed",
+    "stopped",
+})
+
 
 class SessionService:
     def __init__(
@@ -49,6 +55,7 @@ class SessionService:
             "device_version": self.settings.project.device_version,
             "session_id": session_id,
             "created_at": now.isoformat(),
+            "ended_at": None,
             "status": status,
             "experiment": experiment or self.settings.experiment.model_dump(),
             "hardware": {
@@ -68,8 +75,15 @@ class SessionService:
             created_at=payload["created_at"],
             status=status,
             session_path=str(session_dir),
+            ended_at=None,
         )
-        self.repository.upsert(session_id, summary.created_at, status, summary.session_path)
+        self.repository.upsert(
+            session_id,
+            summary.created_at,
+            status,
+            summary.session_path,
+            summary.ended_at,
+        )
         self.active_session_id = session_id
         return summary
 
@@ -81,11 +95,21 @@ class SessionService:
         return self.create_session(status="manual")
 
     def update_status(self, session_id: str, status: str) -> None:
-        self.repository.update_status(session_id, status)
+        ended_at = (
+            datetime.now(self._local_timezone()).isoformat()
+            if status in TERMINAL_SESSION_STATUSES
+            else None
+        )
+        self.repository.update_status(
+            session_id,
+            status,
+            ended_at,
+        )
         session_path = self.storage.session_json_path(session_id)
         if session_path.exists():
             payload = json.loads(session_path.read_text(encoding="utf-8"))
             payload["status"] = status
+            payload["ended_at"] = ended_at
             session_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",

@@ -16,7 +16,7 @@ export default function SettingsSection({
         title={meta.title}
         description={meta.description}
       />
-      <div className="grid gap-3">
+      <div className={`grid gap-3 ${meta.fieldsClassName || ""}`}>
         {leaves.map((leaf) => (
           <SettingsField
             key={leaf.path.join(".")}

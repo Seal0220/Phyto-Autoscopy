@@ -561,7 +561,6 @@ CHLOROCULUS EYE-ARM 拍照
     "holding_current_amp": 0.3,
     "velocity_limit_deg_s": 3.0,
     "acceleration_deg_s2": 3.0,
-    "origin_deg": 0.0,
     "minimum_angle_deg": 0.0,
     "maximum_angle_deg": 360.0,
     "movement_timeout_seconds": 180,

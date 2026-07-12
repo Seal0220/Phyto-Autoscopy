@@ -70,7 +70,6 @@ export default function Dashboard({ actor }) {
   const cameras = snapshot?.cameras || [];
   const imagePreviewById = new Map(cameras.map((camera) => [camera.camera_id, camera]));
   const scheduleActive = ["running", "paused", "stopping"].includes(experiment.status);
-  const activeRecord = records.find((record) => record.session_id === experiment.session_id);
 
   return (
     <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
@@ -127,7 +126,6 @@ export default function Dashboard({ actor }) {
           records={records}
           loading={recordsLoading}
           scheduleActive={scheduleActive}
-          storageDirectory={activeRecord?.session_path}
           open={openSettingsGroups.includes("records-storage")}
           onToggle={() => toggleSettings("records-storage")}
           onNotify={showNotification}

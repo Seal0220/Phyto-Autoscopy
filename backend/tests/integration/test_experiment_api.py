@@ -72,7 +72,27 @@ def test_experiment_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) 
         else:
             raise AssertionError("Timed out waiting for all schedule mode logs")
 
-        client.post("/api/experiments/stop")
+        stop_response = client.post("/api/experiments/stop")
+        assert stop_response.status_code == 200
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            status_response = client.get("/api/experiments/status")
+            assert status_response.status_code == 200
+            if status_response.json()["status"] == "stopped":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("Timed out waiting for schedule to stop")
+
+        records_response = client.get("/api/sessions")
+        assert records_response.status_code == 200
+        record = next(
+            item
+            for item in records_response.json()
+            if item["session_id"] == session_id
+        )
+        assert record["ended_at"]
 
         assert {path.name for path in modes_dir.iterdir() if path.is_dir()} == expected_folders
         first_capture_times: dict[str, dict[str, str]] = {}

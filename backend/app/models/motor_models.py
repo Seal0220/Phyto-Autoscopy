@@ -11,7 +11,6 @@ class MotorStatus(BaseModel):
     moving: bool
     emergency_stopped: bool
     command_position_deg: float
-    origin_deg: float
     minimum_angle_deg: float
     maximum_angle_deg: float
     velocity_limit_deg_s: float

@@ -11,7 +11,6 @@
     "maximum_velocity_limit_deg_s": 6.0,
     "acceleration_deg_s2": 3.0,
     "maximum_acceleration_deg_s2": 6.0,
-    "origin_deg": 0.0,
     "minimum_angle_deg": 0.0,
     "maximum_angle_deg": 360.0,
     "movement_timeout_seconds": 180,

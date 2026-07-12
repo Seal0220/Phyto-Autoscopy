@@ -590,7 +590,11 @@ Feature entry components may arrange their domain data and actions but should re
 - pure helpers from the owning feature's `lib/` or root `lib/` only when shared;
 - the shared notification channel for results and errors.
 
+`RecordsStorage` presents each record's `ID`, status, storage path, creation time, terminal end time, and export actions in one table. Keep the table within a height-limited internal scroll area with a sticky header. `ended_at` remains empty for active and legacy records and is written only when a schedule reaches `completed`, `stopped`, or `failed`; display unavailable values as `—`.
+
 Motor and capture actions must have one authoritative activation point. The `控制` panel owns simple direct motor actions: holding torque, moving to a target angle, setting/returning to origin, and stopping. Other locations may show state, but must not create independent controls with conflicting state. Disable and apply grayscale to this direct-control group while a schedule is running, paused, or stopping.
+
+The motor origin is always the numeric `0°` reference and is not an editable setting. `設為原點` redefines the motor's current physical position as `0°`; `回到原點` consequently moves to `0°`. Never reintroduce an `origin_deg` field or a configurable origin-angle value in the frontend, API model, persisted settings, or hardware adapter. In motor movement settings, place `速度限制` and `加速度限制` in the same two-column grid with an explicit gap, and let the duration-style movement timeout span the full row beneath them.
 
 While a schedule is running, paused, or stopping, every user-initiated modification is locked across the dashboard: schedule configuration and modes, direct motor controls, manual camera capture, and every settings group. Keep read-only views, notification history, session refresh, camera reconnection, schedule pause/resume/stop, and emergency stop available. Use native disabled controls inside a visually grayscale group, and preserve matching backend enforcement so stale clients cannot bypass the lock.
 
