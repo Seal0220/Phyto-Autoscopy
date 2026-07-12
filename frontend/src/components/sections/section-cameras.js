@@ -15,7 +15,7 @@ export default function CamerasSection({
   onNotify,
 }) {
   return (
-    <Panel id="cameras" className="col-span-full [scroll-margin-top:5.6rem] max-[980px]:[scroll-margin-top:8.8rem]" aria-label="相機預覽">
+    <Panel id="cameras" className="col-span-full scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]" aria-label="相機預覽">
       <PanelHeader
         title="相機預覽"
         action={(

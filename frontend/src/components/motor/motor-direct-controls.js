@@ -38,8 +38,8 @@ export default function MotorDirectControls({
       disabled={controlsDisabled}
     >
       <SubsectionHeader
-        title="直接控制"
-        description={scheduleActive ? "排程進行中，直接控制已停用。" : "移動、原點與保持扭力等即時操作。"}
+        title="馬達控制"
+        description={scheduleActive ? "排程進行中，馬達控制已停用。" : "移動、原點與保持扭力等即時操作。"}
       >
         <StatusPill tone={scheduleActive ? "warning" : isConnected ? "success" : "offline"}>
           {scheduleActive ? "排程中" : isConnected ? "可操作" : "離線"}
