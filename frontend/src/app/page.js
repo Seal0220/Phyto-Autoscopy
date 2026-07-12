@@ -1,5 +1,5 @@
-import Dashboard from "@/components/dashboard";
-import LoginForm from "@/components/login-form";
+import LoginForm from "@/features/Auth/LoginForm";
+import Dashboard from "@/features/Dashboard/Dashboard";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";

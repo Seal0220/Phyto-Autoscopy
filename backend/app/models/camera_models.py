@@ -39,7 +39,7 @@ class CameraSettingsUpdate(BaseModel):
     device_index: int | None = None
     width: int | None = Field(default=None, gt=0)
     height: int | None = Field(default=None, gt=0)
-    preview_fps: int | None = Field(default=None, gt=0)
-    capture_fps: int | None = Field(default=None, gt=0)
+    preview_fps: int | None = Field(default=None, ge=1, le=60)
+    capture_fps: int | None = Field(default=None, ge=1, le=60)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
     enabled: bool | None = None

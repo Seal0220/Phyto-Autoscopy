@@ -44,8 +44,8 @@ class CameraConfig(BaseModel):
     device_index: int
     width: int = 1280
     height: int = 960
-    preview_fps: int = 5
-    capture_fps: int = 10
+    preview_fps: int = Field(default=5, ge=1, le=60)
+    capture_fps: int = Field(default=10, ge=1, le=60)
     jpeg_quality: int = 95
     enabled: bool = True
 

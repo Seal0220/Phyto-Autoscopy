@@ -1,4 +1,4 @@
-import { backendPath, proxyToBackend } from "@/lib/api-proxy";
+import { backendPath, proxyToBackend } from "@/lib/apiProxy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

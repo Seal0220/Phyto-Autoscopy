@@ -97,7 +97,7 @@ class SessionService:
     def get_session(self, session_id: str) -> SessionDetail:
         summary = self.repository.get(session_id)
         if summary is None:
-            raise SessionError(f"找不到工作階段：{session_id}")
+            raise SessionError(f"找不到紀錄：{session_id}")
         session_json_path = self.storage.session_json_path(session_id)
         payload = json.loads(session_json_path.read_text(encoding="utf-8"))
         return SessionDetail(**summary.model_dump(), session_json=payload)
@@ -105,7 +105,7 @@ class SessionService:
     def delete_session(self, session_id: str) -> None:
         summary = self.repository.get(session_id)
         if summary is None:
-            raise SessionError(f"找不到工作階段：{session_id}")
+            raise SessionError(f"找不到紀錄：{session_id}")
         self.repository.delete(session_id)
         session_path = Path(summary.session_path)
         if session_path.exists():

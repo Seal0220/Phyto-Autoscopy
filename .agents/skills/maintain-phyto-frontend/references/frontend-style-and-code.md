@@ -26,20 +26,20 @@ Inspect the live implementation before editing. The most important visual source
 
 - `frontend/src/app/globals.css`
 - `frontend/src/app/layout.js`
-- `frontend/src/components/ui/panel.js`
-- `frontend/src/components/ui/inner-panel.js`
-- `frontend/src/components/ui/status-card.js`
-- `frontend/src/components/ui/action-row.js`
-- `frontend/src/components/ui/subsection-header.js`
-- `frontend/src/components/ui/button.js`
-- `frontend/src/components/ui/input.js`
-- `frontend/src/components/ui/field.js` (`FieldFrame` only)
-- `frontend/src/components/ui/select-menu.js`
-- `frontend/src/components/ui/toggle.js`
-- `frontend/src/components/ui/toggle-row.js`
-- `frontend/src/components/ui/vertical-line.js`
-- `frontend/src/components/ui/tooltip.js`
-- `frontend/src/components/ui/settings-gear.js`
+- `frontend/src/components/panels/Panel.js`
+- `frontend/src/components/panels/InnerPanel.js`
+- `frontend/src/components/panels/SettingPanel.js`
+- `frontend/src/components/panels/SettingsGear.js`
+- `frontend/src/components/cards/StatusCard.js`
+- `frontend/src/components/actions/ActionRow.js`
+- `frontend/src/components/buttons/Button.js`
+- `frontend/src/components/headers/SubsectionHeader.js`
+- `frontend/src/components/inputs/Input.js`
+- `frontend/src/components/inputs/SelectMenu.js`
+- `frontend/src/components/inputs/Toggle.js` (`Toggle` and `ToggleRow`)
+- `frontend/src/components/fields/FieldFrame.js`
+- `frontend/src/components/Tooltip.js`
+- `frontend/src/components/VerticalLine.js`
 
 If this prose conflicts with a shared component that the user has intentionally edited, preserve the live component and update this document as part of the same design-system change. Do not silently normalize user-authored details back to an older rule.
 
@@ -73,19 +73,33 @@ frontend/src/
 │  ├─ layout.js              # document shell, font, body foundation
 │  └─ page.js                # authenticated page entry
 ├─ components/
-│  ├─ ui/                    # cross-feature visual primitives
-│  ├─ schedule/              # schedule-only components
-│  ├─ settings/              # settings-only components
-│  ├─ notifications/         # notification-only components
-│  ├─ sections/              # dashboard section orchestration
-│  └─ *.js                   # application-level compositions
-├─ hooks/                    # reusable client state and effects
-└─ lib/                      # pure domain, format, validation and transport helpers
+│  ├─ actions/               # shared ActionRow
+│  ├─ buttons/               # shared Button
+│  ├─ cards/                 # shared StatusCard
+│  ├─ fields/                # shared FieldFrame
+│  ├─ headers/               # shared SubsectionHeader
+│  ├─ inputs/                # shared Input, SelectMenu, Toggle, ToggleRow
+│  ├─ navigation/            # shared NavLink
+│  ├─ panels/                # shared Panel, InnerPanel, SettingPanel, SettingsGear
+│  ├─ Tooltip.js             # ungrouped shared tooltip primitive
+│  └─ VerticalLine.js        # ungrouped shared primitive
+├─ features/
+│  ├─ Auth/                  # LoginForm
+│  ├─ Camera/                # Camera, cameraConfig, dedicated settings and utilities
+│  ├─ Dashboard/             # application composition and Header
+│  ├─ Motor/                 # Motor and direct controls
+│  ├─ Notifications/         # toast/history UI and notification hook
+│  ├─ Schedule/              # Schedule, config, mode components and utilities
+│  ├─ Sessions/              # session list and settings entry
+│  ├─ Settings/              # general settings editor, config and utility logic
+│  └─ Status/                # live overview
+├─ hooks/                    # truly cross-feature client lifecycles
+└─ lib/                      # truly cross-feature pure/server utilities
 ```
 
-### 3.1 `components/ui`
+### 3.1 `components`
 
-Place a component here when it describes a reusable visual or interaction primitive rather than a business feature. Examples include `Panel`, `InnerPanel`, `StatusCard`, `ActionRow`, `SubsectionHeader`, `Button`, fields, select menus, toggles, `VerticalLine`, tooltips, and the settings gear.
+Place a component here only when it describes a reusable visual or interaction primitive, frame, or container rather than a business feature. Organise it by role (`actions`, `inputs`, `panels`, and so on). Examples include `Panel`, `InnerPanel`, `SettingPanel`, `StatusCard`, `ActionRow`, `SubsectionHeader`, `Button`, fields, select menus, toggles, `VerticalLine`, tooltips, and the settings gear.
 
 A UI primitive should:
 
@@ -93,17 +107,24 @@ A UI primitive should:
 - own its established classes and interaction states;
 - accept `className` when consumers need layout-level extension;
 - avoid importing feature metadata or calling feature APIs;
-- remain usable by more than one section or feature.
+- remain usable by more than one feature.
 
 ### 3.2 Feature folders
 
-Use `components/schedule`, `components/settings`, and `components/notifications` for components whose meaning and props belong to one feature. These components may compose shared UI primitives, but they should not duplicate primitive markup.
+Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`Camera`, `Schedule`, `Motor`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `Camera.js` or `Schedule.js`. Its subcomponents live in `components/` and use direct PascalCase names such as `ModeCard.js`, never redundant feature prefixes.
 
-Create a new feature folder when multiple components share one domain and keeping them beside an unrelated section would obscure ownership.
+Use these feature-internal destinations:
 
-### 3.3 Sections
+- `components/` for feature-only JSX components;
+- `hooks/` for feature-only client state/lifecycle;
+- `<feature>Config.js` for constants, metadata, option lists, and defaults only;
+- `lib/*Utils.js` for deterministic parsing, formatting, validation, serialization, or API helpers.
 
-Files in `components/sections` are page-level compositions. A section may select feature data, invoke hooks passed from its parent, arrange feature components, and display loading/error/empty states. It should not contain:
+Do not put feature UI under `src/components`, and do not put generic UI primitives into a feature just because that feature was its first consumer. Create a feature folder when multiple files share one domain and keeping them globally would obscure ownership.
+
+### 3.3 Naming and entry components
+
+Do not use `section-`, `schedule-`, `camera-`, or similar redundant file prefixes. React component filenames are PascalCase. Utilities and configuration use descriptive camelCase names such as `scheduleConfig.js` and `scheduleUtils.js`. A feature entry component may select feature data, invoke hooks passed from its parent, arrange feature components, and display loading/error/empty states. It should not contain:
 
 - a locally defined reusable card or control;
 - a long option/configuration registry;
@@ -112,20 +133,17 @@ Files in `components/sections` are page-level compositions. A section may select
 - a reusable effect or event subscription;
 - duplicated formatting helpers.
 
-### 3.4 Hooks and libraries
+### 3.4 Shared hooks and libraries
 
-Use `hooks` for reusable client lifecycles and state machines such as notifications, WebSocket connections, and settings-panel state.
+Use root `hooks` only for reusable client lifecycles and state machines genuinely needed across feature boundaries, such as `usePhytoSocket`, `useSettings`, and `useElapsedSeconds`. Keep a hook inside its feature when it has one feature owner.
 
-Use `lib` for deterministic modules such as:
+Use root `lib` only for cross-feature deterministic/server modules such as:
 
-- schedule defaults, mode metadata, parsing, validation, and payload construction;
-- settings schema and transformations;
 - date, duration, value, or status formatting;
-- camera normalization;
 - request and BFF helpers;
 - authenticated session helpers.
 
-Pure code belongs in `lib` even if it currently has one caller when it represents a domain rule that should be independently testable.
+Feature-specific pure code belongs in that feature's `lib/`, even when it currently has one caller. A feature config file must never contain algorithms; pure code belongs in its `lib/*Utils.js` file.
 
 ## 4. Design foundations
 
@@ -311,7 +329,7 @@ Avoid nesting multiple `InnerPanel` layers solely for visual decoration. A neste
 Always import:
 
 ```jsx
-import StatusCard from "@/components/ui/status-card";
+import StatusCard from "@/components/cards/StatusCard";
 ```
 
 Canonical use:
@@ -330,13 +348,13 @@ Its semantic regions are fixed:
 - `content`: the primary status message/value, centered and visually dominant;
 - `note`: a short denominator, unit, total, or supporting status at the lower right.
 
-The live component is a compact `article` with `rounded-xl`, `p-3`, and no descriptive rail. Do not reproduce its markup inside `section-experiment.js` or another feature. If a generally useful capability is missing, extend the shared component without changing existing consumers unnecessarily.
+The live component is a compact `article` with `rounded-xl`, `p-3`, and no descriptive rail. Do not reproduce its markup inside a feature. If a generally useful capability is missing, extend the shared component without changing existing consumers unnecessarily.
 
 For a group of status cards, use an explicit equal-width grid such as `grid-cols-3`; never use content-sized implicit columns such as `grid-flow-col`. Preserve the compact side-by-side presentation when space allows, and add responsive stacking only when content genuinely cannot fit. Each card's content region must remain `min-w-0` and centered so long status text wraps inside its fixed column rather than changing card widths.
 
 ### 6.4 `ActionRow`
 
-Use `ActionRow` from `components/ui/action-row.js` for an action-button group placed at the bottom of a form, settings surface, or content card. It centrally owns this layout:
+Use `ActionRow` from `components/actions/ActionRow.js` for an action-button group placed at the bottom of a form, settings surface, or content card. It centrally owns this layout:
 
 ```text
 place-self-end flex flex-wrap items-center pt-2 gap-2
@@ -405,7 +423,7 @@ Do not manually rebuild these variants in feature files.
 
 ### 6.7 Inputs, fields, and number steppers
 
-Use `TextInput`, `NumericInput`, `DurationInput`, and `SelectInput` from `components/ui/input.js` for labeled controls. `components/ui/field.js` owns only the shared `FieldFrame` surface.
+Use `TextInput`, `NumericInput`, `DurationInput`, and `SelectInput` from `components/inputs/Input.js` for labeled controls. `components/fields/FieldFrame.js` owns only the shared `FieldFrame` surface.
 
 The established field structure uses:
 
@@ -424,7 +442,7 @@ Provide stable, feature-prefixed IDs. Repeated schedule-mode fields must incorpo
 
 Do not use browser-native number spinners as a visual substitute for the shared number stepper.
 
-Use `DurationInput` for every user-editable duration or interval. It composes the shared `FieldFrame`, presents four linked inputs—days, hours, minutes, and seconds—as one continuous four-column grid. Internal cells remove their duplicate left borders so they sit flush without overlap or overflow, then returns its value in the caller's declared `unit` (`minutes`, `seconds`, or `milliseconds`). Keep API payloads and runtime-setting units unchanged; `durationParts` and `durationValue` in `lib/duration.js` own this pure conversion at the UI boundary.
+Use `DurationInput` for every user-editable duration or interval. It composes the shared `FieldFrame`, presents four linked inputs—days, hours, minutes, and seconds—as one continuous four-column grid. Internal cells remove their duplicate left borders so they sit flush without overlap or overflow, then returns its value in the caller's declared `unit` (`minutes`, `seconds`, or `milliseconds`). Keep API payloads and runtime-setting units unchanged; `durationParts` and `durationValue` in `lib/durationUtils.js` own this pure conversion at the UI boundary.
 
 ### 6.8 `SelectMenu`
 
@@ -491,7 +509,7 @@ The gear rotation is an established exception to the general no-transform hover 
 
 ### 6.12 Status pills
 
-`StatusPill` is exported from `components/ui/panel.js`. It is a small rounded-full label with a current-color status dot.
+`StatusPill` is exported from `components/panels/Panel.js`. It is a small rounded-full label with a current-color status dot.
 
 Use tones semantically:
 
@@ -506,7 +524,7 @@ Do not use a status pill where the information needs the title/content/note stru
 
 All transient application messages should flow through the shared notification state and the bottom-right toast/history interface. Do not recreate a separate "近期訊息" panel inside a dashboard section.
 
-Notification UI belongs in `components/notifications`; notification state belongs in `hooks/use-notifications.js`; application placement belongs in `toast-viewport.js`.
+Notification UI belongs in `features/Notifications`; notification state belongs in `features/Notifications/hooks/useNotifications.js`; application placement belongs in `features/Notifications/ToastViewport.js`.
 
 Use consistent tone mapping:
 
@@ -525,20 +543,22 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 ### 7.1 Dashboard
 
-`dashboard.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings-panel behavior, and section placement. Keep feature-specific markup and transformations out of it.
+`features/Dashboard/Dashboard.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings disclosure state, and feature placement. Keep feature-specific markup and transformations out of it.
 
-`dashboard-header.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
+`features/Dashboard/components/Header.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
 The schedule feature is split by responsibility:
 
-- `schedule-common-controls.js`: total duration, start angle, end angle, execution step, and angle tolerance shared by all modes;
-- `schedule-modes.js`: list composition and add/remove behavior;
-- `schedule-mode-card.js`: one mode container and its controls;
-- `schedule-mode-fields.js`: mode-specific input selection;
-- `schedule-status-cards.js`: compact execution status presentation, including the live local clock shown with elapsed duration;
-- `lib/schedule.js`: defaults, metadata, calculations, validation, normalization, and payload construction.
+- `Schedule.js`: feature entry and execution controls;
+- `components/CommonControls.js`: total duration, start angle, end angle, execution step, and angle tolerance shared by all modes;
+- `components/Modes.js`: list composition and add/remove behavior;
+- `components/ModeCard.js`: one mode container and its controls;
+- `components/ModeFields.js`: mode-specific input selection;
+- `components/StatusCards.js`: compact execution status presentation, including the live local clock shown with elapsed duration;
+- `scheduleConfig.js`: defaults and stable mode/status metadata only;
+- `lib/scheduleUtils.js`: mode lookup, validation, normalization, and payload construction.
 
 Multiple modes may participate in one schedule. Keep each mode instance independently identifiable, and keep output/logging concepts distinguishable by mode. Shared parameters belong above the mode list rather than repeated within every mode.
 
@@ -548,22 +568,24 @@ Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic
 
 ### 7.3 Settings
 
-`settings-panel.js` composes the panel and selection state. Reusable settings presentation belongs in `components/settings`; schema/options/transformation belong in `lib/settings.js`; client panel behavior belongs in `use-settings-panel.js`.
+`components/panels/SettingPanel.js` is only the composed disclosure/container surface. It must not branch on a settings group, fetch data, own field layouts, or contain camera-specific markup. `features/Settings/Settings.js` owns the generic settings editor; its config, field components, and utilities remain inside the Settings feature.
+
+`features/Camera/components/Settings.js` is an independent Camera feature component. It owns the camera-only layout: no repeated camera title, an enabled toggle across the camera column, and remaining camera inputs in a responsive grid of at most three columns. Camera settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
 
 Dashboard settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
 
-`SettingsSection` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
+`features/Settings/components/Section.js` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
 
 Do not redefine each setting field in the panel file. Preserve one authoritative control for an action/status rather than allowing separate settings and main-section controls to diverge.
 
 ### 7.4 Cameras, motor, sessions, and status
 
-Section files may arrange their domain data and actions but should reuse:
+Feature entry components may arrange their domain data and actions but should reuse:
 
 - `Panel`/`PanelHeader` for section framing;
 - `InnerPanel` for grouped device/session content;
 - `Button`, fields, pills, and toggles for controls;
-- pure helpers from `lib` for normalization and display values;
+- pure helpers from the owning feature's `lib/` or root `lib/` only when shared;
 - the shared notification channel for results and errors.
 
 Motor and capture actions must have one authoritative activation point. The `控制` panel owns simple direct motor actions: holding torque, moving to a target angle, setting/returning to origin, and stopping. Other locations may show state, but must not create independent controls with conflicting state. Disable and apply grayscale to this direct-control group while a schedule is running, paused, or stopping.
@@ -778,11 +800,13 @@ Choose the destination by meaning:
 
 | Extracted item                      | Destination              |
 | ----------------------------------- | ------------------------ |
-| Cross-feature visual primitive      | `components/ui`        |
-| Feature-only component              | `components/<feature>` |
-| Page-level feature composition      | `components/sections`  |
-| Reusable state/effect lifecycle     | `hooks`                |
-| Pure rule/helper/schema/formatter   | `lib`                  |
+| Cross-feature visual primitive/frame/container | `components/<role>` |
+| Feature entry or feature-only component | `features/<Feature>/` or `features/<Feature>/components/` |
+| Feature-only state/effect lifecycle | `features/<Feature>/hooks/` |
+| Cross-feature state/effect lifecycle | `hooks/` |
+| Feature config constants | `features/<Feature>/<feature>Config.js` |
+| Feature parsing/validation/serialization/API helper | `features/<Feature>/lib/*Utils.js` |
+| Cross-feature pure/server utility | `lib/` |
 | Server mutation with form semantics | `app/actions`          |
 | Same-origin backend proxy endpoint  | `app/api`              |
 
@@ -795,7 +819,7 @@ Do not introduce:
 - local copies of `StatusCard`, `Button`, field, toggle, tooltip, panel, or settings-gear markup;
 - locally restated bottom action-row layouts instead of the shared `ActionRow`;
 - locally rebuilt small title/description groups instead of the shared `SubsectionHeader`;
-- feature components or helper methods nested inside a large section without a strong locality reason;
+- feature components or helper methods nested inside a large feature entry component without a strong locality reason;
 - multiple independent controls for the same motor, capture, or schedule action;
 - a second recent-message list outside the shared notification history;
 - description bars above status values;
