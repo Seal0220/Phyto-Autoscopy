@@ -81,7 +81,6 @@ export default function ScheduleModes({
         description="共四種擷取模式，每一模式將獨立產生紀錄檔。"
       >
         <Button
-          className="gap-2"
           onClick={addMode}
           disabled={!canEdit || schedule.modes.length >= 20}
         >

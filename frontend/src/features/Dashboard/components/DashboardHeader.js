@@ -1,7 +1,12 @@
+import {
+  FiAlertOctagon,
+  FiLogOut,
+} from "react-icons/fi";
 import { PiPlantFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import NavLink from "@/components/navigation/NavLink";
+import { StatusPill } from "@/components/panels/Panel";
 
 const NAV_ITEMS = [
   ["image-preview", "影像預覽"],
@@ -12,7 +17,6 @@ const NAV_ITEMS = [
 ];
 
 export default function DashboardHeader({
-  actor,
   isConnected,
   emergencyStopping,
   onEmergencyStop,
@@ -36,9 +40,33 @@ export default function DashboardHeader({
         {NAV_ITEMS.map(([id, label]) => <NavLink href={`#${id}`} key={id}>{label}</NavLink>)}
       </nav>
       <div className="col-start-3 flex min-w-0 items-center justify-end gap-2 max-[980px]:col-start-2 max-[980px]:row-start-1">
-        <span className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-black max-[720px]:hidden ${isConnected ? "border-emerald-200/60 bg-emerald-500/15 text-emerald-200" : "border-amber-200/60 bg-amber-500/15 text-amber-200"}`}>{isConnected ? "即時連線已建立" : "即時連線中"}</span>
-        <Button className="min-h-9 px-3 text-xs" variant="danger" disabled={!isConnected || emergencyStopping} onClick={onEmergencyStop}>緊急停止</Button>
-        <Button className="min-h-9 px-2 text-xs" variant="ghost" onClick={onLogout}>登出 {actor}</Button>
+        <div className="max-[720px]:hidden">
+          <StatusPill tone={isConnected ? "success" : "warning"}>
+            {isConnected ? "即時連線已建立" : "即時連線中"}
+          </StatusPill>
+        </div>
+        <Button
+          className="min-h-9 px-3 text-xs"
+          variant="danger"
+          disabled={!isConnected || emergencyStopping}
+          onClick={onEmergencyStop}
+        >
+          <FiAlertOctagon
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          緊急停止
+        </Button>
+        <Button
+          className="min-h-9 px-3 text-xs"
+          onClick={onLogout}
+        >
+          <FiLogOut
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          登出
+        </Button>
       </div>
     </aside>
   );

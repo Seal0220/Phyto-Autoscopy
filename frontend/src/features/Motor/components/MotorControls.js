@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import {
+  FiCrosshair,
+  FiNavigation,
+  FiRotateCcw,
+  FiSquare,
+} from "react-icons/fi";
 
-import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import { NumericInput } from "@/components/inputs/Input";
 import { ToggleRow } from "@/components/inputs/Toggle";
@@ -52,12 +57,20 @@ export default function MotorControls({
             disabled={controlsDisabled}
             onClick={() => void onRunAction("motor.set_origin", {}, "已設定馬達原點。")}
           >
+            <FiCrosshair
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
             設為原點
           </Button>
           <Button
             disabled={controlsDisabled}
             onClick={() => void onRunAction("motor.return_origin", {}, "馬達正在回到原點。")}
           >
+            <FiRotateCcw
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
             回到原點
           </Button>
           <Button
@@ -65,6 +78,10 @@ export default function MotorControls({
             disabled={controlsDisabled}
             onClick={() => void onRunAction("motor.stop", {}, "馬達已停止。")}
           >
+            <FiSquare
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
             停止馬達
           </Button>
         </div>
@@ -84,6 +101,10 @@ export default function MotorControls({
             disabled={controlsDisabled || !targetValid}
             onClick={moveToTarget}
           >
+            <FiNavigation
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
             轉到角度
           </Button>
           <NumericInput

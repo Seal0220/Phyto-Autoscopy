@@ -25,7 +25,7 @@
       "device_index": 2,
       "width": 1280,
       "height": 960,
-      "preview_fps": 5,
+      "preview_fps": 3,
       "capture_fps": 10,
       "jpeg_quality": 95,
       "enabled": true

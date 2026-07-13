@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.state import AppContext, get_context
 from app.models.camera_models import CaptureResult
+from app.services.schedule_lock import ensure_manual_changes_allowed
 
 router = APIRouter(prefix="/api/capture", tags=["capture"])
 
@@ -22,6 +23,7 @@ def rotation_cycle(
     request: RotationCycleRequest,
     context: AppContext = Depends(get_context),
 ) -> list[CaptureResult]:
+    ensure_manual_changes_allowed(context)
     return context.rotation_service.capture_cycle(
         session_id=request.session_id,
         cycle_id=request.cycle_id,

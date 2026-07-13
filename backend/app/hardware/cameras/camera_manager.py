@@ -28,6 +28,8 @@ class CameraManagerInterface(Protocol):
 
     def reconnect(self, camera_id: str) -> CameraStatus: ...
 
+    def reconnect_all(self) -> list[CameraStatus]: ...
+
     def close_all(self) -> None: ...
 
 
@@ -119,6 +121,10 @@ class OpenCVCameraManager:
     def reconnect(self, camera_id: str) -> CameraStatus:
         self.scan()
         return self.get_status(camera_id)
+
+    def reconnect_all(self) -> list[CameraStatus]:
+        self.scan()
+        return self.get_statuses()
 
     def close_all(self) -> None:
         self._connected = {camera_id: False for camera_id in self.registry.roles()}

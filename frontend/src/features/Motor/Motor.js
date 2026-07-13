@@ -15,7 +15,7 @@ export default function Motor({
   onRunAction,
 }) {
   return (
-    <Panel id="motor" className="min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]" aria-label="控制">
+    <Panel id="motor" className="min-[981px]:col-start-1 min-[981px]:row-start-4 scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]" aria-label="控制">
       <PanelHeader
         title="控制"
         action={<SettingsGear label="馬達" open={open} onClick={onToggle} />}

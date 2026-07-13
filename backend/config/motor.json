@@ -14,8 +14,6 @@
     "minimum_angle_deg": 0.0,
     "maximum_angle_deg": 360.0,
     "movement_timeout_seconds": 180,
-    "stabilization_delay_ms": 800,
-    "return_to_origin_after_cycle": true,
-    "disengage_after_cycle": false
+    "stabilization_delay_ms": 800
   }
 }

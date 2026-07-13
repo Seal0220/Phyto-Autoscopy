@@ -95,6 +95,7 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                     "rotation_end_deg": 15,
                     "rotation_step_deg": 15,
                     "stabilization_delay_ms": 0,
+                    "capture_on_return": True,
                 }
             }
         ),

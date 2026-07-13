@@ -25,6 +25,7 @@ This document records the design language and code organization actually used by
 Inspect the live implementation before editing. The most important visual sources of truth are:
 
 - `frontend/src/app/globals.css`
+- `frontend/src/app/icon.svg`
 - `frontend/src/app/layout.js`
 - `frontend/src/components/panels/Panel.js`
 - `frontend/src/components/panels/InnerPanel.js`
@@ -150,6 +151,8 @@ Feature-specific pure code belongs in that feature's `lib/`, even when it curren
 ### 4.1 Overall visual language
 
 The interface is a dense, dark, near-black green control dashboard with translucent glass-like surfaces. It should feel technical and calm, not decorative.
+
+The application favicon in `app/icon.svg` mirrors the header's `PiPlantFill` mark: a light emerald plant on a deep green rounded surface with a subtle emerald border. Keep the favicon and header mark visually aligned when the application identity changes.
 
 Core principles:
 
@@ -412,12 +415,15 @@ Established variants:
 Base behavior:
 
 - minimum height 40px;
+- `gap-2` between composed icon and text content;
 - 12px radius;
 - border, horizontal padding 16px and vertical padding 8px;
 - `text-sm font-extrabold`;
 - 150ms transitions limited to background, border, color, and opacity;
 - visible emerald focus outline;
 - native disabled state with reduced opacity and non-interactive cursor.
+
+Every standalone text action button includes a leading semantic `react-icons` icon. Use a 16px (`size-4`) non-shrinking icon for ordinary buttons and 14px (`size-3.5`) for compact text-xs actions, with `aria-hidden="true"` because the visible button text supplies the accessible name. Keep existing icon-only controls such as settings, delete, notification, fullscreen, select, and stepper actions icon-only with descriptive `aria-label`; do not add a second icon to them. Toggles, select options, navigation links, and status pills are not standalone action buttons and do not inherit this rule.
 
 Do not manually rebuild these variants in feature files.
 
@@ -558,11 +564,15 @@ The schedule feature is split by responsibility:
 - `components/ScheduleModes.js`: list composition and add/remove behavior;
 - `components/ScheduleModeCard.js`: one mode container and its controls;
 - `components/ScheduleModeFields.js`: mode-specific input selection;
-- `components/ScheduleStatusCards.js`: compact execution status presentation, including the live local clock shown with elapsed duration;
+- `components/ScheduleRuntimeStatus.js`: independent top-level `運行狀態` panel rendered immediately before the schedule panel, with four compact status cards for `排程狀態`, `排程執行時間`, `排程`, and `目前角度`;
 - `scheduleConfig.js`: defaults and stable mode/status metadata only;
 - `lib/scheduleUtils.js`: mode lookup, validation, normalization, and payload construction.
 
 Multiple modes may participate in one schedule. Keep each mode instance independently identifiable, and keep output/logging concepts distinguishable by mode. Shared parameters belong above the mode list rather than repeated within every mode.
+
+`Schedule.js` emits the `運行狀態` and `排程` panels as sibling dashboard grid items so both can share the same schedule form state without duplicating it in `Dashboard`. Keep runtime cards out of the schedule form. The runtime panel contains the equal-width status-card grid directly beneath its `PanelHeader`, without a description block or extra nested surface. Use the live motor command position for `目前角度`, falling back to the experiment angle only when motor status is unavailable.
+
+Every schedule cycle reaches the shared end angle and then returns to the `0°` origin before the next cycle. `往返皆擷取` (`capture_on_return`) selects how that return is performed: when disabled, reaching the end angle is followed by a direct return to the origin with no return-path capture evaluation; when enabled, the motor returns step by step with the same forward movement and capture configuration, excluding the duplicated end point. Reset angle-target completion at the direction change so each target may be captured once in the forward direction and once in the return direction; time-interval modes continue evaluating on the return path only when this option is enabled. Record `motion_direction` in every mode log so the two passes remain distinguishable. Do not add a per-cycle motor-release setting because the motor must remain engaged between cycles. The separate `排程結束後回到原點` option is applied once when the whole schedule completes, stops, or fails so an interrupted partial cycle can still return to `0°`.
 
 The `通用配置` header has a right-side `預設` button through `SubsectionHeader` children. It restores only `SCHEDULE_COMMON_DEFAULTS`; existing capture modes remain intact.
 
@@ -573,6 +583,10 @@ Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic
 `components/panels/SettingPanel.js` is only the composed disclosure/container surface. It owns the shared `ActionRow` placement through its `footer` slot, with `px-6 pb-6` as the default footer spacing, but it must not branch on a settings group, fetch data, own field layouts, or contain feature-specific markup. `features/Settings/Settings.js` owns the generic settings editor; its config, field components, and utilities remain inside the Settings feature.
 
 `features/ImagePreview/components/ImagePreviewSettings.js` is an independent ImagePreview feature component. It owns the image-preview-only layout: no repeated camera title, an enabled toggle across each camera column, and remaining inputs in a responsive grid of at most three columns. Image preview settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
+
+The ImagePreview panel header keeps its actions in this order: `擷取全部`, `重新連線全部`, then the settings gear. `擷取全部` remains unavailable while a schedule is active; `重新連線全部` uses the single `camera.reconnect_all` command and remains available during a schedule, matching individual camera reconnection. Let the action group wrap on narrow screens instead of overflowing the panel header.
+
+Each image preview places its camera name over the upper center of the image instead of repeating it in the footer. The name uses a compact translucent bordered surface with square top corners and `rounded-b-xl` lower corners. An icon-only enlarge action remains at the lower right of the image. `features/ImagePreview/components/ImagePreviewFullscreen.js` owns the full-viewport dialog and renders it through a body portal so panel overflow and stacking contexts cannot clip it. Opening and closing use 400ms opacity and size transitions with `motion-reduce` support. Preserve background-click and Escape dismissal, body-scroll locking, a visible close action, and descriptive Traditional Chinese accessible labels.
 
 Dashboard settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
 

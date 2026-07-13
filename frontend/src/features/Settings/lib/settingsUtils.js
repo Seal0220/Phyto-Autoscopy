@@ -91,9 +91,7 @@ function sectionFor(
   const key = path.at(-1);
 
   if (group === "motor") {
-    return ["return_to_origin_after_cycle", "disengage_after_cycle"].includes(key)
-      ? "behavior"
-      : "movement";
+    return "movement";
   }
 
   if (group === "experiment") {

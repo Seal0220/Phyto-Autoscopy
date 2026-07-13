@@ -9,5 +9,5 @@ export default async function HomePage() {
   if (!session) {
     return <LoginForm />;
   }
-  return <Dashboard actor={session.actor} />;
+  return <Dashboard />;
 }

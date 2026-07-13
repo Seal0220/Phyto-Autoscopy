@@ -34,7 +34,6 @@ export default function ScheduleCommonControls({
         description="所有模式將共用相同控制配置。"
       >
         <Button
-          className="gap-2"
           onClick={resetCommonControls}
         >
           <FiRotateCcw

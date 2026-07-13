@@ -127,6 +127,11 @@ class ExperimentService:
                 if request.angle_tolerance_deg is None
                 else request.angle_tolerance_deg
             ),
+            capture_on_return=(
+                defaults.capture_on_return
+                if request.capture_on_return is None
+                else request.capture_on_return
+            ),
             modes=modes,
         )
         motor = self.settings.motor
@@ -198,11 +203,14 @@ class ExperimentService:
             self.duration_seconds = plan.duration_seconds
             self.current_angle_deg = None
             self.current_step_index = 0
-            self.total_steps = len(self.rotation_service.angle_sequence(
-                plan.rotation_start_deg,
-                plan.rotation_end_deg,
-                plan.rotation_step_deg,
-            ))
+            self.total_steps = len(
+                self.rotation_service.schedule_capture_sequence(
+                    plan.rotation_start_deg,
+                    plan.rotation_end_deg,
+                    plan.rotation_step_deg,
+                    plan.capture_on_return,
+                )
+            )
             self._runtimes = runtimes
             self._stop_event.clear()
             self._pause_event.clear()
@@ -310,6 +318,7 @@ class ExperimentService:
         elapsed_seconds: float,
         commanded_angle: float,
         actual_angle: float,
+        motion_direction: str,
         camera_ids: list[str],
     ) -> None:
         for runtime, _, _ in due_modes:
@@ -352,6 +361,7 @@ class ExperimentService:
                     "mode_id": runtime.mode.id,
                     "mode_type": runtime.mode.type,
                     "cycle_id": cycle_id,
+                    "motion_direction": motion_direction,
                     "capture_index": runtime.capture_index,
                     "elapsed_seconds": round(elapsed_seconds, 3),
                     "trigger_value": trigger_value,
@@ -386,10 +396,11 @@ class ExperimentService:
         try:
             camera_ids = self._selected_cameras()
             self.motor_controller.engage()
-            angles = self.rotation_service.angle_sequence(
+            cycle_steps = self.rotation_service.schedule_capture_sequence(
                 plan.rotation_start_deg,
                 plan.rotation_end_deg,
                 plan.rotation_step_deg,
+                plan.capture_on_return,
             )
             cycle_id = 0
 
@@ -397,15 +408,25 @@ class ExperimentService:
                 cycle_id += 1
                 for runtime in runtimes:
                     runtime.captured_targets.clear()
+                previous_direction: str | None = None
                 with self._lock:
                     self.cycle_count = cycle_id
 
-                for step_index, commanded_angle in enumerate(angles, start=1):
+                for step_index, (commanded_angle, motion_direction) in enumerate(
+                    cycle_steps,
+                    start=1,
+                ):
                     if self._stop_event.is_set():
                         break
                     paused_seconds += self._wait_while_paused()
                     if self._stop_event.is_set():
                         break
+
+                    if motion_direction != previous_direction:
+                        if motion_direction == "return":
+                            for runtime in runtimes:
+                                runtime.captured_targets.clear()
+                        previous_direction = motion_direction
 
                     elapsed_seconds = time.monotonic() - started_at - paused_seconds
                     with self._lock:
@@ -447,8 +468,13 @@ class ExperimentService:
                             elapsed_seconds,
                             commanded_angle,
                             actual_angle,
+                            motion_direction,
                             camera_ids,
                         )
+                else:
+                    self.motor_controller.return_origin()
+                    with self._lock:
+                        self.current_angle_deg = 0.0
 
                 elapsed_seconds = time.monotonic() - started_at - paused_seconds
                 if elapsed_seconds >= duration_seconds:
@@ -467,12 +493,6 @@ class ExperimentService:
                     self.motor_controller.return_origin()
             except Exception:
                 logger.exception("Failed to return motor to origin after schedule")
-            try:
-                if self.settings.motor.disengage_after_cycle:
-                    self.motor_controller.disengage()
-            except Exception:
-                logger.exception("Failed to disengage motor after schedule")
-
             self.sessions.update_status(session_id, final_status)
             with self._lock:
                 self.elapsed_seconds = min(

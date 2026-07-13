@@ -1,3 +1,8 @@
+import {
+  FiCamera,
+  FiRefreshCw,
+} from "react-icons/fi";
+
 import Button from "@/components/buttons/Button";
 import {
   Panel,
@@ -7,6 +12,7 @@ import {
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 
+import ImagePreviewFullscreen from "./components/ImagePreviewFullscreen";
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
 export default function ImagePreview({
@@ -28,13 +34,31 @@ export default function ImagePreview({
       <PanelHeader
         title="影像預覽"
         action={(
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full">
             <Button
               variant="primary"
               disabled={!isConnected || scheduleActive || busyAction === "camera.capture_all"}
               onClick={() => void onRunAction("camera.capture_all", {}, "已擷取全部影像。")}
             >
-              擷取全部影像
+              <FiCamera
+                className="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              擷取全部
+            </Button>
+            <Button
+              disabled={!isConnected || busyAction === "camera.reconnect_all"}
+              onClick={() => void onRunAction(
+                "camera.reconnect_all",
+                {},
+                "已要求重新連線全部相機。",
+              )}
+            >
+              <FiRefreshCw
+                className="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              重新連線全部
             </Button>
             <SettingsGear
               label="影像預覽"
@@ -64,6 +88,16 @@ export default function ImagePreview({
                   src={`/api/cameras/${imagePreviewId}/stream`}
                   alt={`${meta.label} 即時預覽`}
                 />
+                <span
+                  className="absolute top-2 left-1/2 z-10 max-w-[calc(100%_-_4rem)] -translate-x-1/2 overflow-hidden rounded-t-none rounded-b-xl border border-white/15 bg-[#07130f]/80 px-4 py-2 text-center text-sm font-black text-white text-ellipsis whitespace-nowrap shadow-lg backdrop-blur-xl"
+                  title={meta.device}
+                >
+                  {meta.label}
+                </span>
+                <ImagePreviewFullscreen
+                  imagePreviewId={imagePreviewId}
+                  label={meta.label}
+                />
               </div>
               <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.035] px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
@@ -73,12 +107,6 @@ export default function ImagePreview({
                   <StatusPill tone={connected ? "success" : "warning"}>
                     {connected ? "已連線" : "離線"}
                   </StatusPill>
-                  <span
-                    className="min-w-0 flex-1 overflow-hidden text-xs font-extrabold text-white text-ellipsis whitespace-nowrap"
-                    title={meta.device}
-                  >
-                    {meta.label}
-                  </span>
                 </div>
                 <div className="ml-auto flex shrink-0 gap-2 items-center">
                   <Button
@@ -97,6 +125,10 @@ export default function ImagePreview({
                       `${meta.label} 已擷取單張影像。`,
                     )}
                   >
+                    <FiCamera
+                      className="size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
                     擷取
                   </Button>
                   <Button
@@ -108,6 +140,10 @@ export default function ImagePreview({
                       `${meta.label} 已要求重新連線。`,
                     )}
                   >
+                    <FiRefreshCw
+                      className="size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
                     重新連線
                   </Button>
                 </div>

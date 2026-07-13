@@ -64,6 +64,13 @@ def capture_all(
     return context.capture_service.capture_all(session_id=request.session_id)
 
 
+@router.post("/reconnect-all", response_model=list[CameraStatus])
+def reconnect_all_cameras(
+    context: AppContext = Depends(get_context),
+) -> list[CameraStatus]:
+    return context.camera_manager.reconnect_all()
+
+
 @router.post("/{camera_id}/reconnect", response_model=CameraStatus)
 def reconnect_camera(camera_id: str, context: AppContext = Depends(get_context)) -> CameraStatus:
     return context.camera_manager.reconnect(camera_id)

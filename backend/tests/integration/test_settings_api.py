@@ -27,3 +27,23 @@ def test_settings_group_read_and_write_preserves_payload(tmp_path, monkeypatch) 
         reloaded = client.get("/api/settings/cameras")
         assert reloaded.status_code == 200
         assert reloaded.json()["cameras"]["top"]["preview_fps"] == 12
+
+
+def test_experiment_settings_persist_capture_on_return(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        current = client.get("/api/settings/experiment")
+        assert current.status_code == 200
+        payload = current.json()
+        assert payload["experiment"]["capture_on_return"] is True
+
+        payload["experiment"]["capture_on_return"] = False
+        updated = client.post(
+            "/api/settings/experiment",
+            json={"payload": payload},
+        )
+
+        assert updated.status_code == 200
+        reloaded = client.get("/api/settings/experiment")
+        assert reloaded.status_code == 200
+        assert reloaded.json()["experiment"]["capture_on_return"] is False

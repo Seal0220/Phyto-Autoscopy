@@ -18,7 +18,7 @@ import Status from "@/features/Status/Status";
 import usePhytoSocket from "@/hooks/usePhytoSocket";
 import { messageFromError } from "@/lib/httpUtils";
 
-export default function Dashboard({ actor }) {
+export default function Dashboard() {
   const { snapshot, connection, command } = usePhytoSocket();
   const {
     toast,
@@ -74,7 +74,6 @@ export default function Dashboard({ actor }) {
   return (
     <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
       <DashboardHeader
-        actor={actor}
         isConnected={isConnected}
         emergencyStopping={busyAction === "motor.emergency_stop"}
         onEmergencyStop={() => void runAction("motor.emergency_stop", {}, "已送出緊急停止命令。")}
@@ -92,7 +91,7 @@ export default function Dashboard({ actor }) {
           onRunAction={runAction}
           onNotify={showNotification}
         />
-        <aside className="grid min-w-0 gap-4 min-[981px]:col-start-2 min-[981px]:row-start-2 min-[981px]:row-span-3 min-[981px]:sticky min-[981px]:top-[5.65rem] min-[981px]:self-start" aria-label="狀態列">
+        <aside className="grid min-w-0 gap-4 min-[981px]:col-start-2 min-[981px]:row-start-2 min-[981px]:row-span-4 min-[981px]:sticky min-[981px]:top-[5.65rem] min-[981px]:self-start" aria-label="狀態列">
           <Status
             imagePreviewMeta={IMAGE_PREVIEW_META}
             imagePreviewById={imagePreviewById}
@@ -103,6 +102,7 @@ export default function Dashboard({ actor }) {
         </aside>
         <Schedule
           experiment={experiment}
+          motor={motor}
           isConnected={isConnected}
           busyAction={busyAction}
           scheduleActive={scheduleActive}

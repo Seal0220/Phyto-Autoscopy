@@ -15,7 +15,11 @@ export default function Button({
   return (
     <button
       type={type}
-      className={`inline-flex min-h-10 min-w-0 cursor-pointer items-center justify-center rounded-xl border px-4 py-2 text-sm font-extrabold transition-[background-color,border-color,color,opacity] duration-150 focus-visible:outline-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-45 ${VARIANTS[variant]} ${className || ""}`}
+      className={`
+        inline-flex min-h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-extrabold transition-[background-color,border-color,color,opacity] duration-150 focus-visible:outline-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-45
+        ${VARIANTS[variant]}
+        ${className || ""}
+      `}
       {...props}
     />
   );

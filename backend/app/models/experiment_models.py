@@ -56,6 +56,7 @@ class ExperimentPlan(BaseModel):
     rotation_end_deg: float
     rotation_step_deg: float = Field(gt=0)
     angle_tolerance_deg: float = Field(ge=0)
+    capture_on_return: bool
     modes: list[CaptureMode] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -87,6 +88,7 @@ class ExperimentStartRequest(BaseModel):
     rotation_end_deg: float | None = None
     rotation_step_deg: float | None = Field(default=None, gt=0)
     angle_tolerance_deg: float | None = Field(default=None, ge=0)
+    capture_on_return: bool | None = None
     modes: list[CaptureMode] = Field(default_factory=list, max_length=20)
 
 

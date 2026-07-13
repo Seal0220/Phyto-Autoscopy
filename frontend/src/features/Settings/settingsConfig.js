@@ -10,13 +10,12 @@ export const SETTINGS_CONFIG = {
       velocity_limit_deg_s: true,
       acceleration_deg_s2: true,
       movement_timeout_seconds: true,
-      return_to_origin_after_cycle: true,
-      disengage_after_cycle: true,
     },
   },
   experiment: {
     experiment: {
       stabilization_delay_ms: true,
+      capture_on_return: true,
       return_to_origin: true,
       capture_top: true,
       capture_fixed_side: true,
@@ -42,6 +41,10 @@ export const FIELD_META = {
   capture_fixed_side: {
     label: "擷取固定側視角",
   },
+  capture_on_return: {
+    label: "往返皆擷取",
+    description: "關閉時，抵達結束角度後會直接回到原點並開始下一輪；開啟時，會依正向相同的步進與擷取配置返回原點，並在回程擷取。",
+  },
   capture_interval_seconds: {
     label: "擷取間隔",
     type: "duration",
@@ -54,10 +57,6 @@ export const FIELD_META = {
   },
   capture_top: {
     label: "擷取頂視角",
-  },
-  disengage_after_cycle: {
-    label: "循環後釋放馬達",
-    description: "完成一輪擷取後解除保持扭力。",
   },
   duration_minutes: {
     label: "總時長",
@@ -80,13 +79,9 @@ export const FIELD_META = {
     className: "col-span-2",
     description: "超過時間仍未完成移動時中止命令。",
   },
-  return_to_origin_after_cycle: {
-    label: "循環後回到原點",
-    description: "完成一輪擷取後自動回到原點。",
-  },
   return_to_origin: {
     label: "排程結束後回到原點",
-    description: "整個排程完成或停止後，自動讓旋臂回到原點。",
+    description: "整個排程完成、停止或失敗後，自動讓旋臂回到原點。",
   },
   rotation_enabled: {
     label: "啟用旋轉",
@@ -141,10 +136,6 @@ export const SECTION_META = {
       description: "速度、加速度與命令逾時。",
       fieldsClassName: "grid-cols-2",
     },
-    behavior: {
-      title: "循環結束行為",
-      description: "每輪擷取完成後的自動動作。",
-    },
   },
   experiment: {
     execution: {
@@ -164,7 +155,7 @@ export const SECTION_META = {
 };
 
 export const SECTION_ORDER = {
-  motor: ["movement", "behavior"],
+  motor: ["movement"],
   experiment: ["execution", "capture"],
   logging: ["root"],
 };

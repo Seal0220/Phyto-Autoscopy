@@ -28,6 +28,7 @@ MODE_CAPTURE_LOG_FIELDS = (
     "mode_id",
     "mode_type",
     "cycle_id",
+    "motion_direction",
     "capture_index",
     "elapsed_seconds",
     "trigger_value",

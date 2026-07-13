@@ -24,6 +24,7 @@ router = APIRouter(tags=["websocket"])
 SCHEDULE_ALLOWED_MANUAL_ACTIONS = frozenset({
     "motor.emergency_stop",
     "camera.reconnect",
+    "camera.reconnect_all",
 })
 
 
@@ -88,6 +89,11 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
         ]
     if action == "camera.reconnect":
         return context.camera_manager.reconnect(payload["camera_id"]).model_dump(mode="json")
+    if action == "camera.reconnect_all":
+        return [
+            item.model_dump(mode="json")
+            for item in context.camera_manager.reconnect_all()
+        ]
 
     if action == "experiment.start":
         request = ExperimentStartRequest.model_validate(payload)

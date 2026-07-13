@@ -1,5 +1,7 @@
 "use client";
 
+import { FiSave } from "react-icons/fi";
+
 import Button from "@/components/buttons/Button";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
@@ -39,6 +41,10 @@ export default function Settings({
           onClick={() => void saveGroup()}
           disabled={!payload || saving || loading}
         >
+          <FiSave
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
           {saving ? "儲存中…" : `儲存${label}設定`}
         </Button>
       )}

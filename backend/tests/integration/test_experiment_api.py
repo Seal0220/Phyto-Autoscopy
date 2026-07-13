@@ -18,6 +18,20 @@ def test_experiment_api_creates_session(tmp_path, monkeypatch) -> None:
         payload = response.json()
         assert payload["status"] == "running"
         assert payload["session_id"].startswith("session_")
+        assert payload["total_steps"] == 3
+
+
+def test_experiment_can_disable_return_path_capture(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        response = client.post(
+            "/api/experiments/start",
+            json={"capture_on_return": False},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["total_steps"] == 2
+        assert client.post("/api/experiments/stop").status_code == 200
 
 
 def test_experiment_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) -> None:
@@ -28,6 +42,7 @@ def test_experiment_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) 
         "rotation_end_deg": 1,
         "rotation_step_deg": 1,
         "angle_tolerance_deg": 0.1,
+        "capture_on_return": True,
         "modes": [
             {"id": "seconds", "type": "seconds_interval", "interval_seconds": 60},
             {"id": "angle", "type": "angle_interval", "interval_degrees": 1},
@@ -57,10 +72,16 @@ def test_experiment_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) 
                     rows = list(csv.DictReader(handle))
             except OSError:
                 return False
-            return {row["camera_id"] for row in rows} == {
+            has_all_cameras = {row["camera_id"] for row in rows} == {
                 "top",
                 "fixed_side",
                 "rotating_arm",
+            }
+            if folder == "01_seconds_interval_seconds":
+                return has_all_cameras
+            return has_all_cameras and "return" in {
+                row["motion_direction"]
+                for row in rows
             }
 
         deadline = time.monotonic() + 8
@@ -105,6 +126,15 @@ def test_experiment_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) 
             assert all(row["actual_angle_deg"] for row in rows)
             assert all(row["image_name"] for row in rows)
             assert all(row["captured_at"] for row in rows)
+            assert {
+                row["motion_direction"]
+                for row in rows
+            }.issubset({"forward", "return"})
+            if folder != "01_seconds_interval_seconds":
+                assert {
+                    row["motion_direction"]
+                    for row in rows
+                } == {"forward", "return"}
             assert {row["camera_id"] for row in rows} == {
                 "top",
                 "fixed_side",

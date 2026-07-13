@@ -85,8 +85,6 @@ class MotorSettings(BaseModel):
     maximum_angle_deg: float = 360.0
     movement_timeout_seconds: int = 180
     stabilization_delay_ms: int = 800
-    return_to_origin_after_cycle: bool = True
-    disengage_after_cycle: bool = False
 
     @field_validator("maximum_angle_deg")
     @classmethod
@@ -114,6 +112,7 @@ class ExperimentSettings(BaseModel):
     rotation_step_deg: float = 1.0
     angle_tolerance_deg: float = 0.5
     stabilization_delay_ms: int = 800
+    capture_on_return: bool = True
     return_to_origin: bool = True
 
 

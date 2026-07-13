@@ -1,3 +1,5 @@
+import { FiRefreshCw } from "react-icons/fi";
+
 import Button from "@/components/buttons/Button";
 import { Panel, PanelHeader } from "@/components/panels/Panel";
 import SettingsGear from "@/components/panels/SettingsGear";
@@ -17,7 +19,7 @@ export default function RecordsStorage({
   return (
     <Panel
       id="records-storage"
-      className="min-[981px]:col-start-1 min-[981px]:row-start-4 [scroll-margin-top:5.6rem] max-[980px]:[scroll-margin-top:8.8rem]"
+      className="min-[981px]:col-start-1 min-[981px]:row-start-5 [scroll-margin-top:5.6rem] max-[980px]:[scroll-margin-top:8.8rem]"
       aria-label="紀錄與儲存"
     >
       <PanelHeader
@@ -28,6 +30,10 @@ export default function RecordsStorage({
               onClick={() => void onLoad()}
               disabled={loading}
             >
+              <FiRefreshCw
+                className="size-4 shrink-0"
+                aria-hidden="true"
+              />
               {loading ? "讀取中…" : "重新整理"}
             </Button>
             <SettingsGear

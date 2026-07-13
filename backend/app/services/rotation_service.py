@@ -36,6 +36,26 @@ class RotationService:
             values.append(round(end_deg, 3))
         return values
 
+    def schedule_capture_sequence(
+        self,
+        start_deg: float,
+        end_deg: float,
+        step_deg: float,
+        capture_on_return: bool,
+    ) -> list[tuple[float, str]]:
+        forward = self.angle_sequence(start_deg, end_deg, step_deg)
+        sequence = [(angle, "forward") for angle in forward]
+        if capture_on_return:
+            return_angles = list(reversed(forward[:-1]))
+            current = start_deg - step_deg
+            while current > 1e-9:
+                return_angles.append(round(current, 3))
+                current -= step_deg
+            if not return_angles or abs(return_angles[-1]) > 1e-9:
+                return_angles.append(0.0)
+            sequence.extend((angle, "return") for angle in return_angles)
+        return sequence
+
     def capture_cycle(
         self,
         session_id: str | None = None,
@@ -62,8 +82,5 @@ class RotationService:
                 )
             )
 
-        if self.settings.motor.return_to_origin_after_cycle:
-            self.motor_controller.return_origin()
-        if self.settings.motor.disengage_after_cycle:
-            self.motor_controller.disengage()
+        self.motor_controller.move_to_angle(start)
         return captures

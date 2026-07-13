@@ -14,3 +14,15 @@ def test_camera_api_lists_mock_cameras(tmp_path, monkeypatch) -> None:
         assert response.status_code == 200
         camera_ids = {item["camera_id"] for item in response.json()}
         assert camera_ids == {"top", "fixed_side", "rotating_arm"}
+
+
+def test_camera_api_reconnects_all_mock_cameras(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        response = client.post("/api/cameras/reconnect-all")
+
+        assert response.status_code == 200
+        assert {
+            item["camera_id"]
+            for item in response.json()
+        } == {"top", "fixed_side", "rotating_arm"}

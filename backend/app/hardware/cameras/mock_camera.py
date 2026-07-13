@@ -97,5 +97,8 @@ class MockCameraManager:
     def reconnect(self, camera_id: str) -> CameraStatus:
         return self.get_status(camera_id)
 
+    def reconnect_all(self) -> list[CameraStatus]:
+        return self.get_statuses()
+
     def close_all(self) -> None:
         return None

@@ -501,13 +501,13 @@ CHLOROCULUS EYE-ARM 拍照
     ↓
 抵達最大角度
     ↓
-反向返回原點
+依「往返皆擷取」設定逐步擷取返回，或直接返回原點
 ```
 
 範例：
 
 ```text
-0° → 15° → 30° → 45° → ... → 360° → 0°
+0° → 15° → 30° → 45° → ... → 360° → ... → 45° → 30° → 15° → 0°
 ```
 
 也可設定較小範圍：
@@ -564,9 +564,7 @@ CHLOROCULUS EYE-ARM 拍照
     "minimum_angle_deg": 0.0,
     "maximum_angle_deg": 360.0,
     "movement_timeout_seconds": 180,
-    "stabilization_delay_ms": 800,
-    "return_to_origin_after_cycle": true,
-    "disengage_after_cycle": false
+    "stabilization_delay_ms": 800
   }
 }
 ```
@@ -662,6 +660,7 @@ Web 介面顯示三台相機的即時畫面。
     "rotation_end_deg": 360.0,
     "rotation_step_deg": 15.0,
     "stabilization_delay_ms": 800,
+    "capture_on_return": true,
     "return_to_origin": true
   }
 }
@@ -682,7 +681,7 @@ Web 介面顯示三台相機的即時畫面。
 7. 記錄角度與時間戳。
 8. 移動到下一個角度。
 9. 重複直到完成全部角度。
-10. 返回原點。
+10. 若啟用「往返皆擷取」，依相同步進與擷取配置逐段反向擷取；否則直接返回原點。
 11. 完成該週期 Metadata 寫入。
 
 ---

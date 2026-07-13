@@ -1,5 +1,7 @@
 "use client";
 
+import { FiSave } from "react-icons/fi";
+
 import Button from "@/components/buttons/Button";
 import { TextInput } from "@/components/inputs/Input";
 import SettingPanel from "@/components/panels/SettingPanel";
@@ -39,6 +41,10 @@ export default function RecordsStorageSettings({
           onClick={() => void saveGroup()}
           disabled={!payload || saving || loading}
         >
+          <FiSave
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
           {saving ? "儲存中…" : "儲存路徑設定"}
         </Button>
       )}

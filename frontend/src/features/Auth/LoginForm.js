@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { FiLogIn } from "react-icons/fi";
 
 import { loginAction } from "@/app/actions/auth";
 import ActionRow from "@/components/actions/ActionRow";
@@ -25,7 +26,15 @@ export default function LoginForm() {
             <TextInput id="operator-password" label="操作密碼" name="password" type="password" autoComplete="current-password" required />
             {state?.error ? <p className="m-0 border-l-2 border-rose-400 pl-3 text-sm text-rose-300" role="alert">{state.error}</p> : null}
             <ActionRow>
-              <Button variant="primary" type="submit" disabled={pending}>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={pending}
+              >
+                <FiLogIn
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
                 {pending ? "驗證中…" : "進入控制台"}
               </Button>
             </ActionRow>

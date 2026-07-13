@@ -14,6 +14,7 @@
     "rotation_step_deg": 1,
     "angle_tolerance_deg": 0.5,
     "stabilization_delay_ms": 800,
+    "capture_on_return": true,
     "return_to_origin": true
   }
 }
