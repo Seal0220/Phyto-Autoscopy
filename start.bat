@@ -29,24 +29,9 @@ if /I "%~1"=="--setup" (
 )
 if /I "%~1"=="--mock" (
   set "MOCK=1"
+  set "MODE=development"
   shift
   goto parse_arguments
-)
-if /I "%~1"=="--mode" (
-  if "%~2"=="" goto usage_error
-  if /I "%~2"=="development" (
-    set "MODE=development"
-    shift
-    shift
-    goto parse_arguments
-  )
-  if /I "%~2"=="production" (
-    set "MODE=production"
-    shift
-    shift
-    goto parse_arguments
-  )
-  goto usage_error
 )
 echo Unknown argument: %~1
 goto usage_error
@@ -216,17 +201,16 @@ set "EXIT_CODE=0"
 goto finish
 
 :usage
-echo Usage: start.bat [--setup] [--mock] [--mode development^|production]
+echo Usage: start.bat [--setup] [--mock]
 echo.
 echo   --setup                Create .env and install backend and frontend dependencies.
-echo   --mock                 Start FastAPI with mock cameras and motor.
-echo   --mode development     Next dev and FastAPI reload.
-echo   --mode production      Build Next, then Next start and FastAPI without reload ^(default^).
+echo   --mock                 Run Next dev and FastAPI reload with mock hardware.
+echo   No option              Build and run the production frontend and backend.
 set "EXIT_CODE=0"
 goto finish
 
 :usage_error
-echo Usage: start.bat [--setup] [--mock] [--mode development^|production]
+echo Usage: start.bat [--setup] [--mock]
 set "EXIT_CODE=2"
 goto finish
 

@@ -34,33 +34,25 @@ FastAPI 僅提供 API，不會掛載舊有的 Jinja 頁面。所有 `/api/*` 端
 
 `--setup` 會在尚未建立時將 `.env.example` 複製為已被 Git 忽略的根目錄 `.env`，且不會覆寫既有的 `.env`。它也會建立根目錄 `.venv`、依照 `backend/requirements.txt` 安裝或同步後端 Python 相依套件，並透過 `npm install` 安裝或同步前端相依套件。設定完成後不會啟動任何服務。
 
-請替換 `.env` 中的三個私有預留值，接著執行：
+請替換 `.env` 中的三個私有預留值，接著以預設的正式模式啟動：
 
 ```bash
 .\start.bat
 ```
 
+不帶參數時固定使用正式模式，會先執行 `next build`，接著執行 `next start`，並在不啟用 reload 的情況下啟動 FastAPI。
+
 一般啟動不會自行建立環境或安裝套件；若缺少 `.env`、`.venv` 或 `frontend/node_modules`，會提示先執行 `--setup`。
 
-需要使用模擬硬體安全開發時，執行：
+需要使用模擬硬體進行安全開發時，執行：
 
 ```bash
 .\start.bat --mock
 ```
 
-預設為正式模式，會先執行 `next build`，接著執行 `next start`，並在不啟用 reload 的情況下啟動 FastAPI：
+`--mock` 就是開發模式：前端執行 `next dev`，FastAPI 使用 `uvicorn --reload`，並啟用模擬相機與馬達。
 
-```bash
-.\start.bat
-```
-
-需要使用開發模式時，請明確指定：
-
-```bash
-.\start.bat --mode development
-```
-
-開發模式會執行 `next dev`，並使用 `uvicorn --reload` 啟動 FastAPI。`start.bat` 會分別建立前端與後端終端，兩者都成功啟動後便自行結束，不會持續監控或占用第三個終端。FastAPI 與 Next.js 也不會互相啟動、停止或監控；需要停止服務時，請分別關閉其終端。
+`start.bat` 會分別建立前端與後端終端，兩者都成功啟動後便自行結束，不會持續監控或占用第三個終端。FastAPI 與 Next.js 也不會互相啟動、停止或監控；需要停止服務時，請分別關閉其終端。
 
 只需開啟：
 
