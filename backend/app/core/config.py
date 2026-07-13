@@ -5,9 +5,11 @@ import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.constants import CAMERA_ROLES
 from app.core.exceptions import ConfigError
 
 
@@ -31,6 +33,7 @@ class PathSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     captures_dir: Path = Path("data/captures")
+    snapshots_dir: Path = Path("data/snapshots")
     calibration_dir: Path = Path("data/calibration")
     database_path: Path = Path("data/database/phyto_autoscopy.sqlite3")
     logs_dir: Path = Path("data/logs")
@@ -56,11 +59,11 @@ def default_camera_configs() -> dict[str, CameraConfig]:
             device_name="CHLOROCULUS EYE-TOP",
             device_index=0,
         ),
-        "fixed_side": CameraConfig(
+        "side": CameraConfig(
             device_name="CHLOROCULUS EYE-SIDE",
             device_index=1,
         ),
-        "rotating_arm": CameraConfig(
+        "rotating": CameraConfig(
             device_name="CHLOROCULUS EYE-ARM",
             device_index=2,
         ),
@@ -95,7 +98,7 @@ class MotorSettings(BaseModel):
         return value
 
 
-class ExperimentSettings(BaseModel):
+class ScheduleSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     project_name: str = "Phyto-Autoscopy"
@@ -104,8 +107,8 @@ class ExperimentSettings(BaseModel):
     capture_interval_seconds: int = 60
     duration_minutes: int = 240
     capture_top: bool = True
-    capture_fixed_side: bool = True
-    capture_rotating_arm: bool = True
+    capture_side: bool = True
+    capture_rotating: bool = True
     rotation_enabled: bool = True
     rotation_start_deg: float = 0.0
     rotation_end_deg: float = 360.0
@@ -131,8 +134,20 @@ class AppSettings(BaseModel):
     paths: PathSettings = Field(default_factory=PathSettings)
     cameras: dict[str, CameraConfig] = Field(default_factory=default_camera_configs)
     motor: MotorSettings = Field(default_factory=MotorSettings)
-    experiment: ExperimentSettings = Field(default_factory=ExperimentSettings)
+    schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+
+    @field_validator("cameras")
+    @classmethod
+    def require_camera_roles(
+        cls,
+        value: dict[str, CameraConfig],
+    ) -> dict[str, CameraConfig]:
+        required = set(CAMERA_ROLES)
+        missing = sorted(required.difference(value))
+        if missing:
+            raise ValueError(f"缺少必要相機設定：{', '.join(missing)}")
+        return value
 
 
 def _truthy(value: str | None) -> bool:
@@ -146,10 +161,23 @@ def read_json_file(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"設定檔格式錯誤：{path}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ConfigError(f"無法讀取設定檔：{path}") from exc
 
 
 def write_json_file(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    except (OSError, TypeError, ValueError) as exc:
+        raise ConfigError(f"無法儲存設定檔：{path}") from exc
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -171,8 +199,11 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     root = get_config_dir(config_dir)
     data = read_json_file(root / "default.json")
 
-    for file_name in ("cameras.json", "motor.json", "experiments.json", "logging.json"):
+    for file_name in ("cameras.json", "motor.json"):
         data = deep_merge(data, read_json_file(root / file_name))
+
+    data = deep_merge(data, read_json_file(root / "schedule.json"))
+    data = deep_merge(data, read_json_file(root / "logging.json"))
 
     if _truthy(os.environ.get("PHYTO_AUTOSCOPY_MOCK")):
         data.setdefault("hardware", {})["mock_mode"] = True
@@ -184,7 +215,7 @@ def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | P
     file_map = {
         "cameras": "cameras.json",
         "motor": "motor.json",
-        "experiment": "experiments.json",
+        "schedule": "schedule.json",
         "logging": "logging.json",
         "default": "default.json",
     }

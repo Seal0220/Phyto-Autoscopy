@@ -3,11 +3,11 @@ export const IMAGE_PREVIEW_META = {
     label: "頂視角",
     device: "CHLOROCULUS EYE-TOP",
   },
-  fixed_side: {
+  side: {
     label: "固定側視角",
     device: "CHLOROCULUS EYE-SIDE",
   },
-  rotating_arm: {
+  rotating: {
     label: "旋臂視角",
     device: "CHLOROCULUS EYE-ARM",
   },
@@ -15,8 +15,8 @@ export const IMAGE_PREVIEW_META = {
 
 export const IMAGE_PREVIEW_ORDER = [
   "top",
-  "fixed_side",
-  "rotating_arm",
+  "side",
+  "rotating",
 ];
 
 export const IMAGE_PREVIEW_SETTINGS_CONFIG = {
@@ -30,7 +30,7 @@ export const IMAGE_PREVIEW_SETTINGS_CONFIG = {
       height: true,
       jpeg_quality: true,
     },
-    fixed_side: {
+    side: {
       enabled: true,
       device_index: true,
       preview_fps: true,
@@ -39,7 +39,7 @@ export const IMAGE_PREVIEW_SETTINGS_CONFIG = {
       height: true,
       jpeg_quality: true,
     },
-    rotating_arm: {
+    rotating: {
       enabled: true,
       device_index: true,
       preview_fps: true,
@@ -72,12 +72,12 @@ export const IMAGE_PREVIEW_FIELD_META = {
     description: "只影響即時預覽的更新頻率。",
   },
   capture_fps: {
-    label: "真實 FPS",
+    label: "擷取 FPS",
     type: "number",
     min: 1,
     max: 60,
     step: 1,
-    description: "真實 FPS 為實際擷取影像的每秒張數；實際可用上限依攝影鏡頭而定。",
+    description: "相機擷取時要求的幀率；實際可用值與上限依鏡頭及驅動而定。",
   },
   width: {
     label: "影像寬度",

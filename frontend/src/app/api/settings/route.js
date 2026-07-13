@@ -7,4 +7,4 @@ async function handler(request) {
   return proxyToBackend(request, "/api/settings");
 }
 
-export { handler as GET, handler as POST };
+export { handler as GET };

@@ -11,14 +11,20 @@ import {
   PiCornersInBold,
   PiCornersOutBold,
 } from "react-icons/pi";
+import { FiRefreshCw } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 
 const TRANSITION_DURATION_MS = 400;
 
 export default function ImagePreviewFullscreen({
-  imagePreviewId,
   label,
+  streamSource,
+  streamFailed,
+  retryScheduled,
+  onStreamLoad,
+  onStreamError,
+  onRetry,
 }) {
   const closeTimerRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -106,11 +112,32 @@ export default function ImagePreviewFullscreen({
           >
             <img
               className="block size-full object-contain"
-              src={`/api/cameras/${imagePreviewId}/stream`}
+              src={streamSource}
               alt={`${label}全螢幕即時預覽`}
+              onLoad={onStreamLoad}
+              onError={onStreamError}
             />
+            {streamFailed ? (
+              <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
+                <div className="grid justify-items-center gap-3">
+                  <p className="m-0 text-sm font-semibold text-rose-200">
+                    {retryScheduled ? "影像載入失敗，準備重新載入…" : "影像串流無法載入。"}
+                  </p>
+                  <Button
+                    className="min-h-9 px-3 text-xs"
+                    onClick={onRetry}
+                  >
+                    <FiRefreshCw
+                      className="size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    立即重新載入
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <Button
-              className="absolute top-0 right-0 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
+              className="absolute top-0 right-0 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
               aria-label={`關閉${label}全螢幕檢視`}
               title="關閉全螢幕檢視"
               onClick={closeFullscreen}

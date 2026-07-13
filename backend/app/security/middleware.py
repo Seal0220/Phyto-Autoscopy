@@ -30,7 +30,10 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
             if content_length and int(content_length) > _MAX_REQUEST_BYTES:
                 return JSONResponse(
                     status_code=413,
-                    content={"detail": "請求資料過大。"},
+                    content={
+                        "detail": "請求資料過大。",
+                        "code": "request_too_large",
+                    },
                 )
 
             principal = authenticate_bff_headers(request.headers)
@@ -38,7 +41,13 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
             rate_limit_http(principal, request.method, request.url.path)
             request.state.principal = principal
         except ValueError:
-            return JSONResponse(status_code=400, content={"detail": "請求資料長度格式錯誤。"})
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "detail": "請求資料長度格式錯誤。",
+                    "code": "invalid_content_length",
+                },
+            )
         except SecurityError as exc:
             write_audit_event(
                 actor=request.headers.get("x-phyto-actor", "unknown")[:96],
@@ -47,7 +56,13 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
                 outcome="denied",
                 detail=str(exc),
             )
-            return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "detail": str(exc),
+                    "code": "security_error",
+                },
+            )
 
         response = await call_next(request)
         response.headers.setdefault("Cache-Control", "no-store")

@@ -10,6 +10,9 @@ import { NOTIFICATION_FADE_DURATION_MS } from "@/features/Notifications/notifica
 export default function Notifications({
   toast,
   notifications = [],
+  clearing = false,
+  clearDisabled = false,
+  onClear,
   onClose,
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -61,6 +64,9 @@ export default function Notifications({
             <NotificationsHistory
               open={historyOpen}
               notifications={notifications}
+              clearing={clearing}
+              clearDisabled={clearDisabled}
+              onClear={onClear}
               onClose={() => setHistoryOpen(false)}
             />
           </div>

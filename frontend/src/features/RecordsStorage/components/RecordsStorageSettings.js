@@ -3,6 +3,7 @@
 import { FiSave } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import { TextInput } from "@/components/inputs/Input";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
@@ -20,6 +21,8 @@ export default function RecordsStorageSettings({
     loading,
     saving,
     loadFailed,
+    loadError,
+    loadGroup,
     updateField,
     saveGroup,
   } = useSettings({
@@ -34,7 +37,7 @@ export default function RecordsStorageSettings({
     <SettingPanel
       label="儲存"
       open={open}
-      locked={locked}
+      locked={locked || saving}
       footer={(
         <Button
           variant="primary"
@@ -54,6 +57,13 @@ export default function RecordsStorageSettings({
           讀取儲存設定中…
         </p>
       ) : null}
+      {!loading && !payload && loadFailed ? (
+        <RetryMessage
+          message={loadError || "讀取儲存設定失敗。"}
+          onRetry={() => void loadGroup()}
+          retrying={loading}
+        />
+      ) : null}
       {!loading && !payload && !loadFailed ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
           尚無可編輯的儲存設定。
@@ -66,7 +76,10 @@ export default function RecordsStorageSettings({
               id={`storage-${field.key}`}
               key={field.key}
               label={field.label}
-              value={paths[field.key] ?? ""}
+              value={
+                paths[field.key]
+                ?? (field.key === "captures_dir" ? paths.records_dir : "")
+              }
               onValueChange={(value) => updateField(["paths", field.key], value)}
               description={field.description}
               required

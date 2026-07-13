@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from app.core.config import AppSettings
 from app.core.exceptions import MotorSafetyError
 from app.models.camera_models import CaptureResult
 from app.services.capture_service import CaptureService
-from app.services.session_service import SessionService
+from app.services.record_service import RecordService
+
+logger = logging.getLogger(__name__)
 
 
 class RotationService:
@@ -15,12 +18,12 @@ class RotationService:
         settings: AppSettings,
         motor_controller,
         capture_service: CaptureService,
-        sessions: SessionService,
+        records: RecordService,
     ) -> None:
         self.settings = settings
         self.motor_controller = motor_controller
         self.capture_service = capture_service
-        self.sessions = sessions
+        self.records = records
 
     def angle_sequence(self, start_deg: float, end_deg: float, step_deg: float) -> list[float]:
         if step_deg <= 0:
@@ -58,29 +61,37 @@ class RotationService:
 
     def capture_cycle(
         self,
-        session_id: str | None = None,
+        record_id: str | None = None,
         cycle_id: int = 1,
         start_deg: float | None = None,
         end_deg: float | None = None,
         step_deg: float | None = None,
     ) -> list[CaptureResult]:
-        session = self.sessions.ensure_active_session() if session_id is None else self.sessions.get_session(session_id)
-        start = self.settings.experiment.rotation_start_deg if start_deg is None else start_deg
-        end = self.settings.experiment.rotation_end_deg if end_deg is None else end_deg
-        step = self.settings.experiment.rotation_step_deg if step_deg is None else step_deg
+        record = self.records.get_capture_record(record_id)
+        start = self.settings.schedule.rotation_start_deg if start_deg is None else start_deg
+        end = self.settings.schedule.rotation_end_deg if end_deg is None else end_deg
+        step = self.settings.schedule.rotation_step_deg if step_deg is None else step_deg
         captures: list[CaptureResult] = []
 
-        for angle in self.angle_sequence(start, end, step):
-            self.motor_controller.move_to_angle(angle)
-            time.sleep(self.settings.motor.stabilization_delay_ms / 1000)
-            captures.append(
-                self.capture_service.capture_camera(
-                    "rotating_arm",
-                    session_id=session.session_id,
-                    cycle_id=cycle_id,
-                    angle_deg=angle,
+        try:
+            for angle in self.angle_sequence(start, end, step):
+                self.motor_controller.move_to_angle(angle)
+                time.sleep(self.settings.motor.stabilization_delay_ms / 1000)
+                captures.append(
+                    self.capture_service.capture_camera(
+                        "rotating",
+                        record_id=record.record_id,
+                        cycle_id=cycle_id,
+                        angle_deg=angle,
+                    )
                 )
-            )
+        except Exception:
+            try:
+                if self.motor_controller.status().engaged:
+                    self.motor_controller.move_to_angle(start)
+            except Exception:
+                logger.exception("Failed to restore motor after rotation cycle error")
+            raise
 
         self.motor_controller.move_to_angle(start)
         return captures

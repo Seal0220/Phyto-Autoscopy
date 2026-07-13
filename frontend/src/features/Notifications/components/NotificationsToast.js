@@ -16,7 +16,10 @@ export default function NotificationsToast({
       role="status"
       aria-live="polite"
     >
-      <Icon className={`mt-1 size-4 shrink-0 ${meta.icon}`} aria-hidden="true" />
+      <Icon
+        className={`mt-1 size-4 shrink-0 ${meta.icon}`}
+        aria-hidden="true"
+      />
       <p className="min-w-0 flex-1 text-sm leading-6">{toast.message}</p>
       <button
         className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-neutral-400 transition-[background-color,color] duration-150 motion-reduce:transition-none hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-300"
@@ -24,7 +27,10 @@ export default function NotificationsToast({
         aria-label="關閉目前通知"
         onClick={onClose}
       >
-        <FiX className="size-4" aria-hidden="true" />
+        <FiX
+          className="size-4"
+          aria-hidden="true"
+        />
       </button>
     </div>
   );

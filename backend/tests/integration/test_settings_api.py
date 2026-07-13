@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.core.exceptions import ConfigError
 
 from .test_support import authorized_headers, write_test_config
 
@@ -22,28 +25,106 @@ def test_settings_group_read_and_write_preserves_payload(tmp_path, monkeypatch) 
 
         status = client.get("/api/cameras")
         assert status.status_code == 200
-        assert next(item for item in status.json() if item["camera_id"] == "top")["fps"] == 12
+        assert next(item for item in status.json() if item["camera_id"] == "top")["preview_fps"] == 12
 
         reloaded = client.get("/api/settings/cameras")
         assert reloaded.status_code == 200
         assert reloaded.json()["cameras"]["top"]["preview_fps"] == 12
 
 
-def test_experiment_settings_persist_capture_on_return(tmp_path, monkeypatch) -> None:
+def test_schedule_settings_persist_capture_on_return(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
     with TestClient(create_app(), headers=authorized_headers()) as client:
-        current = client.get("/api/settings/experiment")
+        current = client.get("/api/settings/schedule")
         assert current.status_code == 200
         payload = current.json()
-        assert payload["experiment"]["capture_on_return"] is True
+        assert payload["schedule"]["capture_on_return"] is True
 
-        payload["experiment"]["capture_on_return"] = False
+        payload["schedule"]["capture_on_return"] = False
         updated = client.post(
-            "/api/settings/experiment",
+            "/api/settings/schedule",
             json={"payload": payload},
         )
 
         assert updated.status_code == 200
-        reloaded = client.get("/api/settings/experiment")
+        reloaded = client.get("/api/settings/schedule")
         assert reloaded.status_code == 200
-        assert reloaded.json()["experiment"]["capture_on_return"] is False
+        assert reloaded.json()["schedule"]["capture_on_return"] is False
+
+
+def test_settings_apply_failure_restores_runtime_and_file(tmp_path, monkeypatch) -> None:
+    config_dir = write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        current = client.get("/api/settings/cameras").json()
+        original_fps = current["cameras"]["top"].get("preview_fps", 5)
+        current["cameras"]["top"]["preview_fps"] = 12
+        context = client.app.state.context
+
+        def fail_scan():
+            raise RuntimeError("private driver failure")
+
+        monkeypatch.setattr(context.camera_manager, "scan", fail_scan)
+        response = client.post(
+            "/api/settings/cameras",
+            json={"payload": current},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "套用設定失敗，已還原原設定。"
+        assert context.settings.cameras["top"].preview_fps == original_fps
+        stored = json.loads((config_dir / "cameras.json").read_text(encoding="utf-8"))
+        assert stored["cameras"]["top"].get("preview_fps", 5) == original_fps
+
+
+def test_settings_persist_failure_does_not_change_runtime(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        current = client.get("/api/settings/cameras").json()
+        original_fps = client.app.state.context.settings.cameras["top"].preview_fps
+        current["cameras"]["top"]["preview_fps"] = 12
+
+        def fail_save(*_args, **_kwargs):
+            raise ConfigError("無法儲存測試設定。")
+
+        monkeypatch.setattr(
+            "app.api.settings_routes.save_settings_group",
+            fail_save,
+        )
+        response = client.post(
+            "/api/settings/cameras",
+            json={"payload": current},
+        )
+
+        assert response.status_code == 400
+        assert client.app.state.context.settings.cameras["top"].preview_fps == original_fps
+
+
+def test_capture_root_change_preserves_old_records_and_avoids_id_collision(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        first_capture = client.post("/api/cameras/top/capture")
+        assert first_capture.status_code == 200
+        first_record_id = first_capture.json()["record_id"]
+
+        default_payload = client.get("/api/settings/default").json()
+        default_payload["paths"]["captures_dir"] = str(tmp_path / "new-captures")
+        updated = client.post(
+            "/api/settings/default",
+            json={"payload": default_payload},
+        )
+        assert updated.status_code == 200
+
+        old_detail = client.get(f"/api/records/{first_record_id}")
+        old_file = client.get(f"/api/records/{first_record_id}/record-json")
+        assert old_detail.status_code == 200
+        assert old_file.status_code == 200
+
+        second_capture = client.post("/api/cameras/top/capture")
+        assert second_capture.status_code == 200
+        assert second_capture.json()["record_id"] != first_record_id
+
+        deleted = client.delete(f"/api/records/{first_record_id}")
+        assert deleted.status_code == 200

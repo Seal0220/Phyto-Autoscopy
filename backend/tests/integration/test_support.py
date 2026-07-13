@@ -22,6 +22,10 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("PHYTO_AUTOSCOPY_CONFIG_DIR", str(config_dir))
     monkeypatch.setenv("PHYTO_AUTOSCOPY_MOCK", "1")
     monkeypatch.setenv("PHYTO_AUTOSCOPY_BFF_TOKEN", TEST_BFF_TOKEN)
+    monkeypatch.setenv(
+        "PHYTO_AUTOSCOPY_AUDIT_LOG",
+        str(data_dir / "logs" / "audit.jsonl"),
+    )
 
     (config_dir / "default.json").write_text(
         json.dumps(
@@ -35,6 +39,7 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                 "hardware": {"mock_mode": True, "camera_scan_max_index": 3},
                 "paths": {
                     "captures_dir": str(data_dir / "captures"),
+                    "snapshots_dir": str(data_dir / "snapshots"),
                     "calibration_dir": str(data_dir / "calibration"),
                     "database_path": str(data_dir / "database" / "test.sqlite3"),
                     "logs_dir": str(data_dir / "logs"),
@@ -50,11 +55,11 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
             {
                 "cameras": {
                     "top": {"device_name": "CHLOROCULUS EYE-TOP", "device_index": 0},
-                    "fixed_side": {
+                    "side": {
                         "device_name": "CHLOROCULUS EYE-SIDE",
                         "device_index": 1,
                     },
-                    "rotating_arm": {
+                    "rotating": {
                         "device_name": "CHLOROCULUS EYE-ARM",
                         "device_index": 2,
                     },
@@ -85,10 +90,10 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
         ),
         encoding="utf-8",
     )
-    (config_dir / "experiments.json").write_text(
+    (config_dir / "schedule.json").write_text(
         json.dumps(
             {
-                "experiment": {
+                "schedule": {
                     "capture_interval_seconds": 60,
                     "duration_minutes": 240,
                     "rotation_start_deg": 0,

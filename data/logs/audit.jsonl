@@ -4,3 +4,79 @@
 {"timestamp": "2026-07-12T08:22:01.081862+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
 {"timestamp": "2026-07-12T08:22:02.759321+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
 {"timestamp": "2026-07-12T08:22:02.928222+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:16.524506+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:18.385044+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:18.392574+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:19.221634+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:22.473243+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:22.573167+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:22.611043+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:22.682000+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:23:22.686013+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-13T02:23:22.697576+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:13.169615+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:13.659908+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:13.672982+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:13.749150+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:14.023894+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:15.051230+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:15.100121+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:15.159084+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T02:26:15.164629+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-13T02:26:15.175182+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:12.960276+00:00", "actor": "unknown", "role": "unknown", "action": "http:GET:/api/system/status", "outcome": "denied", "detail": "後端服務驗證失敗。"}
+{"timestamp": "2026-07-13T09:29:14.072133+00:00", "actor": "pytest-operator", "role": "viewer", "action": "http:POST:/api/motor/engage", "outcome": "denied", "detail": "目前的使用者角色沒有執行此操作的權限。"}
+{"timestamp": "2026-07-13T09:29:17.152528+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:17.157563+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:17.290668+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/cameras/reconnect-all", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:17.361024+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:17.649265+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:18.088551+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:18.094551+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-13T09:29:18.755723+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:18.876081+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:21.379686+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:21.389252+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:22.111117+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.161874+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.309727+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.315756+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.381912+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.387439+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.391957+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/set-origin", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.397481+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.402513+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/return-origin", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.471394+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/settings/cameras", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:25.548841+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/settings/experiment", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:26.846001+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:26.849156+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:26.875788+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket:motor.engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T09:29:26.880321+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket:camera.reconnect_all", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:55.782220+00:00", "actor": "unknown", "role": "unknown", "action": "http:GET:/api/system/status", "outcome": "denied", "detail": "後端服務驗證失敗。"}
+{"timestamp": "2026-07-13T10:11:55.926159+00:00", "actor": "pytest-operator", "role": "viewer", "action": "http:POST:/api/motor/engage", "outcome": "denied", "detail": "目前的使用者角色沒有執行此操作的權限。"}
+{"timestamp": "2026-07-13T10:11:55.990211+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:55.993225+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:56.112899+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/cameras/reconnect-all", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:56.167678+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:57.648007+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:57.738618+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:57.743552+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/capture/rotation-cycle", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-13T10:11:57.753440+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:57.840049+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:58.283434+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:58.292077+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:59.058321+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/start", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:11:59.638983+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/experiments/stop", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.692828+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.699356+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.740672+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.746208+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.751734+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/set-origin", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.756768+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/move", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.761768+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/motor/return-origin", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.841772+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/settings/cameras", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.939574+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/settings/experiment", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.990968+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:05.994469+00:00", "actor": "pytest-operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:06.021588+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket:motor.engage", "outcome": "ok"}
+{"timestamp": "2026-07-13T10:12:06.030136+00:00", "actor": "pytest-operator", "role": "operator", "action": "websocket:camera.reconnect_all", "outcome": "ok"}

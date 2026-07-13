@@ -94,8 +94,8 @@ function sectionFor(
     return "movement";
   }
 
-  if (group === "experiment") {
-    return ["capture_top", "capture_fixed_side", "capture_rotating_arm"].includes(key)
+  if (group === "schedule") {
+    return ["capture_top", "capture_side", "capture_rotating"].includes(key)
       ? "capture"
       : "execution";
   }

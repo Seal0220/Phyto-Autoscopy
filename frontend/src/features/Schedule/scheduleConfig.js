@@ -15,7 +15,7 @@ export const INITIAL_SCHEDULE = {
   modes: [
     {
       id: "mode-1",
-      type: "seconds_interval",
+      type: "time_interval",
       interval_seconds: "60",
     },
   ],
@@ -71,7 +71,7 @@ export const SCHEDULE_COMMON_FIELDS = [
 ];
 
 export const SCHEDULE_MODE_META = {
-  seconds_interval: {
+  time_interval: {
     label: "時間間隔擷取",
     description: "依設定時間間隔擷取一次。",
     initial: {
@@ -116,4 +116,14 @@ export const SCHEDULE_STATUS_LABELS = {
   stopped: "待命",
   completed: "已完成",
   failed: "失敗",
+};
+
+export const SCHEDULE_STATUS_TONES = {
+  idle: "neutral",
+  running: "success",
+  paused: "warning",
+  stopping: "warning",
+  stopped: "neutral",
+  completed: "success",
+  failed: "offline",
 };

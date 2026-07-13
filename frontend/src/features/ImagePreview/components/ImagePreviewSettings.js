@@ -3,6 +3,7 @@
 import { FiSave } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
 import {
@@ -22,6 +23,8 @@ export default function ImagePreviewSettings({
     loading,
     saving,
     loadFailed,
+    loadError,
+    loadGroup,
     updateField,
     saveGroup,
   } = useSettings({
@@ -36,7 +39,7 @@ export default function ImagePreviewSettings({
     <SettingPanel
       label="影像預覽"
       open={open}
-      locked={locked}
+      locked={locked || saving}
       contentClassName="p-0"
       fieldsetClassName="gap-0"
       footerDividerClassName="mt-0! mb-4!"
@@ -58,6 +61,13 @@ export default function ImagePreviewSettings({
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
           讀取設定中…
         </p>
+      ) : null}
+      {!loading && !payload && loadFailed ? (
+        <RetryMessage
+          message={loadError || "讀取影像預覽設定失敗。"}
+          onRetry={() => void loadGroup()}
+          retrying={loading}
+        />
       ) : null}
       {!loading && !payload && !loadFailed ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">

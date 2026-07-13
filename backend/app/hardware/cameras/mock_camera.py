@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from itertools import count
 
 from app.core.config import AppSettings
+from app.core.exceptions import CameraError
 from app.hardware.cameras.camera_registry import CameraRegistry
 from app.hardware.cameras.camera_types import CameraFrame
 from app.models.camera_models import CameraStatus
@@ -78,7 +79,7 @@ class MockCameraManager:
             previewing=True,
             width=config.width,
             height=config.height,
-            fps=config.preview_fps,
+            preview_fps=config.preview_fps,
             last_error=self._last_error.get(camera_id),
         )
 
@@ -86,18 +87,31 @@ class MockCameraManager:
         return [self.get_status(camera_id) for camera_id in self.registry.roles()]
 
     def capture(self, camera_id: str) -> CameraFrame:
-        self.registry.get(camera_id)
-        sequence = next(self._counter)
-        return CameraFrame(
-            camera_id=camera_id,
-            data=make_mock_jpeg(camera_id, sequence),
-            timestamp=datetime.now(timezone.utc),
-        )
+        config = self.registry.get(camera_id)
+        if not config.enabled:
+            self._last_error[camera_id] = "相機未啟用。"
+            raise CameraError(f"相機 {camera_id} 尚未啟用。")
+        try:
+            sequence = next(self._counter)
+            frame = CameraFrame(
+                camera_id=camera_id,
+                data=make_mock_jpeg(camera_id, sequence),
+                timestamp=datetime.now(timezone.utc),
+            )
+        except Exception as exc:
+            self._last_error[camera_id] = "模擬相機擷取失敗。"
+            raise CameraError("模擬相機擷取失敗。") from exc
+        self._last_error[camera_id] = None
+        return frame
 
     def reconnect(self, camera_id: str) -> CameraStatus:
+        self.registry.get(camera_id)
+        self._last_error[camera_id] = None
         return self.get_status(camera_id)
 
     def reconnect_all(self) -> list[CameraStatus]:
+        for camera_id in self.registry.roles():
+            self._last_error[camera_id] = None
         return self.get_statuses()
 
     def close_all(self) -> None:

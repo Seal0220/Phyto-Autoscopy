@@ -12,18 +12,18 @@ class CameraStatus(BaseModel):
     previewing: bool = False
     width: int | None = None
     height: int | None = None
-    fps: int | None = None
+    preview_fps: int | None = None
     last_error: str | None = None
 
 
 class CaptureRequest(BaseModel):
-    session_id: str | None = None
+    record_id: str | None = None
     cycle_id: int | None = None
     angle_deg: float | None = None
 
 
 class CaptureResult(BaseModel):
-    session_id: str
+    record_id: str
     cycle_id: int | None = None
     camera_id: str
     camera_name: str
@@ -33,6 +33,14 @@ class CaptureResult(BaseModel):
     file_path: str
     status: str
     error_message: str | None = None
+
+
+class SnapshotResult(BaseModel):
+    camera_id: str
+    camera_name: str
+    timestamp: str
+    file_path: str
+    status: str = "success"
 
 
 class CameraSettingsUpdate(BaseModel):

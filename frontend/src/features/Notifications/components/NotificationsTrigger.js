@@ -17,7 +17,10 @@ export default function NotificationsTrigger({
       aria-label={open ? "收合歷史通知" : "展開歷史通知"}
       onClick={onClick}
     >
-      <FiBell className="size-4" aria-hidden="true" />
+      <FiBell
+        className="size-4"
+        aria-hidden="true"
+      />
       <span>通知</span>
       {count ? (
         <span className="grid min-w-5 place-items-center rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] leading-4">

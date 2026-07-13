@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/capture", tags=["capture"])
 
 
 class RotationCycleRequest(BaseModel):
-    session_id: str | None = None
+    record_id: str | None = None
     cycle_id: int = Field(default=1, gt=0)
     start_deg: float | None = None
     end_deg: float | None = None
@@ -25,7 +25,7 @@ def rotation_cycle(
 ) -> list[CaptureResult]:
     ensure_manual_changes_allowed(context)
     return context.rotation_service.capture_cycle(
-        session_id=request.session_id,
+        record_id=request.record_id,
         cycle_id=request.cycle_id,
         start_deg=request.start_deg,
         end_deg=request.end_deg,

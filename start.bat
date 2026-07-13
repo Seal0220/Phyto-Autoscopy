@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
-rem This is the only process supervisor. Backend and frontend do not start,
-rem stop, or monitor one another.
+rem This launcher starts the backend and frontend in independent terminals,
+rem then exits without supervising either process.
 set "ROOT=%~dp0"
 set "BACKEND_DIR=%ROOT%backend"
 set "FRONTEND_DIR=%ROOT%frontend"
@@ -11,8 +11,9 @@ set "BACKEND_HOST=127.0.0.1"
 set "BACKEND_PORT=22222"
 set "FRONTEND_HOST=127.0.0.1"
 set "FRONTEND_PORT=22223"
-set "MODE=development"
+set "MODE=production"
 set "MOCK=0"
+set "SETUP=0"
 set "BACKEND_PID="
 set "FRONTEND_PID="
 set "EXIT_CODE=1"
@@ -21,6 +22,11 @@ set "EXIT_CODE=1"
 if "%~1"=="" goto arguments_ready
 if /I "%~1"=="--help" goto usage
 if /I "%~1"=="-h" goto usage
+if /I "%~1"=="--setup" (
+  set "SETUP=1"
+  shift
+  goto parse_arguments
+)
 if /I "%~1"=="--mock" (
   set "MOCK=1"
   shift
@@ -54,10 +60,10 @@ if not exist "%FRONTEND_DIR%\package.json" (
   echo Missing frontend package: %FRONTEND_DIR%\package.json
   goto finish
 )
+if "%SETUP%"=="1" goto setup_environment
+
 if not exist "%ROOT_ENV%" (
-  copy /Y "%ROOT%.env.example" "%ROOT_ENV%" >nul
-  echo Created .env from .env.example.
-  echo Set its three private values, then run start.bat again.
+  echo Missing root .env. Run start.bat --setup first.
   goto finish
 )
 
@@ -70,7 +76,7 @@ if errorlevel 1 goto finish
 
 where powershell.exe >nul 2>&1
 if errorlevel 1 (
-  echo PowerShell is required for reliable child-process supervision.
+  echo PowerShell is required to create independent backend and frontend terminals.
   goto finish
 )
 where npm.cmd >nul 2>&1
@@ -79,15 +85,15 @@ if errorlevel 1 (
   goto finish
 )
 
-if exist "%ROOT%.venv\Scripts\python.exe" (
-  set "PYTHON=%ROOT%.venv\Scripts\python.exe"
-) else (
-  where python >nul 2>&1
-  if errorlevel 1 (
-    echo Python is required to start backend\.
-    goto finish
-  )
-  set "PYTHON=python"
+if not exist "%ROOT%.venv\Scripts\python.exe" (
+  echo Missing backend virtual environment. Run start.bat --setup first.
+  goto finish
+)
+set "PYTHON=%ROOT%.venv\Scripts\python.exe"
+
+if not exist "%FRONTEND_DIR%\node_modules" (
+  echo Missing frontend dependencies. Run start.bat --setup first.
+  goto finish
 )
 
 call :port_in_use %BACKEND_PORT%
@@ -102,18 +108,6 @@ echo Port %FRONTEND_PORT% is already in use. Stop the existing frontend first.
 goto finish
 
 :frontend_port_available
-if not exist "%FRONTEND_DIR%\node_modules" (
-  echo Installing frontend dependencies...
-  pushd "%FRONTEND_DIR%"
-  call npm.cmd install
-  if errorlevel 1 (
-    popd
-    echo Frontend dependency installation failed.
-    goto finish
-  )
-  popd
-)
-
 if /I "%MODE%"=="production" (
   echo Building Next.js frontend...
   pushd "%FRONTEND_DIR%"
@@ -151,39 +145,88 @@ echo Backend:  http://%BACKEND_HOST%:%BACKEND_PORT% ^(private BFF boundary^)
 echo Frontend: http://%FRONTEND_HOST%:%FRONTEND_PORT%
 echo Backend PID: %BACKEND_PID%
 echo Frontend PID: %FRONTEND_PID%
-echo start.bat is monitoring both independent process trees. Press Ctrl+C to stop.
+echo Backend and frontend terminals started. The launcher will now close.
+goto launch_complete
 
-:monitor
-call :process_is_running %BACKEND_PID%
-if errorlevel 1 goto backend_stopped
-call :process_is_running %FRONTEND_PID%
-if errorlevel 1 goto frontend_stopped
-timeout /T 1 /NOBREAK >nul
-goto monitor
+:setup_environment
+if not exist "%ROOT%.env.example" (
+  echo Missing environment template: %ROOT%.env.example
+  goto finish
+)
+if not exist "%BACKEND_DIR%\requirements.txt" (
+  echo Missing backend requirements: %BACKEND_DIR%\requirements.txt
+  goto finish
+)
 
-:backend_stopped
-echo Backend stopped; closing the frontend process tree.
-call :stop_process %FRONTEND_PID%
-set "EXIT_CODE=1"
-goto finish
+where npm.cmd >nul 2>&1
+if errorlevel 1 (
+  echo npm is required to install frontend dependencies.
+  goto finish
+)
 
-:frontend_stopped
-echo Frontend stopped; closing the backend process tree.
-call :stop_process %BACKEND_PID%
-set "EXIT_CODE=1"
+if not exist "%ROOT%.venv\Scripts\python.exe" (
+  where python >nul 2>&1
+  if errorlevel 1 (
+    echo Python is required to create the backend virtual environment.
+    goto finish
+  )
+)
+
+if not exist "%ROOT_ENV%" (
+  copy /Y "%ROOT%.env.example" "%ROOT_ENV%" >nul
+  if errorlevel 1 (
+    echo Failed to create root .env.
+    goto finish
+  )
+  echo Created .env from .env.example.
+) else (
+  echo Root .env already exists; leaving it unchanged.
+)
+
+if not exist "%ROOT%.venv\Scripts\python.exe" (
+  echo Creating backend virtual environment...
+  python -m venv "%ROOT%.venv"
+  if errorlevel 1 (
+    echo Backend virtual environment creation failed.
+    goto finish
+  )
+) else (
+  echo Backend virtual environment already exists; synchronizing dependencies.
+)
+
+echo Installing backend dependencies...
+call "%ROOT%.venv\Scripts\python.exe" -m pip install -r "%BACKEND_DIR%\requirements.txt"
+if errorlevel 1 (
+  echo Backend dependency installation failed.
+  goto finish
+)
+
+echo Installing frontend dependencies...
+pushd "%FRONTEND_DIR%"
+call npm.cmd install
+if errorlevel 1 (
+  popd
+  echo Frontend dependency installation failed.
+  goto finish
+)
+popd
+
+echo Setup complete. Configure the three private values in .env before starting.
+set "EXIT_CODE=0"
 goto finish
 
 :usage
-echo Usage: start.bat [--mock] [--mode development^|production]
+echo Usage: start.bat [--setup] [--mock] [--mode development^|production]
 echo.
+echo   --setup                Create .env and install backend and frontend dependencies.
 echo   --mock                 Start FastAPI with mock cameras and motor.
-echo   --mode development     Next dev and FastAPI reload ^(default^).
-echo   --mode production      Build Next, then Next start and FastAPI without reload.
+echo   --mode development     Next dev and FastAPI reload.
+echo   --mode production      Build Next, then Next start and FastAPI without reload ^(default^).
 set "EXIT_CODE=0"
 goto finish
 
 :usage_error
-echo Usage: start.bat [--mock] [--mode development^|production]
+echo Usage: start.bat [--setup] [--mock] [--mode development^|production]
 set "EXIT_CODE=2"
 goto finish
 
@@ -191,6 +234,9 @@ goto finish
 call :stop_process %BACKEND_PID%
 call :stop_process %FRONTEND_PID%
 endlocal & exit /b %EXIT_CODE%
+
+:launch_complete
+endlocal & exit /b 0
 
 :require_configured_env
 findstr /R /C:"^%~1=" "%ROOT_ENV%" >nul
@@ -221,10 +267,6 @@ if exist "%CHILD_PID_FILE%" (
 set "CHILD_WORKING_DIR="
 set "CHILD_PID_FILE="
 exit /b 0
-
-:process_is_running
-powershell.exe -NoProfile -Command "if (Get-Process -Id %~1 -ErrorAction SilentlyContinue) { exit 0 }; exit 1" >nul 2>&1
-exit /b %ERRORLEVEL%
 
 :stop_process
 if "%~1"=="" exit /b 0

@@ -19,7 +19,7 @@ export default function ScheduleModeCard({
   onRemove,
   onUpdate,
 }) {
-  const selectedMeta = SCHEDULE_MODE_META[mode.type] || SCHEDULE_MODE_META.seconds_interval;
+  const selectedMeta = SCHEDULE_MODE_META[mode.type] || SCHEDULE_MODE_META.time_interval;
 
   return (
     <InnerPanel className="flex content-start gap-3">

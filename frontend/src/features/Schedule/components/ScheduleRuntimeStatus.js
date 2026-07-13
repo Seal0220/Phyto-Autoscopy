@@ -5,23 +5,26 @@ import { Panel, PanelHeader } from "@/components/panels/Panel";
 import useElapsedSeconds from "@/hooks/useElapsedSeconds";
 import { formatElapsed } from "@/lib/formatUtils";
 
-import { SCHEDULE_STATUS_LABELS } from "../scheduleConfig";
+import {
+  scheduleErrorMessage,
+  scheduleStatusLabel,
+} from "../lib/scheduleUtils";
 
 export default function ScheduleRuntimeStatus({
-  experiment,
+  scheduleStatus,
   motor,
   schedule,
 }) {
-  const status = experiment.status || "idle";
+  const status = scheduleStatus.status || "idle";
   const elapsedSeconds = useElapsedSeconds({
-    elapsedSeconds: experiment.elapsed_seconds,
+    elapsedSeconds: scheduleStatus.elapsed_seconds,
     status,
   });
   const totalDuration = formatElapsed(
-    experiment.duration_seconds ?? Number(schedule.duration_seconds || 0),
+    scheduleStatus.duration_seconds ?? Number(schedule.duration_seconds || 0),
   );
   const angle = Number(
-    motor.command_position_deg ?? experiment.current_angle_deg,
+    motor.command_position_deg ?? scheduleStatus.current_angle_deg,
   );
   const currentAngle = Number.isFinite(angle)
     ? angle.toFixed(3).replace(/\.?0+$/, "")
@@ -42,8 +45,8 @@ export default function ScheduleRuntimeStatus({
       >
         <StatusCard
           title="排程狀態"
-          content={SCHEDULE_STATUS_LABELS[status] || status}
-          note=""
+          content={scheduleStatusLabel(status)}
+          note={status === "failed" ? scheduleErrorMessage(scheduleStatus.last_error) : ""}
         />
         <StatusCard
           title="排程執行時間"
@@ -52,7 +55,7 @@ export default function ScheduleRuntimeStatus({
         />
         <StatusCard
           title="排程"
-          content={experiment.cycle_count ?? 0}
+          content={scheduleStatus.cycle_count ?? 0}
           note="次循環"
         />
         <StatusCard

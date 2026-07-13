@@ -39,6 +39,15 @@ def test_viewer_cannot_operate_hardware(tmp_path, monkeypatch) -> None:
     assert response.status_code == 403
 
 
+def test_viewer_cannot_start_schedule(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    headers = authorized_headers()
+    headers["X-Phyto-Role"] = "viewer"
+    with TestClient(create_app(), headers=headers) as client:
+        response = client.post("/api/schedules/start", json={})
+    assert response.status_code == 403
+
+
 def test_websocket_requires_a_one_use_ticket(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
     with TestClient(create_app(), headers=authorized_headers()) as client:

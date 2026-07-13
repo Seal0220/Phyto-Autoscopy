@@ -7,6 +7,11 @@ import {
   serializeSettingsPayload,
   setNestedValue,
 } from "@/features/Settings/lib/settingsUtils";
+import {
+  messageFromError,
+  parseJsonResponse,
+  responseErrorMessage,
+} from "@/lib/httpUtils";
 
 export default function useSettings({
   group,
@@ -18,21 +23,106 @@ export default function useSettings({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const hasLoadedRef = useRef(false);
+  const loadingRef = useRef(false);
+  const savingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const loadAbortRef = useRef(null);
+  const saveAbortRef = useRef(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      const loadController = loadAbortRef.current;
+      const saveController = saveAbortRef.current;
+
+      mountedRef.current = false;
+      hasLoadedRef.current = false;
+      loadingRef.current = false;
+      savingRef.current = false;
+      loadAbortRef.current = null;
+      saveAbortRef.current = null;
+      loadController?.abort();
+      saveController?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadController = loadAbortRef.current;
+    const saveController = saveAbortRef.current;
+
+    hasLoadedRef.current = false;
+    loadingRef.current = false;
+    savingRef.current = false;
+    loadAbortRef.current = null;
+    saveAbortRef.current = null;
+    loadController?.abort();
+    saveController?.abort();
+    setPayload(null);
+    setLoading(false);
+    setSaving(false);
+    setLoadFailed(false);
+    setLoadError("");
+  }, [group]);
 
   const loadGroup = useCallback(async () => {
+    if (loadingRef.current) return false;
+
+    const controller = new AbortController();
+    loadingRef.current = true;
+    loadAbortRef.current = controller;
     setLoading(true);
     setLoadFailed(false);
+    setLoadError("");
+
     try {
-      const response = await fetch(`/api/settings/${group}`, { cache: "no-store" });
-      const nextPayload = await response.json();
-      if (!response.ok) throw new Error(nextPayload.detail || "讀取設定失敗。");
+      const response = await fetch(`/api/settings/${group}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const nextPayload = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(responseErrorMessage(
+          nextPayload,
+          "讀取設定失敗。",
+        ));
+      }
+
+      if (!nextPayload || typeof nextPayload !== "object" || Array.isArray(nextPayload)) {
+        throw new Error("設定資料格式錯誤，請重新讀取。");
+      }
+
+      if (!mountedRef.current || controller.signal.aborted) return false;
+
       setPayload(cloneValue(nextPayload));
+      setLoadFailed(false);
+      setLoadError("");
+      return true;
     } catch (error) {
+      if (error?.name === "AbortError") {
+        return false;
+      }
+
+      const message = messageFromError(error, "讀取設定失敗。");
+
+      if (!mountedRef.current) return false;
+
       setLoadFailed(true);
-      onNotify?.(error.message || "讀取設定失敗。", "error");
+      setLoadError(message);
+      onNotify?.(message, "error");
+      return false;
     } finally {
-      setLoading(false);
+      if (loadAbortRef.current === controller) {
+        loadAbortRef.current = null;
+        loadingRef.current = false;
+
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
     }
   }, [group, onNotify]);
 
@@ -42,7 +132,10 @@ export default function useSettings({
     void loadGroup();
   }, [loadGroup, open]);
 
-  function updateField(path, value) {
+  function updateField(
+    path,
+    value,
+  ) {
     setPayload((previous) => {
       if (!previous) return previous;
       const nextPayload = cloneValue(previous);
@@ -52,8 +145,13 @@ export default function useSettings({
   }
 
   async function saveGroup() {
-    if (!payload) return;
+    if (!payload || savingRef.current) return false;
+
+    const controller = new AbortController();
+    savingRef.current = true;
+    saveAbortRef.current = controller;
     setSaving(true);
+
     try {
       const nextPayload = serializePayload
         ? serializePayload(payload)
@@ -62,17 +160,52 @@ export default function useSettings({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ payload: nextPayload }),
+        signal: controller.signal,
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || "儲存設定失敗。");
+      const result = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(responseErrorMessage(
+          result,
+          "儲存設定失敗。",
+        ));
+      }
+
+      if (!mountedRef.current || controller.signal.aborted) return false;
+
       setPayload(nextPayload);
       onNotify?.("已儲存並立即套用。", "success");
+      return true;
     } catch (error) {
-      onNotify?.(error.message || "儲存設定失敗。", "error");
+      if (error?.name === "AbortError") {
+        return false;
+      }
+
+      if (mountedRef.current) {
+        onNotify?.(messageFromError(error, "儲存設定失敗。"), "error");
+      }
+
+      return false;
     } finally {
-      setSaving(false);
+      if (saveAbortRef.current === controller) {
+        saveAbortRef.current = null;
+        savingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
+      }
     }
   }
 
-  return { payload, loading, saving, loadFailed, updateField, saveGroup };
+  return {
+    payload,
+    loading,
+    saving,
+    loadFailed,
+    loadError,
+    loadGroup,
+    updateField,
+    saveGroup,
+  };
 }

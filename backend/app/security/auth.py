@@ -40,7 +40,7 @@ class Principal:
 
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
-    "viewer": frozenset({"status:read", "cameras:read", "sessions:read"}),
+    "viewer": frozenset({"status:read", "cameras:read", "records:read"}),
     "operator": frozenset({"*"}),
     "admin": frozenset({"*"}),
 }
@@ -81,31 +81,37 @@ def permission_for_http(method: str, path: str) -> str:
     if normalized_method in {"GET", "HEAD"}:
         if path.startswith("/api/settings"):
             return "settings:read"
-        if path.startswith("/api/sessions"):
-            return "sessions:read"
+        if path.startswith("/api/records"):
+            return "records:read"
         if path.startswith("/api/cameras"):
             return "cameras:read"
         return "status:read"
+    if path.startswith("/api/system/errors"):
+        return "system:manage"
     if path.startswith("/api/settings"):
         return "settings:write"
     if path.startswith("/api/motor") or path.startswith("/api/cameras"):
         return "hardware:operate"
-    if path.startswith("/api/experiments") or path.startswith("/api/capture"):
-        return "experiment:operate"
-    if path.startswith("/api/sessions"):
-        return "sessions:manage"
+    if path.startswith("/api/schedules") or path.startswith("/api/capture"):
+        return "schedule:operate"
+    if path.startswith("/api/records"):
+        return "records:manage"
     return "status:read"
 
 
 def permission_for_websocket_action(action: str) -> str:
-    if action in {"system.snapshot", "sessions.list"}:
+    if action == "system.snapshot":
         return "status:read"
+    if action == "records.list":
+        return "records:read"
     if action == "settings.get":
         return "settings:read"
+    if action == "system.errors.reset":
+        return "system:manage"
     if action.startswith("camera.") or action.startswith("motor."):
         return "hardware:operate"
-    if action.startswith("experiment.") or action.startswith("capture."):
-        return "experiment:operate"
+    if action.startswith("schedule.") or action.startswith("capture."):
+        return "schedule:operate"
     raise AuthorizationError("不支援的即時操作。")
 
 

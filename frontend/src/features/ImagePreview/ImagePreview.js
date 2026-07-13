@@ -12,19 +12,22 @@ import {
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 
-import ImagePreviewFullscreen from "./components/ImagePreviewFullscreen";
+import ImagePreviewFeed from "./components/ImagePreviewFeed";
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
 export default function ImagePreview({
   imagePreviewById,
-  isConnected,
-  busyAction,
+  busyActions,
   scheduleActive,
   open,
   onToggle,
   onRunAction,
   onNotify,
 }) {
+  const cameraBusy = [...busyActions].some((action) => action.startsWith("camera."));
+  const reconnectPending = busyActions.has("camera.reconnect")
+    || busyActions.has("camera.reconnect_all");
+
   return (
     <Panel
       id="image-preview"
@@ -37,8 +40,15 @@ export default function ImagePreview({
           <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full">
             <Button
               variant="primary"
-              disabled={!isConnected || scheduleActive || busyAction === "camera.capture_all"}
-              onClick={() => void onRunAction("camera.capture_all", {}, "已擷取全部影像。")}
+              disabled={
+                scheduleActive
+                || cameraBusy
+              }
+              onClick={() => void onRunAction(
+                "camera.snapshot_all",
+                {},
+                "已將全部相機的單張影像儲存至快照目錄。",
+              )}
             >
               <FiCamera
                 className="size-4 shrink-0"
@@ -47,7 +57,7 @@ export default function ImagePreview({
               擷取全部
             </Button>
             <Button
-              disabled={!isConnected || busyAction === "camera.reconnect_all"}
+              disabled={cameraBusy}
               onClick={() => void onRunAction(
                 "camera.reconnect_all",
                 {},
@@ -79,26 +89,21 @@ export default function ImagePreview({
 
           return (
             <article
-              className={`grid min-w-0 overflow-hidden border-b border-white/10 bg-black/10 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0 ${enabled ? "" : "grayscale opacity-60"}`}
+              className={`
+                grid min-w-0 overflow-hidden border-b border-white/10 bg-black/10 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0
+                ${enabled ? "" : "grayscale opacity-60"}
+              `}
               key={imagePreviewId}
             >
-              <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
-                <img
-                  className="block aspect-4/3 w-full rounded-2xl bg-black/40 object-cover"
-                  src={`/api/cameras/${imagePreviewId}/stream`}
-                  alt={`${meta.label} 即時預覽`}
-                />
-                <span
-                  className="absolute top-2 left-1/2 z-10 max-w-[calc(100%_-_4rem)] -translate-x-1/2 overflow-hidden rounded-t-none rounded-b-xl border border-white/15 bg-[#07130f]/80 px-4 py-2 text-center text-sm font-black text-white text-ellipsis whitespace-nowrap shadow-lg backdrop-blur-xl"
-                  title={meta.device}
-                >
-                  {meta.label}
-                </span>
-                <ImagePreviewFullscreen
-                  imagePreviewId={imagePreviewId}
-                  label={meta.label}
-                />
-              </div>
+              <ImagePreviewFeed
+                imagePreviewId={imagePreviewId}
+                label={meta.label}
+                device={meta.device}
+                enabled={enabled}
+                connected={connected}
+                reconnectPending={reconnectPending}
+                onNotify={onNotify}
+              />
               <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.035] px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <StatusPill tone={enabled ? "success" : "offline"}>
@@ -113,16 +118,15 @@ export default function ImagePreview({
                     className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
                     variant="primary"
                     disabled={
-                      !isConnected
-                      || !enabled
+                      !enabled
                       || !connected
                       || scheduleActive
-                      || busyAction === "camera.capture"
+                      || cameraBusy
                     }
                     onClick={() => void onRunAction(
-                      "camera.capture",
+                      "camera.snapshot",
                       { camera_id: imagePreviewId },
-                      `${meta.label} 已擷取單張影像。`,
+                      `${meta.label}單張影像已儲存至快照目錄。`,
                     )}
                   >
                     <FiCamera
@@ -133,7 +137,10 @@ export default function ImagePreview({
                   </Button>
                   <Button
                     className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
-                    disabled={!isConnected || !enabled || busyAction === "camera.reconnect"}
+                    disabled={
+                      !enabled
+                      || cameraBusy
+                    }
                     onClick={() => void onRunAction(
                       "camera.reconnect",
                       { camera_id: imagePreviewId },

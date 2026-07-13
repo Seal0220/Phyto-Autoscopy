@@ -8,22 +8,30 @@ function NumberStepper({
   label,
   onIncrement,
   onDecrement,
+  disabled = false,
   className,
 }) {
   return (
-    <span className={`grid w-9 overflow-hidden border-l border-white/15 bg-white/7 ${className || ""}`}>
+    <span
+      className={`
+        grid w-9 overflow-hidden border-l border-white/15 bg-white/7
+        ${className || ""}
+      `}
+    >
       <button
-        className="grid cursor-pointer place-items-center border-b border-white/15 text-neutral-300 transition-colors duration-150 hover:bg-white/15"
+        className="grid cursor-pointer place-items-center border-b border-white/15 text-neutral-300 transition-colors duration-150 hover:bg-white/15 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-transparent"
         type="button"
         aria-label={`增加${label}`}
+        disabled={disabled}
         onClick={onIncrement}
       >
         <FiChevronUp aria-hidden="true" />
       </button>
       <button
-        className="grid cursor-pointer place-items-center text-neutral-300 transition-colors duration-150 hover:bg-white/15"
+        className="grid cursor-pointer place-items-center text-neutral-300 transition-colors duration-150 hover:bg-white/15 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-transparent"
         type="button"
         aria-label={`減少${label}`}
+        disabled={disabled}
         onClick={onDecrement}
       >
         <FiChevronDown aria-hidden="true" />
@@ -48,12 +56,23 @@ export function Input({
   ...props
 }) {
   const isNumber = type === "number";
+  const disabled = Boolean(props.disabled);
 
   function adjust(direction) {
+    if (disabled) return;
+
     const current = Number(value);
     const fallback = min ?? 0;
-    const next = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, (Number.isFinite(current) ? current : fallback) + direction * Number(step)));
-    const decimals = String(step).includes(".") ? String(step).split(".")[1].length : 0;
+    const next = Math.min(
+      max ?? Number.POSITIVE_INFINITY,
+      Math.max(
+        min ?? Number.NEGATIVE_INFINITY,
+        (Number.isFinite(current) ? current : fallback) + direction * Number(step),
+      ),
+    );
+    const decimals = String(step).includes(".")
+      ? String(step).split(".")[1].length
+      : 0;
     onValueChange?.(String(Number(next.toFixed(decimals))));
   }
 
@@ -72,7 +91,11 @@ export function Input({
       <input
         className={`
           min-w-0 w-full rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition
-          ${isNumber ? "rounded-none! border-0! bg-transparent appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" : "hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10"}
+          ${
+            isNumber
+              ? "rounded-none! border-0! bg-transparent appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+              : "hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10"
+          }
           ${className || ""}
         `}
         type={type}
@@ -87,13 +110,20 @@ export function Input({
         {...props}
       />
       {suffix ? (
-        <span className={isNumber ? "pointer-events-none flex shrink-0 items-center px-2 text-xs font-extrabold whitespace-nowrap text-neutral-500" : "pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-extrabold text-neutral-500"}>
+        <span
+          className={
+            isNumber
+              ? "pointer-events-none flex shrink-0 items-center px-2 text-xs font-extrabold whitespace-nowrap text-neutral-500"
+              : "pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-extrabold text-neutral-500"
+          }
+        >
           {suffix}
         </span>
       ) : null}
       {isNumber ? (
         <NumberStepper
           label={label || "數值"}
+          disabled={disabled}
           onIncrement={() => adjust(1)}
           onDecrement={() => adjust(-1)}
           className={stepperClassName}
@@ -106,6 +136,7 @@ export function Input({
 export function NumericInput({
   id,
   label,
+  disabled = false,
   value,
   onValueChange,
   min,
@@ -127,6 +158,7 @@ export function NumericInput({
         className="min-h-10.5 pt-3 pb-2 font-bold"
         containerClassName="border-white/15"
         label={label}
+        disabled={disabled}
         type="number"
         inputMode="decimal"
         min={min}
@@ -153,7 +185,10 @@ export function DurationInput({
 }) {
   const parts = durationParts(value, unit);
 
-  function updatePart(part, nextValue) {
+  function updatePart(
+    part,
+    nextValue,
+  ) {
     const parsed = Number(nextValue);
     const nextParts = {
       ...parts,
@@ -303,7 +338,10 @@ export function Select({
 }) {
   return (
     <select
-      className={`min-h-10 w-full rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10 appearance-none ${className || ""}`}
+      className={`
+        min-h-10 w-full rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10 appearance-none
+        ${className || ""}
+      `}
       {...props}
     >
       {children}

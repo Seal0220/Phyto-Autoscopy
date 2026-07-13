@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 from typing import Iterable
@@ -18,7 +19,21 @@ class Database:
         if self._connection is None:
             self._connection = sqlite3.connect(self.path, check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
+
+    @contextmanager
+    def transaction(self):
+        with self._lock:
+            connection = self.connection
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                yield connection
+            except Exception:
+                connection.rollback()
+                raise
+            else:
+                connection.commit()
 
     def execute(self, sql: str, parameters: Iterable[object] = ()) -> sqlite3.Cursor:
         with self._lock:

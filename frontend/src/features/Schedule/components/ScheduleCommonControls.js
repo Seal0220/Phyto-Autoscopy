@@ -1,4 +1,7 @@
-import { FiRotateCcw } from "react-icons/fi";
+import {
+  FiRefreshCw,
+  FiRotateCcw,
+} from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
@@ -13,6 +16,9 @@ import {
 export default function ScheduleCommonControls({
   schedule,
   setSchedule,
+  defaultsLoading,
+  defaultsLoadError,
+  onLoadDefaults,
 }) {
   const [durationKey, durationLabel, durationProps] = SCHEDULE_DURATION_FIELD;
 
@@ -33,15 +39,29 @@ export default function ScheduleCommonControls({
         title="通用配置"
         description="所有模式將共用相同控制配置。"
       >
-        <Button
-          onClick={resetCommonControls}
-        >
-          <FiRotateCcw
-            className="size-4"
-            aria-hidden="true"
-          />
-          預設
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {defaultsLoadError || defaultsLoading ? (
+            <Button
+              disabled={defaultsLoading}
+              onClick={() => void onLoadDefaults()}
+            >
+              <FiRefreshCw
+                className="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {defaultsLoading ? "載入中…" : "重新載入"}
+            </Button>
+          ) : null}
+          <Button
+            onClick={resetCommonControls}
+          >
+            <FiRotateCcw
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
+            預設
+          </Button>
+        </div>
       </SubsectionHeader>
       <div className="grid gap-3 px-1 min-[520px]:grid-cols-2 min-[1180px]:grid-cols-6">
         <DurationInput

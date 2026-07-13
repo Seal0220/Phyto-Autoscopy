@@ -3,6 +3,7 @@
 import {
   FiPause,
   FiPlay,
+  FiRotateCcw,
   FiSquare,
 } from "react-icons/fi";
 
@@ -18,10 +19,10 @@ import ScheduleRuntimeStatus from "./components/ScheduleRuntimeStatus";
 import useSchedule from "./hooks/useSchedule";
 
 export default function Schedule({
-  experiment,
+  scheduleStatus,
   motor,
   isConnected,
-  busyAction,
+  busyActions,
   scheduleActive,
   open,
   onToggle,
@@ -32,22 +33,34 @@ export default function Schedule({
   const {
     schedule,
     setSchedule,
+    defaultsLoading,
+    defaultsLoadError,
+    loadDefaults,
     handleSubmit,
   } = useSchedule({
     onNotify,
     onRunAction,
     onStarted,
   });
-  const status = experiment.status || "idle";
+  const status = scheduleStatus.status || "idle";
   const canEdit = ["idle", "stopped", "completed", "failed"].includes(status);
   const active = ["running", "paused", "stopping"].includes(status);
   const paused = status === "paused";
-  const stopping = status === "stopping" || busyAction === "experiment.stop";
+  const scheduleBusy = [...busyActions].some((action) => action.startsWith("schedule."));
+  const hardwareBusy = [...busyActions].some((action) => (
+    action.startsWith("camera.")
+    || action.startsWith("motor.")
+    || action.startsWith("schedule.")
+  ));
+  const stopping = status === "stopping" || busyActions.has("schedule.stop");
+  const resetting = busyActions.has("schedule.reset");
+  const pauseChanging = busyActions.has("schedule.pause")
+    || busyActions.has("schedule.resume");
 
   return (
     <>
       <ScheduleRuntimeStatus
-        experiment={experiment}
+        scheduleStatus={scheduleStatus}
         motor={motor}
         schedule={schedule}
       />
@@ -71,12 +84,18 @@ export default function Schedule({
           onSubmit={handleSubmit}
         >
           <fieldset
-            className={`grid gap-4 border-0 p-0 ${scheduleActive ? "grayscale opacity-60" : ""}`}
-            disabled={!canEdit}
+            className={`
+              grid gap-4 border-0 p-0
+              ${scheduleActive ? "grayscale opacity-60" : ""}
+            `}
+            disabled={!canEdit || defaultsLoading}
           >
             <ScheduleCommonControls
               schedule={schedule}
               setSchedule={setSchedule}
+              defaultsLoading={defaultsLoading}
+              defaultsLoadError={defaultsLoadError}
+              onLoadDefaults={loadDefaults}
             />
             <hr />
             <ScheduleModes
@@ -90,8 +109,12 @@ export default function Schedule({
             {active ? (
               <Button
                 variant="danger"
-                disabled={!isConnected || stopping || Boolean(busyAction)}
-                onClick={() => void onRunAction("experiment.stop", {}, "正在停止排程。")}
+                disabled={stopping}
+                onClick={() => void onRunAction(
+                  "schedule.stop",
+                  {},
+                  "正在停止排程。",
+                )}
               >
                 <FiSquare
                   className="size-4 shrink-0"
@@ -99,11 +122,32 @@ export default function Schedule({
                 />
                 {stopping ? "停止中…" : "停止排程"}
               </Button>
+            ) : status === "failed" ? (
+              <Button
+                disabled={!isConnected || resetting || scheduleBusy}
+                onClick={() => void onRunAction(
+                  "schedule.reset",
+                  {},
+                  "排程狀態已重置。",
+                )}
+              >
+                <FiRotateCcw
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                {resetting ? "重置中…" : "重置排程"}
+              </Button>
             ) : (
               <Button
                 variant="primary"
                 type="submit"
-                disabled={!isConnected || !canEdit || !schedule.modes.length || Boolean(busyAction)}
+                disabled={
+                  !isConnected
+                  || !canEdit
+                  || defaultsLoading
+                  || !schedule.modes.length
+                  || hardwareBusy
+                }
               >
                 <FiPlay
                   className="size-4 shrink-0"
@@ -113,9 +157,14 @@ export default function Schedule({
               </Button>
             )}
             <Button
-              disabled={!isConnected || !["running", "paused"].includes(status) || Boolean(busyAction)}
+              disabled={
+                !isConnected
+                || !["running", "paused"].includes(status)
+                || pauseChanging
+                || stopping
+              }
               onClick={() => void onRunAction(
-                paused ? "experiment.resume" : "experiment.pause",
+                paused ? "schedule.resume" : "schedule.pause",
                 {},
                 paused ? "排程已繼續。" : "排程已暫停。",
               )}
@@ -136,7 +185,7 @@ export default function Schedule({
           </ActionRow>
         </form>
         <Settings
-          group="experiment"
+          group="schedule"
           label="排程"
           onNotify={onNotify}
           open={open}

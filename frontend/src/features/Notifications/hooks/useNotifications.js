@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { normalizeSystemError } from "../lib/notificationUtils";
+
 export default function useNotifications(recentErrors) {
   const [toast, setToast] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -22,10 +24,16 @@ export default function useNotifications(recentErrors) {
 
   const dismissNotification = useCallback(() => setToast(null), []);
 
+  const clearNotifications = useCallback(() => {
+    seenSystemMessagesRef.current.clear();
+    setToast(null);
+    setNotifications([]);
+  }, []);
+
   useEffect(() => {
     if (!Array.isArray(recentErrors)) return;
     for (const error of recentErrors) {
-      const message = String(error);
+      const message = normalizeSystemError(error);
       if (seenSystemMessagesRef.current.has(message)) continue;
       seenSystemMessagesRef.current.add(message);
       showNotification(message, "error");
@@ -37,5 +45,6 @@ export default function useNotifications(recentErrors) {
     notifications,
     showNotification,
     dismissNotification,
+    clearNotifications,
   };
 }

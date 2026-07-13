@@ -7,12 +7,12 @@
     "current_limit_amp": 1.5,
     "maximum_current_limit_amp": 2.4,
     "holding_current_amp": 0.3,
-    "velocity_limit_deg_s": 3.0,
-    "maximum_velocity_limit_deg_s": 6.0,
-    "acceleration_deg_s2": 3.0,
-    "maximum_acceleration_deg_s2": 6.0,
-    "minimum_angle_deg": 0.0,
-    "maximum_angle_deg": 360.0,
+    "velocity_limit_deg_s": 0.1,
+    "maximum_velocity_limit_deg_s": 6,
+    "acceleration_deg_s2": 3,
+    "maximum_acceleration_deg_s2": 6,
+    "minimum_angle_deg": 0,
+    "maximum_angle_deg": 360,
     "movement_timeout_seconds": 180,
     "stabilization_delay_ms": 800
   }

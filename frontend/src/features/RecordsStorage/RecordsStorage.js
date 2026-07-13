@@ -1,21 +1,37 @@
-import { FiRefreshCw } from "react-icons/fi";
+"use client";
+
+import {
+  FiDownload,
+  FiRefreshCw,
+} from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import { Panel, PanelHeader } from "@/components/panels/Panel";
 import SettingsGear from "@/components/panels/SettingsGear";
 import { formatDateTime } from "@/lib/formatUtils";
 
 import RecordsStorageSettings from "./components/RecordsStorageSettings";
+import useRecordExport from "./hooks/useRecordExport";
+import { recordStatusLabel } from "./lib/storageUtils";
 
 export default function RecordsStorage({
   records,
   loading,
+  loadError,
   scheduleActive,
   open,
   onToggle,
   onNotify,
   onLoad,
 }) {
+  const {
+    exportingKeys,
+    exportRecord,
+  } = useRecordExport({
+    onNotify,
+  });
+
   return (
     <Panel
       id="records-storage"
@@ -45,7 +61,14 @@ export default function RecordsStorage({
         )}
       />
       <div className="p-5 max-sm:p-4">
-        <div className="max-h-96 overflow-auto">
+        {!loading && loadError && !records.length ? (
+          <RetryMessage
+            message={loadError}
+            onRetry={() => void onLoad()}
+            retrying={loading}
+          />
+        ) : (
+          <div className="max-h-96 overflow-auto">
           <table className="w-full min-w-256 border-collapse text-left text-sm">
             <thead className="sticky top-0 z-10 bg-[#07130f]/95 backdrop-blur-xl">
               <tr className="border-b border-white/10 bg-white/[0.03] text-[11px] font-black tracking-[0.12em] text-neutral-400">
@@ -61,13 +84,13 @@ export default function RecordsStorage({
               {records.length ? records.map((record) => (
                 <tr
                   className="border-b border-white/10 text-neutral-200 last:border-b-0"
-                  key={record.session_id}
+                  key={record.record_id}
                 >
-                  <td className="px-4 py-3.5">{record.session_id}</td>
-                  <td className="px-4 py-3.5">{record.status}</td>
+                  <td className="px-4 py-3.5">{record.record_id}</td>
+                  <td className="px-4 py-3.5">{recordStatusLabel(record.status)}</td>
                   <td className="min-w-72 max-w-96 px-4 py-3.5">
                     <code className="break-all text-xs font-bold text-neutral-300">
-                      {record.session_path || "—"}
+                      {record.record_path || "—"}
                     </code>
                   </td>
                   <td className="px-4 py-3.5 whitespace-nowrap">
@@ -77,19 +100,35 @@ export default function RecordsStorage({
                     {record.ended_at ? formatDateTime(record.ended_at) : "—"}
                   </td>
                   <td className="px-4 py-3.5">
-                    <div className="flex gap-3">
-                      <a
-                        className="font-black text-emerald-200 transition-colors duration-150 hover:text-emerald-100"
-                        href={`/api/sessions/${encodeURIComponent(record.session_id)}/metadata`}
+                    <div className="flex gap-2">
+                      <Button
+                        className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
+                        disabled={exportingKeys.has(`${record.record_id}:csv`)}
+                        onClick={() => void exportRecord(
+                          record.record_id,
+                          "csv",
+                        )}
                       >
-                        CSV
-                      </a>
-                      <a
-                        className="font-black text-emerald-200 transition-colors duration-150 hover:text-emerald-100"
-                        href={`/api/sessions/${encodeURIComponent(record.session_id)}/session-json`}
+                        <FiDownload
+                          className="size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        {exportingKeys.has(`${record.record_id}:csv`) ? "下載中…" : "CSV"}
+                      </Button>
+                      <Button
+                        className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
+                        disabled={exportingKeys.has(`${record.record_id}:json`)}
+                        onClick={() => void exportRecord(
+                          record.record_id,
+                          "json",
+                        )}
                       >
-                        JSON
-                      </a>
+                        <FiDownload
+                          className="size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        {exportingKeys.has(`${record.record_id}:json`) ? "下載中…" : "JSON"}
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -105,7 +144,8 @@ export default function RecordsStorage({
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+        )}
       </div>
       <RecordsStorageSettings
         onNotify={onNotify}

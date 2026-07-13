@@ -27,14 +27,17 @@ export default function ScheduleModes({
         ...previous.modes,
         {
           id: `mode-${index}`,
-          type: "seconds_interval",
-          ...SCHEDULE_MODE_META.seconds_interval.initial,
+          type: "time_interval",
+          ...SCHEDULE_MODE_META.time_interval.initial,
         },
       ],
     }));
   }
 
-  function updateMode(modeId, patch) {
+  function updateMode(
+    modeId,
+    patch,
+  ) {
     setSchedule((previous) => ({
       ...previous,
       modes: previous.modes.map((mode) => (
@@ -45,7 +48,10 @@ export default function ScheduleModes({
     }));
   }
 
-  function changeModeType(modeId, label) {
+  function changeModeType(
+    modeId,
+    label,
+  ) {
     const type = scheduleModeTypeFromLabel(label);
 
     setSchedule((previous) => ({

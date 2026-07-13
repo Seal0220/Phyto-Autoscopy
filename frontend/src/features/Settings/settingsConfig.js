@@ -1,7 +1,7 @@
 export const SETTINGS_GROUPS = [
   ["motor", "馬達"],
-  ["experiment", "排程"],
-  ["logging", "紀錄"],
+  ["schedule", "排程"],
+  ["logging", "系統日誌"],
 ];
 
 export const SETTINGS_CONFIG = {
@@ -12,14 +12,14 @@ export const SETTINGS_CONFIG = {
       movement_timeout_seconds: true,
     },
   },
-  experiment: {
-    experiment: {
+  schedule: {
+    schedule: {
       stabilization_delay_ms: true,
       capture_on_return: true,
       return_to_origin: true,
       capture_top: true,
-      capture_fixed_side: true,
-      capture_rotating_arm: true,
+      capture_side: true,
+      capture_rotating: true,
     },
   },
   logging: {
@@ -38,7 +38,7 @@ export const FIELD_META = {
     step: 0.1,
     suffix: "度/秒²",
   },
-  capture_fixed_side: {
+  capture_side: {
     label: "擷取固定側視角",
   },
   capture_on_return: {
@@ -52,7 +52,7 @@ export const FIELD_META = {
     min: 1,
     max: 86400,
   },
-  capture_rotating_arm: {
+  capture_rotating: {
     label: "擷取旋臂視角",
   },
   capture_top: {
@@ -66,7 +66,7 @@ export const FIELD_META = {
     max: 10080,
   },
   level: {
-    label: "紀錄層級",
+    label: "日誌層級",
     type: "select",
     options: ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
   },
@@ -137,7 +137,7 @@ export const SECTION_META = {
       fieldsClassName: "grid-cols-2",
     },
   },
-  experiment: {
+  schedule: {
     execution: {
       title: "執行行為",
       description: "排程拍攝前後的共用硬體行為。",
@@ -149,13 +149,13 @@ export const SECTION_META = {
   },
   logging: {
     root: {
-      title: "紀錄",
+      title: "系統日誌",
     },
   },
 };
 
 export const SECTION_ORDER = {
   motor: ["movement"],
-  experiment: ["execution", "capture"],
+  schedule: ["execution", "capture"],
   logging: ["root"],
 };

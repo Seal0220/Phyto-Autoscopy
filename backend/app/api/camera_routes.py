@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.core.state import AppContext, get_context
+from app.core.exceptions import CameraError
 from app.models.camera_models import (
     CameraSettingsUpdate,
     CameraStatus,
     CaptureRequest,
     CaptureResult,
+    SnapshotResult,
 )
 from app.services.schedule_lock import ensure_manual_changes_allowed
 
@@ -32,8 +34,14 @@ def camera_status(camera_id: str, context: AppContext = Depends(get_context)) ->
 
 @router.get("/{camera_id}/stream")
 def camera_stream(camera_id: str, context: AppContext = Depends(get_context)) -> StreamingResponse:
+    status = context.camera_manager.get_status(camera_id)
+    if not status.enabled:
+        raise CameraError(f"相機 {camera_id} 尚未啟用。")
+    if not status.connected:
+        raise CameraError(f"相機 {camera_id} 未連線。")
+    first_frame = context.camera_manager.capture(camera_id)
     return StreamingResponse(
-        context.preview_service.mjpeg_stream(camera_id),
+        context.image_preview_service.mjpeg_stream(camera_id, first_frame),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
@@ -48,10 +56,27 @@ def capture_camera(
     request = request or CaptureRequest()
     return context.capture_service.capture_camera(
         camera_id,
-        session_id=request.session_id,
+        record_id=request.record_id,
         cycle_id=request.cycle_id,
         angle_deg=request.angle_deg,
     )
+
+
+@router.post("/{camera_id}/snapshot", response_model=SnapshotResult)
+def snapshot_camera(
+    camera_id: str,
+    context: AppContext = Depends(get_context),
+) -> SnapshotResult:
+    ensure_manual_changes_allowed(context)
+    return context.snapshot_service.snapshot_camera(camera_id)
+
+
+@router.post("/snapshot-all", response_model=list[SnapshotResult])
+def snapshot_all(
+    context: AppContext = Depends(get_context),
+) -> list[SnapshotResult]:
+    ensure_manual_changes_allowed(context)
+    return context.snapshot_service.snapshot_all()
 
 
 @router.post("/capture-all", response_model=list[CaptureResult])
@@ -61,7 +86,7 @@ def capture_all(
 ) -> list[CaptureResult]:
     ensure_manual_changes_allowed(context)
     request = request or CaptureRequest()
-    return context.capture_service.capture_all(session_id=request.session_id)
+    return context.capture_service.capture_all(record_id=request.record_id)
 
 
 @router.post("/reconnect-all", response_model=list[CameraStatus])
@@ -83,7 +108,10 @@ def update_camera_settings(
     context: AppContext = Depends(get_context),
 ) -> dict:
     ensure_manual_changes_allowed(context)
-    current = context.settings.cameras[camera_id]
+    try:
+        current = context.settings.cameras[camera_id]
+    except KeyError as exc:
+        raise CameraError(f"找不到相機：{camera_id}") from exc
     for key, value in update.model_dump(exclude_none=True).items():
         setattr(current, key, value)
     return {"camera_id": camera_id, "settings": current.model_dump(), "restart_required": False}

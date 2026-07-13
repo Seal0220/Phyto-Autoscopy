@@ -10,7 +10,7 @@
       "jpeg_quality": 95,
       "enabled": true
     },
-    "fixed_side": {
+    "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
       "device_index": 1,
       "width": 1280,
@@ -20,7 +20,7 @@
       "jpeg_quality": 95,
       "enabled": true
     },
-    "rotating_arm": {
+    "rotating": {
       "device_name": "CHLOROCULUS EYE-ARM",
       "device_index": 2,
       "width": 1280,

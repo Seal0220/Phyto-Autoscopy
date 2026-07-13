@@ -10,7 +10,7 @@ export default function ScheduleModeFields({
 }) {
   const fieldId = `schedule-${mode.id}-value`;
 
-  if (mode.type === "seconds_interval") {
+  if (mode.type === "time_interval") {
     return (
       <DurationInput
         id={fieldId}

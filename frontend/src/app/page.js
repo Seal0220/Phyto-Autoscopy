@@ -1,5 +1,5 @@
-import LoginForm from "@/features/Auth/LoginForm";
-import Dashboard from "@/features/Dashboard/Dashboard";
+import ControlPanel from "@/features/ControlPanel/ControlPanel";
+import LoginForm from "@/features/Login/LoginForm";
 import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -9,5 +9,5 @@ export default async function HomePage() {
   if (!session) {
     return <LoginForm />;
   }
-  return <Dashboard />;
+  return <ControlPanel />;
 }

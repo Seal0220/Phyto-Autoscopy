@@ -53,7 +53,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
-        ws="websockets",
+        ws="auto",
     )
 
 

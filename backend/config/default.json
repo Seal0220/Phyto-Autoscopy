@@ -11,6 +11,7 @@
   },
   "paths": {
     "captures_dir": "data/captures",
+    "snapshots_dir": "data/snapshots",
     "calibration_dir": "data/calibration",
     "database_path": "data/database/phyto_autoscopy.sqlite3",
     "logs_dir": "data/logs",

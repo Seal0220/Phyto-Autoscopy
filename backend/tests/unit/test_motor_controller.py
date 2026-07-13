@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from threading import Event, Thread
+
 import pytest
 
 from app.core.config import MotorSettings
-from app.core.exceptions import MotorError, MotorSafetyError
+from app.core.exceptions import MotorError, MotorSafetyError, OperationCancelledError
 from app.hardware.motor.mock_motor import MockMotorController
 from app.hardware.motor.phidget_stepper import PhidgetStepperController
 
@@ -22,6 +24,30 @@ class FakePhidgetStepper:
 
     def getIsMoving(self) -> bool:
         return False
+
+
+class BlockingPhidgetStepper:
+    def __init__(self) -> None:
+        self.position = 0.0
+        self.moving = False
+        self.started = Event()
+        self.engaged = True
+
+    def setTargetPosition(self, target: float) -> None:
+        if target == self.position:
+            self.moving = False
+        else:
+            self.moving = True
+            self.started.set()
+
+    def getPosition(self) -> float:
+        return self.position
+
+    def getIsMoving(self) -> bool:
+        return self.moving
+
+    def setEngaged(self, engaged: bool) -> None:
+        self.engaged = engaged
 
 
 def test_mock_motor_requires_engage_before_move() -> None:
@@ -75,3 +101,31 @@ def test_mock_motor_rejects_out_of_range_angle() -> None:
     controller.engage()
     with pytest.raises(MotorSafetyError):
         controller.move_to_angle(361)
+
+
+@pytest.mark.parametrize("stop_method", ["stop", "emergency_stop"])
+def test_phidget_move_can_be_cancelled_concurrently(stop_method: str) -> None:
+    controller = PhidgetStepperController(MotorSettings())
+    stepper = BlockingPhidgetStepper()
+    controller._stepper = stepper
+    controller.state.connected = True
+    controller.state.engaged = True
+    outcome: list[BaseException] = []
+
+    def move() -> None:
+        try:
+            controller.move_to_angle(10)
+        except BaseException as exc:
+            outcome.append(exc)
+
+    worker = Thread(target=move)
+    worker.start()
+    assert stepper.started.wait(timeout=1)
+
+    getattr(controller, stop_method)()
+    worker.join(timeout=1)
+
+    assert worker.is_alive() is False
+    assert len(outcome) == 1
+    assert isinstance(outcome[0], OperationCancelledError)
+    assert controller.state.moving is False

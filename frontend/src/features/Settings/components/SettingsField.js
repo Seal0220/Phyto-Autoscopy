@@ -3,7 +3,10 @@ import { ToggleRow } from "@/components/inputs/Toggle";
 
 import { fieldMeta } from "../lib/settingsUtils";
 
-function fieldId(group, path) {
+function fieldId(
+  group,
+  path,
+) {
   return `setting-${group}-${path.join("-")}`;
 }
 

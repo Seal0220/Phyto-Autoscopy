@@ -1,11 +1,19 @@
-import { FiBell, FiChevronDown } from "react-icons/fi";
+import {
+  FiBell,
+  FiChevronDown,
+  FiTrash2,
+} from "react-icons/fi";
 
+import Button from "@/components/buttons/Button";
 import { notificationMeta } from "@/features/Notifications/lib/notificationUtils";
 import { formatClockTime } from "@/lib/formatUtils";
 
 export default function NotificationsHistory({
   open,
   notifications,
+  clearing,
+  clearDisabled,
+  onClear,
   onClose,
 }) {
   return (
@@ -14,16 +22,35 @@ export default function NotificationsHistory({
       aria-label="歷史通知"
     >
       <header className="flex min-h-13 items-center gap-3 border-b border-white/10 px-4 py-3">
-        <FiBell className="size-4 text-emerald-300" aria-hidden="true" />
+        <FiBell
+          className="size-4 text-emerald-300"
+          aria-hidden="true"
+        />
         <h2 className="m-0 flex-1 text-sm font-black">歷史通知</h2>
-        <span className="text-xs font-bold text-neutral-500">最近 {notifications.length} 則</span>
+        <span className="text-xs font-bold text-neutral-500 max-[420px]:hidden">
+          最近 {notifications.length} 則
+        </span>
+        <Button
+          className="min-h-8 rounded-lg px-2.5 py-1 text-xs"
+          disabled={clearDisabled || clearing || !notifications.length}
+          onClick={onClear}
+        >
+          <FiTrash2
+            className="size-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          {clearing ? "清除中…" : "清除通知"}
+        </Button>
         <button
           className="grid size-7 cursor-pointer place-items-center rounded-md text-neutral-400 transition-[background-color,color] duration-150 motion-reduce:transition-none hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-300"
           type="button"
           aria-label="收合歷史通知"
           onClick={onClose}
         >
-          <FiChevronDown className="size-4" aria-hidden="true" />
+          <FiChevronDown
+            className="size-4"
+            aria-hidden="true"
+          />
         </button>
       </header>
       <div className="overflow-y-auto overscroll-contain">

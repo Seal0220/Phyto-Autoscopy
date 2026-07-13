@@ -8,6 +8,7 @@ class DiskStatus(BaseModel):
     total_bytes: int
     used_bytes: int
     free_bytes: int
+    error: str | None = None
 
 
 class SystemStatus(BaseModel):
@@ -17,7 +18,7 @@ class SystemStatus(BaseModel):
     device_version: str
     mock_mode: bool
     started_at: str
-    experiment_status: str
-    active_session_id: str | None = None
+    schedule_status: str
+    active_record_id: str | None = None
     disk: DiskStatus
     recent_errors: list[str]

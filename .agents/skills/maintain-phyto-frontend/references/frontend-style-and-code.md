@@ -85,15 +85,15 @@ frontend/src/
 │  ├─ Tooltip.js             # ungrouped shared tooltip primitive
 │  └─ VerticalLine.js        # ungrouped shared primitive
 ├─ features/
-│  ├─ Auth/                  # LoginForm
-│  ├─ Dashboard/             # application composition and DashboardHeader
+│  ├─ Login/                 # login UI
+│  ├─ ControlPanel/          # application composition and ControlPanelHeader
 │  ├─ ImagePreview/          # image preview, dedicated settings and utilities
-│  ├─ Motor/                 # Motor and direct controls
+│  ├─ Control/               # direct hardware control and MotorControls
 │  ├─ Notifications/         # toast/history UI and notification hook
 │  ├─ Schedule/              # Schedule, config, mode components and utilities
 │  ├─ RecordsStorage/        # record list, storage path settings and utilities
 │  ├─ Settings/              # general settings editor, config and utility logic
-│  └─ Status/                # live overview
+│  └─ SystemStatus/          # 系統狀態 overview
 ├─ hooks/                    # truly cross-feature client lifecycles
 └─ lib/                      # truly cross-feature pure/server utilities
 ```
@@ -112,7 +112,9 @@ A UI primitive should:
 
 ### 3.2 Feature folders
 
-Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`ImagePreview`, `Schedule`, `Motor`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `ImagePreview.js` or `Schedule.js`. Every subcomponent in `components/` uses the owning feature as a PascalCase prefix in both its filename and component identifier, such as `ImagePreviewSettings.js`, `ScheduleModeCard.js`, or `DashboardHeader.js`. This explicit prefix prevents ambiguous imports such as `Field`, `Settings`, `Header`, `Section`, or `ModeCard` when several features are open together.
+Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`ImagePreview`, `Schedule`, `Control`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `ImagePreview.js` or `Schedule.js`. Every subcomponent in `components/` uses the owning feature as a PascalCase prefix in both its filename and component identifier, such as `ImagePreviewSettings.js`, `ScheduleModeCard.js`, or `ControlPanelHeader.js`. This explicit prefix prevents ambiguous imports such as `Field`, `Settings`, `Header`, `Section`, or `ModeCard` when several features are open together.
+
+`Control/components/MotorControls.js` is the deliberate exception to the normal feature-prefix rule: it names the hardware-specific motor control group requested by the product vocabulary. Keep `MotorControls`; do not restore a top-level `Motor` feature.
 
 Use these feature-internal destinations:
 
@@ -143,6 +145,8 @@ Use root `lib` only for cross-feature deterministic/server modules such as:
 - date, duration, value, or status formatting;
 - request and BFF helpers;
 - authenticated session helpers.
+
+Capture records are a separate domain. Use `record`/`Record`, `record_id`, `record_path`, `/api/records`, and `records.list` at that boundary. The word `session` is reserved for login/authentication state and its signed cookie/ticket helpers. Normalize legacy capture-record session names at the boundary instead of spreading them through feature code. The filesystem root remains `captures_dir` (`data/captures` by default) because it stores captured images, per-mode folders, CSV logs, and `record.json`; SQLite stores the Record/Capture relationships, metadata, states, and file paths used by read APIs.
 
 Feature-specific pure code belongs in that feature's `lib/`, even when it currently has one caller. A feature config file must never contain algorithms; pure code belongs in its `lib/*Utils.js` file.
 
@@ -549,11 +553,11 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 ## 7. Feature composition standards
 
-### 7.1 Dashboard
+### 7.1 Control panel
 
-`features/Dashboard/Dashboard.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings disclosure state, and feature placement. Keep feature-specific markup and transformations out of it.
+`features/ControlPanel/ControlPanel.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings disclosure state, and feature placement. Keep feature-specific markup and transformations out of it.
 
-`features/Dashboard/components/DashboardHeader.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
+`features/ControlPanel/components/ControlPanelHeader.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
@@ -570,11 +574,13 @@ The schedule feature is split by responsibility:
 
 Multiple modes may participate in one schedule. Keep each mode instance independently identifiable, and keep output/logging concepts distinguishable by mode. Shared parameters belong above the mode list rather than repeated within every mode.
 
-`Schedule.js` emits the `運行狀態` and `排程` panels as sibling dashboard grid items so both can share the same schedule form state without duplicating it in `Dashboard`. Keep runtime cards out of the schedule form. The runtime panel contains the equal-width status-card grid directly beneath its `PanelHeader`, without a description block or extra nested surface. Use the live motor command position for `目前角度`, falling back to the experiment angle only when motor status is unavailable.
+`Schedule.js` emits the `運行狀態` and `排程` panels as sibling control-panel grid items so both can share the same schedule form state without duplicating it in `ControlPanel`. Keep runtime cards out of the schedule form. The runtime panel contains the equal-width status-card grid directly beneath its `PanelHeader`, without a description block or extra nested surface. Use the live motor command position for `目前角度`, falling back to the schedule angle only when motor status is unavailable.
 
 Every schedule cycle reaches the shared end angle and then returns to the `0°` origin before the next cycle. `往返皆擷取` (`capture_on_return`) selects how that return is performed: when disabled, reaching the end angle is followed by a direct return to the origin with no return-path capture evaluation; when enabled, the motor returns step by step with the same forward movement and capture configuration, excluding the duplicated end point. Reset angle-target completion at the direction change so each target may be captured once in the forward direction and once in the return direction; time-interval modes continue evaluating on the return path only when this option is enabled. Record `motion_direction` in every mode log so the two passes remain distinguishable. Do not add a per-cycle motor-release setting because the motor must remain engaged between cycles. The separate `排程結束後回到原點` option is applied once when the whole schedule completes, stops, or fails so an interrupted partial cycle can still return to `0°`.
 
 The `通用配置` header has a right-side `預設` button through `SubsectionHeader` children. It restores only `SCHEDULE_COMMON_DEFAULTS`; existing capture modes remain intact.
+
+Schedule transport mode names are `time_interval`, `angle_interval`, `specific_angles`, and `equal_divisions`. The time-based mode is always `time_interval`; `seconds_interval` is obsolete and may appear only in an explicit legacy-normalization path.
 
 Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic, parsing comma-separated angle strings, equal-division calculation, and payload construction belong in the schedule library. Equal divisions treat `points` as the total number of capture points including both the shared start and end angles; the interval is therefore `(end - start) / (points - 1)`. Schedule submissions must send `duration_seconds` to the backend; convert minute-based stored defaults only when loading them into the schedule UI.
 
@@ -588,29 +594,33 @@ The ImagePreview panel header keeps its actions in this order: `擷取全部`, `
 
 Each image preview places its camera name over the upper center of the image instead of repeating it in the footer. The name uses a compact translucent bordered surface with square top corners and `rounded-b-xl` lower corners. An icon-only enlarge action remains at the lower right of the image. `features/ImagePreview/components/ImagePreviewFullscreen.js` owns the full-viewport dialog and renders it through a body portal so panel overflow and stacking contexts cannot clip it. Opening and closing use 400ms opacity and size transitions with `motion-reduce` support. Preserve background-click and Escape dismissal, body-scroll locking, a visible close action, and descriptive Traditional Chinese accessible labels.
 
-Dashboard settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
+ControlPanel settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
 
 `features/Settings/components/SettingsSection.js` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
 
 Do not redefine each setting field in the panel file. Preserve one authoritative control for an action/status rather than allowing separate settings and main-section controls to diverge.
 
-### 7.4 Image preview, motor, records storage, and status
+### 7.4 Image preview, control, records storage, and system status
 
 Feature entry components may arrange their domain data and actions but should reuse:
 
 - `Panel`/`PanelHeader` for section framing;
-- `InnerPanel` for grouped device/session content;
+- `InnerPanel` for grouped device/record content;
 - `Button`, fields, pills, and toggles for controls;
 - pure helpers from the owning feature's `lib/` or root `lib/` only when shared;
 - the shared notification channel for results and errors.
 
 `RecordsStorage` presents each record's `ID`, status, storage path, creation time, terminal end time, and export actions in one table. Keep the table within a height-limited internal scroll area with a sticky header. `ended_at` remains empty for active and legacy records and is written only when a schedule reaches `completed`, `stopped`, or `failed`; display unavailable values as `—`.
 
+The formal UI title is `紀錄與儲存`. Use `record_id` and `record_path` from the transport and `recordId` in local JavaScript. Its configured file root is `captures_dir` (`data/captures` by default) and the label is `擷取檔案儲存位置`. Captured binaries and required log/export files stay under this directory; do not move them into SQLite or rename the root to `records_dir`.
+
+The canonical camera identifiers are `top`, `side`, and `rotating`. Use them consistently in frontend metadata, backend settings, API payloads, runtime state, schedule fields (`capture_top`, `capture_side`, `capture_rotating`), and all newly generated storage paths. Manual capture actions in ImagePreview are standalone snapshots. Both the individual `擷取` action and `擷取全部` use snapshot actions rather than Record capture actions, store images directly in `snapshots_dir` (`data/snapshots` by default) without nested directories, and use filenames containing the camera identifier plus a timestamp. Snapshot operations do not create Record/Capture rows; scheduled and record-owned captures continue using `captures_dir` and SQLite relationships.
+
 Motor and capture actions must have one authoritative activation point. The `控制` panel owns simple direct motor actions: holding torque, moving to a target angle, setting/returning to origin, and stopping. Other locations may show state, but must not create independent controls with conflicting state. Disable and apply grayscale to this direct-control group while a schedule is running, paused, or stopping.
 
 The motor origin is always the numeric `0°` reference and is not an editable setting. `設為原點` redefines the motor's current physical position as `0°`; `回到原點` consequently moves to `0°`. Never reintroduce an `origin_deg` field or a configurable origin-angle value in the frontend, API model, persisted settings, or hardware adapter. In motor movement settings, place `速度限制` and `加速度限制` in the same two-column grid with an explicit gap, and let the duration-style movement timeout span the full row beneath them.
 
-While a schedule is running, paused, or stopping, every user-initiated modification is locked across the dashboard: schedule configuration and modes, direct motor controls, manual camera capture, and every settings group. Keep read-only views, notification history, session refresh, camera reconnection, schedule pause/resume/stop, and emergency stop available. Use native disabled controls inside a visually grayscale group, and preserve matching backend enforcement so stale clients cannot bypass the lock.
+While a schedule is running, paused, or stopping, every user-initiated modification is locked across the control panel: schedule configuration and modes, direct motor controls, manual camera capture, and every settings group. Keep read-only views, notification history, record refresh, camera reconnection, schedule pause/resume/stop, and emergency stop available. Use native disabled controls inside a visually grayscale group, and preserve matching backend enforcement so stale clients cannot bypass the lock.
 
 ## 8. Interaction and motion
 
@@ -717,9 +727,17 @@ Choose a component API from the component's structural responsibility:
 Container-style examples:
 
 ```jsx
-export default function InnerPanel({ as: Component = "div", children, className, ...props }) {
+export default function InnerPanel({
+  as: Component = "div",
+  children,
+  className,
+  ...props
+}) {
   return (
-    <Component className={`base classes ${className || ""}`} {...props}>
+    <Component
+      className={`base classes ${className || ""}`}
+      {...props}
+    >
       {children}
     </Component>
   );
@@ -731,9 +749,20 @@ Use this pattern for components such as `InnerPanel` and `ActionRow`, where call
 Fixed-format examples:
 
 ```jsx
-<StatusCard title="執行時間" content="2 分 10 秒" note="/ 共 20 分鐘" />
-<PanelHeader title="排程" action={<SettingsGear />} />
-<ToggleRow label="鎖定馬達位置" description="…" status={<StatusPill>保持中</StatusPill>} />
+<StatusCard
+  title="執行時間"
+  content="2 分 10 秒"
+  note="/ 共 20 分鐘"
+/>
+<PanelHeader
+  title="排程"
+  action={<SettingsGear />}
+/>
+<ToggleRow
+  label="鎖定馬達位置"
+  description="…"
+  status={<StatusPill>保持中</StatusPill>}
+/>
 ```
 
 Keep `StatusCard`, `PanelHeader`, `ToggleRow`, fields, and similar structured components on named props because the component owns the meaning, order, and styling of each slot. Do not replace these props with arbitrary children merely to reduce the prop count. A component such as `SubsectionHeader` may still use `children` for a distinct caller-owned action slot while keeping its fixed title and description on named props.
@@ -753,6 +782,8 @@ The root layout currently tolerates browser-extension attribute injection at the
 - Backend field names may remain English `snake_case` at the transport boundary.
 - Normalize transport shapes in `lib` before broad UI use when that reduces repeated boundary-specific naming.
 - Stable metadata and option lists use named constants rather than inline anonymous arrays repeated across renders.
+- Formal names are fixed: `ControlPanel`/控制台, `Control`/控制, `SystemStatus`/系統狀態, `Schedule`/排程, and `RecordsStorage`/紀錄與儲存. Keep `MotorControls` as the motor-specific child of `Control`.
+- Never use `Experiment` for schedule behavior, `Status` or 即時狀態 for the SystemStatus feature, or business-domain `Session` for capture records.
 
 ## 11. State, data, and network boundaries
 
@@ -762,14 +793,14 @@ Keep state at the narrowest level that owns the behavior:
 
 - purely visual local disclosure state stays in the component;
 - feature state shared by feature components stays in their nearest feature parent or hook;
-- application-wide notification/socket/settings-panel behavior stays in reusable hooks coordinated by the dashboard;
+- application-wide notification/socket/settings-panel behavior stays in reusable hooks coordinated by the control panel;
 - deterministic derived values are calculated by pure helpers rather than duplicated state.
 
 Avoid keeping two independently mutable copies of one backend status.
 
 ### 11.2 WebSocket behavior
 
-Reusable connection, reconnection, message parsing, and cleanup behavior belongs in `use-phyto-socket.js`. UI sections consume normalized state/events rather than opening their own sockets.
+Reusable connection, reconnection, message parsing, and cleanup behavior belongs in `usePhytoSocket.js`. UI sections consume normalized state/events rather than opening their own sockets.
 
 Always clean up listeners, timers, and connections created by an effect. Keep same-origin/session ticket behavior intact.
 
@@ -795,6 +826,22 @@ Do not bypass shared `api-proxy`, `backend`, `http`, or `session` helpers with a
 Formatting functions must tolerate missing, stale, and malformed backend values. A UI component should receive a display-ready value or a predictable fallback rather than reproduce parsing logic.
 
 Validate schedule/settings payloads before submission. Error messages should identify the relevant Traditional Chinese field or mode, while transport field names remain inside the library/API boundary.
+
+### 11.5 Async failures, retries, cancellation, and reset
+
+Every asynchronous feature must define its pending, success, failure, retry, cancellation, stale-result, and reset behavior. Never leave a rejected promise, spinner, disabled control, socket command, or optimistic value without a terminal path.
+
+- Convert unknown transport failures to concise Traditional Chinese messages; do not expose stacks, credentials, backend origins, raw HTML, or unbounded response bodies.
+- Release pending flags, timers, and request registries in `finally`. Guard state and notifications after unmount, and use an AbortController, request generation, or identity check so an older completion cannot overwrite newer state.
+- Keep the previous valid snapshot/list while refreshing. A failed read must expose a visible retry action; a successful retry clears only that feature's load error.
+- Automatically retry only idempotent reads, status polling, preview recovery, ticket acquisition, or reconnect operations. Bound retry delay/frequency, clean every timer on unmount, and respect normalized `retryable`/`Retry-After` hints when available.
+- Never automatically retry a mutation after timeout or transport loss because the backend may already have applied it. Report that the result is unknown and require status refresh before another mutation.
+- Prevent duplicate mutations with an action-scoped pending registry. Do not use one global busy flag when unrelated recovery actions must remain available.
+- Blocking manual motor move and return-to-origin actions use a same-origin HTTP/BFF request with an action-scoped timeout long enough for the configured motor movement timeout, leaving the status WebSocket free to publish snapshots. Motor stop and emergency stop use separate HTTP requests so they can interrupt an active move, and their pending state remains separate from the original movement.
+- Backend code `operation_cancelled` means an intentional interruption. Resolve the interrupted UI action without an error toast, and never copy it into notification history or backend `recent_errors`.
+- Clear shared errors only after `system.errors.reset` succeeds, then clear the local notification history. If reset fails, preserve both lists and show the reset failure.
+- Schedule runtime reset is separate from error-history reset. Never reset a live worker; preserve a failed schedule and its `last_error` until the explicit schedule reset succeeds.
+- Settings saves must not overwrite edits made while a request is pending. Disable the edited surface or merge/commit only the submitted revision after success.
 
 ## 12. Extraction and reuse rules
 
@@ -856,7 +903,11 @@ Do not introduce:
 - `cx`, `cn`, or class-joining dependencies;
 - server credentials, backend base URLs, or session secrets in client code;
 - silent catches that discard an actionable failure;
-- hydration suppression as a general fix for nondeterministic rendering.
+- hydration suppression as a general fix for nondeterministic rendering;
+- business-domain `Session`, `session_id`, `session_path`, `/api/sessions`, or `sessions.list` names outside an explicit legacy adapter;
+- automatic retry of mutations with an unknown outcome;
+- clearing local error UI before its backend reset succeeds;
+- treating intentional `operation_cancelled` as an operational error.
 
 ## 14. Change workflow
 
@@ -919,6 +970,10 @@ When a request intentionally changes the design system, update the shared primit
 - [ ] Payload validation and transport formatting use shared helpers.
 - [ ] Effects clean up sockets, listeners, and timers.
 - [ ] Rendering is deterministic across server and initial client output.
+- [ ] Every async pending state has success, failure, cleanup, stale-result, retry, and reset behavior.
+- [ ] Automatic retries are bounded and limited to safe/idempotent work.
+- [ ] Capture records use Record naming; login/authentication state alone uses session naming.
+- [ ] Intentional motor cancellation does not enter notifications or recent_errors.
 
 ### Commands and process
 

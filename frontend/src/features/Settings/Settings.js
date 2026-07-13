@@ -3,6 +3,7 @@
 import { FiSave } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
 
@@ -21,6 +22,8 @@ export default function Settings({
     loading,
     saving,
     loadFailed,
+    loadError,
+    loadGroup,
     updateField,
     saveGroup,
   } = useSettings({
@@ -34,7 +37,7 @@ export default function Settings({
     <SettingPanel
       label={label}
       open={open}
-      locked={locked}
+      locked={locked || saving}
       footer={(
         <Button
           variant="primary"
@@ -49,8 +52,23 @@ export default function Settings({
         </Button>
       )}
     >
-      {loading && !payload ? <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">讀取設定中…</p> : null}
-      {!loading && !payload && !loadFailed ? <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">尚無可編輯設定。</p> : null}
+      {loading && !payload ? (
+        <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
+          讀取設定中…
+        </p>
+      ) : null}
+      {!loading && !payload && loadFailed ? (
+        <RetryMessage
+          message={loadError || "讀取設定失敗。"}
+          onRetry={() => void loadGroup()}
+          retrying={loading}
+        />
+      ) : null}
+      {!loading && !payload && !loadFailed ? (
+        <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
+          尚無可編輯設定。
+        </p>
+      ) : null}
       {payload ? (
         <div className="grid min-w-0 gap-4 min-[720px]:grid-cols-2">
           {sections.map(({

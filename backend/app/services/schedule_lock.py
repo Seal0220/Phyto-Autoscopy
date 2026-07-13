@@ -12,7 +12,7 @@ ACTIVE_SCHEDULE_STATUSES = frozenset({"running", "paused", "stopping"})
 
 
 def schedule_is_active(context: AppContext) -> bool:
-    return context.experiment_service.get_status().status in ACTIVE_SCHEDULE_STATUSES
+    return context.schedule_service.get_status().status in ACTIVE_SCHEDULE_STATUSES
 
 
 def ensure_manual_changes_allowed(context: AppContext) -> None:

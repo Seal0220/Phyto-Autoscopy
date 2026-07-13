@@ -1,21 +1,18 @@
 "use server";
 
-import crypto from "node:crypto";
-
 import { redirect } from "next/navigation";
 
+import { passwordsMatch } from "@/lib/authUtils";
 import { createOperatorSession } from "@/lib/session";
 
-function passwordsMatch(supplied, configured) {
-  const left = Buffer.from(supplied || "");
-  const right = Buffer.from(configured || "");
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
-}
-
-export async function loginAction(_previousState, formData) {
+export async function loginAction(
+  _previousState,
+  formData,
+) {
   const configuredPassword = process.env.PHYTO_AUTOSCOPY_OPERATOR_PASSWORD;
   if (!configuredPassword) {
-    return { error: "尚未設定 PHYTO_AUTOSCOPY_OPERATOR_PASSWORD。" };
+    console.error("Operator login is unavailable because authentication is not configured.");
+    return { error: "登入服務尚未完成設定，請聯絡管理員。" };
   }
 
   const password = String(formData.get("password") || "");
@@ -23,6 +20,13 @@ export async function loginAction(_previousState, formData) {
     return { error: "密碼不正確。" };
   }
 
-  await createOperatorSession();
+  try {
+    await createOperatorSession();
+  } catch (error) {
+    console.error("Operator session creation failed", {
+      type: error instanceof Error ? error.name : typeof error,
+    });
+    return { error: "登入服務暫時無法使用，請稍後再試。" };
+  }
   redirect("/");
 }

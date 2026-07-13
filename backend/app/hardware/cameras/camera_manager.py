@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from threading import Lock
+from threading import RLock
 from typing import Protocol
 
 from app.core.config import AppSettings
-from app.core.exceptions import CameraError
+from app.core.exceptions import CameraError, public_error_detail
 from app.hardware.cameras.camera_identifier import scan_opencv_indices
 from app.hardware.cameras.camera_registry import CameraRegistry
 from app.hardware.cameras.camera_types import CameraFrame
@@ -37,7 +37,7 @@ class OpenCVCameraManager:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.registry = CameraRegistry(settings)
-        self._lock = Lock()
+        self._lock = RLock()
         self._connected: dict[str, bool] = {}
         self._last_error: dict[str, str | None] = {}
 
@@ -45,26 +45,40 @@ class OpenCVCameraManager:
         self.scan()
 
     def scan(self) -> list[dict]:
-        scan_results = scan_opencv_indices(self.settings.hardware.camera_scan_max_index)
-        connected_indices = {item.device_index for item in scan_results if item.connected}
-        for camera_id, config in self.registry.all().items():
-            self._connected[camera_id] = config.enabled and config.device_index in connected_indices
-            self._last_error[camera_id] = None if self._connected[camera_id] else "Camera not connected"
-        return [item.__dict__ for item in scan_results]
+        with self._lock:
+            scan_results = scan_opencv_indices(
+                self.settings.hardware.camera_scan_max_index
+            )
+            connected_indices = {
+                item.device_index for item in scan_results if item.connected
+            }
+            for camera_id, config in self.registry.all().items():
+                self._connected[camera_id] = (
+                    config.enabled
+                    and config.device_index in connected_indices
+                )
+                if self._connected[camera_id]:
+                    self._last_error[camera_id] = None
+                elif not config.enabled:
+                    self._last_error[camera_id] = "相機未啟用。"
+                else:
+                    self._last_error[camera_id] = "相機未連線。"
+            return [item.__dict__ for item in scan_results]
 
     def get_status(self, camera_id: str) -> CameraStatus:
-        config = self.registry.get(camera_id)
-        return CameraStatus(
-            camera_id=camera_id,
-            camera_name=config.device_name,
-            device_index=config.device_index,
-            enabled=config.enabled,
-            connected=self._connected.get(camera_id, False),
-            width=config.width,
-            height=config.height,
-            fps=config.preview_fps,
-            last_error=self._last_error.get(camera_id),
-        )
+        with self._lock:
+            config = self.registry.get(camera_id)
+            return CameraStatus(
+                camera_id=camera_id,
+                camera_name=config.device_name,
+                device_index=config.device_index,
+                enabled=config.enabled,
+                connected=self._connected.get(camera_id, False),
+                width=config.width,
+                height=config.height,
+                preview_fps=config.preview_fps,
+                last_error=self._last_error.get(camera_id),
+            )
 
     def get_statuses(self) -> list[CameraStatus]:
         return [self.get_status(camera_id) for camera_id in self.registry.roles()]
@@ -77,7 +91,7 @@ class OpenCVCameraManager:
         try:
             import cv2  # type: ignore
         except ImportError as exc:
-            self._last_error[camera_id] = str(exc)
+            self._last_error[camera_id] = "尚未安裝 OpenCV 相機驅動程式。"
             raise CameraError("尚未安裝 OpenCV 相機驅動程式。") from exc
 
         with self._lock:
@@ -111,12 +125,24 @@ class OpenCVCameraManager:
                     timestamp=datetime.now(timezone.utc),
                 )
             except CameraError as exc:
-                self._last_error[camera_id] = str(exc)
+                self._last_error[camera_id] = public_error_detail(exc)
                 logger.warning("Camera capture failed: %s", exc)
                 raise
+            except Exception as exc:
+                self._connected[camera_id] = False
+                self._last_error[camera_id] = "相機擷取發生未預期錯誤。"
+                logger.exception("Unexpected OpenCV camera failure: %s", camera_id)
+                raise CameraError("相機擷取發生未預期錯誤。") from exc
             finally:
                 if capture:
-                    capture.release()
+                    try:
+                        capture.release()
+                    except Exception:
+                        logger.warning(
+                            "Failed to release OpenCV camera: %s",
+                            camera_id,
+                            exc_info=True,
+                        )
 
     def reconnect(self, camera_id: str) -> CameraStatus:
         self.scan()
@@ -127,4 +153,7 @@ class OpenCVCameraManager:
         return self.get_statuses()
 
     def close_all(self) -> None:
-        self._connected = {camera_id: False for camera_id in self.registry.roles()}
+        with self._lock:
+            self._connected = {
+                camera_id: False for camera_id in self.registry.roles()
+            }

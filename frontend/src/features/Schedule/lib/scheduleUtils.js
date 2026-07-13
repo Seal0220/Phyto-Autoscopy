@@ -1,6 +1,13 @@
-import { SCHEDULE_MODE_META } from "../scheduleConfig";
+import {
+  SCHEDULE_MODE_META,
+  SCHEDULE_STATUS_LABELS,
+  SCHEDULE_STATUS_TONES,
+} from "../scheduleConfig";
 
-function positiveNumber(value, label) {
+function positiveNumber(
+  value,
+  label,
+) {
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -10,8 +17,32 @@ function positiveNumber(value, label) {
   return parsed;
 }
 
+export function scheduleStatusLabel(status) {
+  return SCHEDULE_STATUS_LABELS[status] || "未知狀態";
+}
+
+export function scheduleStatusTone(status) {
+  return SCHEDULE_STATUS_TONES[status] || "warning";
+}
+
+export function scheduleErrorMessage(value) {
+  if (typeof value !== "string") return "排程執行失敗。";
+
+  const message = value.trim();
+
+  if (
+    !message
+    || message.length > 500
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(message)
+  ) {
+    return "排程執行失敗。";
+  }
+
+  return message;
+}
+
 export function scheduleModeTypeFromLabel(label) {
-  return Object.entries(SCHEDULE_MODE_META).find(([, meta]) => meta.label === label)?.[0] || "seconds_interval";
+  return Object.entries(SCHEDULE_MODE_META).find(([, meta]) => meta.label === label)?.[0] || "time_interval";
 }
 
 export function buildSchedulePayload(schedule) {
@@ -40,7 +71,7 @@ export function buildSchedulePayload(schedule) {
         };
       }
 
-      if (mode.type === "seconds_interval") {
+      if (mode.type === "time_interval") {
         return {
           id: mode.id,
           type: mode.type,

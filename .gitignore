@@ -9,11 +9,13 @@ backend/data/captures/*
 backend/data/calibration/*
 backend/data/database/*
 backend/data/logs/*
+backend/data/snapshots/*
 backend/data/temp/*
 !backend/data/captures/.gitkeep
 !backend/data/calibration/.gitkeep
 !backend/data/database/.gitkeep
 !backend/data/logs/.gitkeep
+!backend/data/snapshots/.gitkeep
 !backend/data/temp/.gitkeep
 frontend/node_modules/
 frontend/.next/

@@ -27,7 +27,7 @@ def test_rotation_cycle_captures_mock_arm_frames(tmp_path, monkeypatch) -> None:
 def test_rotation_cycle_is_locked_while_schedule_runs(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
     with TestClient(create_app(), headers=authorized_headers()) as client:
-        start_response = client.post("/api/experiments/start", json={})
+        start_response = client.post("/api/schedules/start", json={})
         assert start_response.status_code == 200
 
         response = client.post(
@@ -37,4 +37,4 @@ def test_rotation_cycle_is_locked_while_schedule_runs(tmp_path, monkeypatch) -> 
 
         assert response.status_code == 400
         assert response.json()["detail"] == "排程進行中，無法修改控制或設定。"
-        assert client.post("/api/experiments/stop").status_code == 200
+        assert client.post("/api/schedules/stop").status_code == 200

@@ -14,7 +14,7 @@ from app.hardware.cameras.mock_camera import MockCameraManager
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("camera_id", choices=["top", "fixed_side", "rotating_arm"])
+    parser.add_argument("camera_id", choices=["top", "side", "rotating"])
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--output", default="data/temp/test_camera.jpg")
     args = parser.parse_args()
