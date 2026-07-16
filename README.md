@@ -18,11 +18,12 @@ FastAPI 硬體後端 — 127.0.0.1:22222
 
 ```text
 frontend/  Next.js App Router、JavaScript、Tailwind CSS v4 與 BFF Route Handlers
-backend/   FastAPI API、硬體服務、設定、資料、測試與稽核紀錄
+backend/   FastAPI API、硬體服務、設定與測試
+data/      擷取影像、快照、SQLite、校正、日誌與暫存資料
 start.bat  在兩個獨立終端中啟動前端與後端，完成後自行結束
 ```
 
-FastAPI 僅提供 API，不會掛載舊有的 Jinja 頁面。所有 `/api/*` 端點皆要求私有 BFF 憑證，並攜帶已驗證的操作者與角色資訊，同時套用權限檢查、速率限制及輸入驗證。所有會變更狀態的操作都會寫入 `backend/data/logs/audit.jsonl`。WebSocket 連線使用僅能使用一次且有效時間短暫的票證，票證只能透過已驗證的 BFF 取得。
+FastAPI 僅提供 API，不會掛載舊有的 Jinja 頁面。所有 `/api/*` 端點皆要求私有 BFF 憑證，並攜帶已驗證的操作者與角色資訊，同時套用權限檢查、速率限制及輸入驗證。所有會變更狀態的操作都會寫入 `data/logs/audit.jsonl`。WebSocket 連線使用僅能使用一次且有效時間短暫的票證，票證只能透過已驗證的 BFF 取得。
 
 ## 啟動方式
 
@@ -53,6 +54,8 @@ FastAPI 僅提供 API，不會掛載舊有的 Jinja 頁面。所有 `/api/*` 端
 `--mock` 就是開發模式：前端執行 `next dev`，FastAPI 使用 `uvicorn --reload`，並啟用模擬相機與馬達。
 
 `start.bat` 會分別建立前端與後端終端，兩者都成功啟動後便自行結束，不會持續監控或占用第三個終端。FastAPI 與 Next.js 也不會互相啟動、停止或監控；需要停止服務時，請分別關閉其終端。
+
+後端一律以專案根目錄的 `data/` 作為資料根目錄。若升級前仍有 `backend/data/`，下一次手動啟動後端時會在開啟 SQLite 前自動合併至根目錄 `data/`，既有擷取、快照與日誌不會被覆寫；完成後會移除空的舊目錄。
 
 只需開啟：
 

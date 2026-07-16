@@ -4,10 +4,23 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.core.config import load_settings
 from app.core.exceptions import ConfigError
+from app.main import create_app
 
 from .test_support import authorized_headers, write_test_config
+
+
+def test_explicit_production_mode_disables_mock_config(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config_dir = write_test_config(tmp_path, monkeypatch)
+    monkeypatch.setenv("PHYTO_AUTOSCOPY_MOCK", "0")
+
+    settings = load_settings(config_dir)
+
+    assert settings.hardware.mock_mode is False
 
 
 def test_settings_group_read_and_write_preserves_payload(tmp_path, monkeypatch) -> None:
@@ -30,6 +43,27 @@ def test_settings_group_read_and_write_preserves_payload(tmp_path, monkeypatch) 
         reloaded = client.get("/api/settings/cameras")
         assert reloaded.status_code == 200
         assert reloaded.json()["cameras"]["top"]["preview_fps"] == 12
+
+
+def test_camera_settings_persist_unassigned_disabled_device(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        payload = client.get("/api/settings/cameras").json()
+        payload["cameras"]["rotating"]["enabled"] = False
+        payload["cameras"]["rotating"]["device_index"] = None
+
+        updated = client.post(
+            "/api/settings/cameras",
+            json={"payload": payload},
+        )
+
+        assert updated.status_code == 200
+        reloaded = client.get("/api/settings/cameras").json()
+        assert reloaded["cameras"]["rotating"]["enabled"] is False
+        assert reloaded["cameras"]["rotating"]["device_index"] is None
 
 
 def test_schedule_settings_persist_capture_on_return(tmp_path, monkeypatch) -> None:
@@ -63,7 +97,7 @@ def test_settings_apply_failure_restores_runtime_and_file(tmp_path, monkeypatch)
         def fail_scan():
             raise RuntimeError("private driver failure")
 
-        monkeypatch.setattr(context.camera_manager, "scan", fail_scan)
+        monkeypatch.setattr(context.camera_manager, "reconfigure", fail_scan)
         response = client.post(
             "/api/settings/cameras",
             json={"payload": current},
@@ -74,6 +108,29 @@ def test_settings_apply_failure_restores_runtime_and_file(tmp_path, monkeypatch)
         assert context.settings.cameras["top"].preview_fps == original_fps
         stored = json.loads((config_dir / "cameras.json").read_text(encoding="utf-8"))
         assert stored["cameras"]["top"].get("preview_fps", 5) == original_fps
+
+
+def test_duplicate_enabled_camera_index_is_rejected_without_changing_file(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config_dir = write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        current = client.get("/api/settings/cameras").json()
+        current["cameras"]["side"]["device_index"] = 0
+
+        response = client.post(
+            "/api/settings/cameras",
+            json={"payload": current},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "config_error"
+        stored = json.loads(
+            (config_dir / "cameras.json").read_text(encoding="utf-8")
+        )
+        assert stored["cameras"]["side"]["device_index"] == 1
+        assert client.app.state.context.settings.cameras["side"].device_index == 1
 
 
 def test_settings_persist_failure_does_not_change_runtime(tmp_path, monkeypatch) -> None:

@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   cloneValue,
@@ -8,9 +13,11 @@ import {
   setNestedValue,
 } from "@/features/Settings/lib/settingsUtils";
 import {
+  RequestTimeoutError,
   messageFromError,
   parseJsonResponse,
   responseErrorMessage,
+  withRequestTimeout,
 } from "@/lib/httpUtils";
 
 export default function useSettings({
@@ -78,11 +85,26 @@ export default function useSettings({
     setLoadError("");
 
     try {
-      const response = await fetch(`/api/settings/${group}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const nextPayload = await parseJsonResponse(response);
+      const {
+        response,
+        nextPayload,
+      } = await withRequestTimeout(
+        async (signal) => {
+          const response = await fetch(`/api/settings/${group}`, {
+            cache: "no-store",
+            signal,
+          });
+          const nextPayload = await parseJsonResponse(response);
+
+          return {
+            response,
+            nextPayload,
+          };
+        },
+        {
+          signal: controller.signal,
+        },
+      );
 
       if (!response.ok) {
         throw new Error(responseErrorMessage(
@@ -91,7 +113,12 @@ export default function useSettings({
         ));
       }
 
-      if (!nextPayload || typeof nextPayload !== "object" || Array.isArray(nextPayload)) {
+      if (
+        !nextPayload
+        || typeof nextPayload !== "object"
+        || Array.isArray(nextPayload)
+        || Object.keys(nextPayload).length === 0
+      ) {
         throw new Error("設定資料格式錯誤，請重新讀取。");
       }
 
@@ -106,7 +133,9 @@ export default function useSettings({
         return false;
       }
 
-      const message = messageFromError(error, "讀取設定失敗。");
+      const message = error instanceof RequestTimeoutError
+        ? "讀取設定逾時，請重新讀取。"
+        : messageFromError(error, "讀取設定失敗。");
 
       if (!mountedRef.current) return false;
 
@@ -132,22 +161,28 @@ export default function useSettings({
     void loadGroup();
   }, [loadGroup, open]);
 
-  function updateField(
-    path,
-    value,
-  ) {
-    setPayload((previous) => {
-      if (!previous) return previous;
-      const nextPayload = cloneValue(previous);
-      setNestedValue(nextPayload, path, value);
-      return nextPayload;
-    });
-  }
+  const updateField = useCallback(
+    (
+      path,
+      value,
+    ) => {
+      setPayload((previous) => {
+        if (!previous) return previous;
+        const nextPayload = cloneValue(previous);
+        setNestedValue(nextPayload, path, value);
+        return nextPayload;
+      });
+    },
+    [],
+  );
 
   async function saveGroup() {
     if (!payload || savingRef.current) return false;
 
     const controller = new AbortController();
+    let requestStarted = false;
+    let responseReceived = false;
+    let outcomeUnknown = false;
     savingRef.current = true;
     saveAbortRef.current = controller;
     setSaving(true);
@@ -156,19 +191,42 @@ export default function useSettings({
       const nextPayload = serializePayload
         ? serializePayload(payload)
         : serializeSettingsPayload(group, payload);
-      const response = await fetch(`/api/settings/${group}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload: nextPayload }),
-        signal: controller.signal,
-      });
-      const result = await parseJsonResponse(response);
+      requestStarted = true;
+      const {
+        response,
+        result,
+      } = await withRequestTimeout(
+        async (signal) => {
+          const response = await fetch(`/api/settings/${group}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload: nextPayload }),
+            signal,
+          });
+          const result = await parseJsonResponse(response);
+
+          return {
+            response,
+            result,
+          };
+        },
+        {
+          signal: controller.signal,
+        },
+      );
+      responseReceived = true;
 
       if (!response.ok) {
+        outcomeUnknown = response.status >= 500 || response.status === 408;
         throw new Error(responseErrorMessage(
           result,
           "儲存設定失敗。",
         ));
+      }
+
+      if (result?.updated !== group || result?.applied !== true) {
+        outcomeUnknown = true;
+        throw new Error("儲存設定的回應格式錯誤，請重新讀取確認。");
       }
 
       if (!mountedRef.current || controller.signal.aborted) return false;
@@ -182,7 +240,21 @@ export default function useSettings({
       }
 
       if (mountedRef.current) {
-        onNotify?.(messageFromError(error, "儲存設定失敗。"), "error");
+        outcomeUnknown = outcomeUnknown
+          || error instanceof RequestTimeoutError
+          || (requestStarted && !responseReceived);
+        const message = outcomeUnknown
+          ? "儲存結果尚未確認，請重新讀取設定後再操作。"
+          : messageFromError(error, "儲存設定失敗。");
+
+        if (outcomeUnknown) {
+          hasLoadedRef.current = false;
+          setPayload(null);
+          setLoadFailed(true);
+          setLoadError(message);
+        }
+
+        onNotify?.(message, "error");
       }
 
       return false;

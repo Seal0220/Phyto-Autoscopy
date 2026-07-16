@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ import pytest
 from app.core.config import AppSettings, MotorSettings
 from app.core.exceptions import CameraError, MotorError
 from app.hardware.cameras.camera_types import CameraFrame
+from app.hardware.cameras.mock_camera import MockCameraManager
 from app.hardware.motor.phidget_stepper import PhidgetStepperController
 from app.services.capture_service import CaptureService
 from app.services.health_service import HealthService
@@ -47,19 +49,151 @@ class TimeoutStepper:
         return True
 
 
-def test_preview_stream_retries_and_uses_preview_fps(monkeypatch) -> None:
+def test_preview_stream_retries_without_logging_expected_camera_error(
+    monkeypatch,
+    caplog,
+) -> None:
     manager = RecoveringPreviewManager()
     sleeps: list[float] = []
+
+    async def record_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
     monkeypatch.setattr(
-        "app.services.image_preview_service.time.sleep",
-        sleeps.append,
+        "app.services.image_preview_service.asyncio.sleep",
+        record_sleep,
     )
 
-    frame = next(ImagePreviewService(manager).mjpeg_stream("top"))
+    frame = asyncio.run(anext(ImagePreviewService(manager).mjpeg_stream("top")))
 
     assert b"jpeg" in frame
     assert manager.capture_calls == 2
     assert sleeps == [1.0]
+    assert caplog.records == []
+
+
+def test_preview_stream_logs_unexpected_failure(caplog) -> None:
+    class UnexpectedFailureManager:
+        @staticmethod
+        def get_status(_camera_id: str):
+            return SimpleNamespace(enabled=True, preview_fps=4)
+
+        @staticmethod
+        def capture(_camera_id: str) -> CameraFrame:
+            raise RuntimeError("private driver failure")
+
+    async def consume_stream() -> None:
+        stream = ImagePreviewService(UnexpectedFailureManager()).mjpeg_stream("top")
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+
+    asyncio.run(consume_stream())
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "相機 top 影像串流發生未預期錯誤。"
+    ]
+
+
+def test_preview_stream_stops_after_recovery_grace_period(
+    monkeypatch,
+    caplog,
+) -> None:
+    class OfflineManager:
+        def __init__(self) -> None:
+            self.capture_calls = 0
+
+        @staticmethod
+        def get_status(_camera_id: str):
+            return SimpleNamespace(enabled=True, preview_fps=4)
+
+        def capture(self, _camera_id: str) -> CameraFrame:
+            self.capture_calls += 1
+            raise CameraError("相機暫時離線。")
+
+    moments = iter((0.0, 31.0))
+    sleeps: list[float] = []
+
+    async def record_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(
+        "app.services.image_preview_service.monotonic",
+        lambda: next(moments),
+    )
+    monkeypatch.setattr(
+        "app.services.image_preview_service.asyncio.sleep",
+        record_sleep,
+    )
+    manager = OfflineManager()
+
+    async def consume_stream() -> None:
+        stream = ImagePreviewService(manager).mjpeg_stream("top")
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+
+    asyncio.run(consume_stream())
+
+    assert manager.capture_calls == 2
+    assert sleeps == [1.0]
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ("reconfigure", "reconnect", "reconnect_all"),
+)
+def test_mock_camera_sequence_stays_monotonic_after_reset_actions(
+    monkeypatch,
+    operation: str,
+) -> None:
+    monkeypatch.setattr(
+        "app.hardware.cameras.mock_camera.make_mock_jpeg",
+        lambda camera_id, sequence: f"{camera_id}-{sequence}".encode(),
+    )
+    manager = MockCameraManager(AppSettings())
+    _first, sequence = manager.wait_for_frame("top")
+
+    if operation == "reconnect":
+        manager.reconnect("top")
+    else:
+        getattr(manager, operation)()
+
+    _next, next_sequence = manager.wait_for_frame(
+        "top",
+        after_sequence=sequence,
+    )
+
+    assert next_sequence > sequence
+
+
+def test_mock_preview_clients_share_the_same_generated_frame(monkeypatch) -> None:
+    settings = AppSettings()
+    settings.cameras["top"].capture_fps = 60
+    generated: list[int] = []
+
+    def make_frame(_camera_id: str, sequence: int) -> bytes:
+        generated.append(sequence)
+        return f"jpeg-{sequence}".encode()
+
+    monkeypatch.setattr(
+        "app.hardware.cameras.mock_camera.make_mock_jpeg",
+        make_frame,
+    )
+    manager = MockCameraManager(settings)
+
+    _first_frame, first_sequence = manager.wait_for_frame("top")
+    second_frame, second_sequence = manager.wait_for_frame(
+        "top",
+        after_sequence=first_sequence,
+    )
+    shared_frame, shared_sequence = manager.wait_for_frame(
+        "top",
+        after_sequence=first_sequence,
+    )
+
+    assert generated == [1, 2]
+    assert shared_sequence == second_sequence
+    assert shared_frame is second_frame
 
 
 def test_capture_all_attempts_every_enabled_camera_before_reporting_failure() -> None:

@@ -13,6 +13,7 @@ class CameraStatus(BaseModel):
     width: int | None = None
     height: int | None = None
     preview_fps: int | None = None
+    actual_fps: float = Field(default=0.0, ge=0)
     last_error: str | None = None
 
 
@@ -44,7 +45,7 @@ class SnapshotResult(BaseModel):
 
 
 class CameraSettingsUpdate(BaseModel):
-    device_index: int | None = None
+    device_index: int | None = Field(default=None, ge=0)
     width: int | None = Field(default=None, gt=0)
     height: int | None = Field(default=None, gt=0)
     preview_fps: int | None = Field(default=None, ge=1, le=60)

@@ -3,32 +3,32 @@
     "top": {
       "device_name": "CHLOROCULUS EYE-TOP",
       "device_index": 0,
-      "width": 1280,
-      "height": 960,
-      "preview_fps": 5,
-      "capture_fps": 10,
-      "jpeg_quality": 95,
+      "width": 1920,
+      "height": 1080,
+      "preview_fps": 15,
+      "capture_fps": 15,
+      "jpeg_quality": 100,
       "enabled": true
     },
     "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
       "device_index": 1,
-      "width": 1280,
-      "height": 960,
-      "preview_fps": 5,
-      "capture_fps": 10,
-      "jpeg_quality": 95,
+      "width": 1920,
+      "height": 1080,
+      "preview_fps": 15,
+      "capture_fps": 15,
+      "jpeg_quality": 100,
       "enabled": true
     },
     "rotating": {
       "device_name": "CHLOROCULUS EYE-ARM",
-      "device_index": 2,
-      "width": 1280,
-      "height": 960,
-      "preview_fps": 3,
-      "capture_fps": 10,
-      "jpeg_quality": 95,
-      "enabled": true
+      "device_index": null,
+      "width": 1920,
+      "height": 1080,
+      "preview_fps": 15,
+      "capture_fps": 15,
+      "jpeg_quality": 100,
+      "enabled": false
     }
   }
 }

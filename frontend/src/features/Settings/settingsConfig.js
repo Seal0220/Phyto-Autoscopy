@@ -39,7 +39,7 @@ export const FIELD_META = {
     suffix: "度/秒²",
   },
   capture_side: {
-    label: "擷取固定側視角",
+    label: "擷取側視角",
   },
   capture_on_return: {
     label: "往返皆擷取",
@@ -56,7 +56,7 @@ export const FIELD_META = {
     label: "擷取旋臂視角",
   },
   capture_top: {
-    label: "擷取頂視角",
+    label: "擷取俯視角",
   },
   duration_minutes: {
     label: "總時長",

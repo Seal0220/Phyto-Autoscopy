@@ -12,6 +12,10 @@ export function motorProxyTimeout(path = []) {
 }
 
 export function cameraProxyTimeout(path = []) {
+  if (path[0] === "scan") {
+    return CAMERA_GROUP_ACTION_TIMEOUT_MS;
+  }
+
   if ([
     "snapshot-all",
     "reconnect-all",

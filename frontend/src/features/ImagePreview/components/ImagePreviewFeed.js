@@ -9,6 +9,7 @@ import {
 import { FiRefreshCw } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import { formatImagePreviewFps } from "@/features/ImagePreview/lib/imagePreviewUtils";
 
 import ImagePreviewFullscreen from "./ImagePreviewFullscreen";
 
@@ -20,17 +21,16 @@ export default function ImagePreviewFeed({
   device,
   enabled,
   connected,
-  reconnectPending,
+  actualFps,
   onNotify,
 }) {
   const [retryToken, setRetryToken] = useState(0);
   const [streamFailed, setStreamFailed] = useState(false);
   const [retryScheduled, setRetryScheduled] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const failureNotifiedRef = useRef(false);
-  const previousConnectedRef = useRef(connected);
-  const previousReconnectPendingRef = useRef(reconnectPending);
 
   const clearRetryTimer = useCallback(() => {
     window.clearTimeout(retryTimerRef.current);
@@ -94,47 +94,31 @@ export default function ImagePreviewFeed({
     onNotify,
   ]);
 
-  useEffect(() => {
-    if (enabled) {
-      reloadStream();
-      return;
-    }
+  const streamActive = enabled && connected && pageVisible;
 
+  useEffect(() => {
+    if (streamActive) return;
     clearRetryTimer();
     retryCountRef.current = 0;
     failureNotifiedRef.current = false;
     setStreamFailed(false);
   }, [
     clearRetryTimer,
-    enabled,
-    reloadStream,
+    streamActive,
   ]);
 
   useEffect(() => {
-    const wasConnected = previousConnectedRef.current;
-    previousConnectedRef.current = connected;
+    const updatePageVisibility = () => {
+      setPageVisible(document.visibilityState === "visible");
+    };
 
-    if (enabled && !wasConnected && connected) {
-      reloadStream();
-    }
-  }, [
-    connected,
-    enabled,
-    reloadStream,
-  ]);
+    updatePageVisibility();
+    document.addEventListener("visibilitychange", updatePageVisibility);
 
-  useEffect(() => {
-    const wasReconnectPending = previousReconnectPendingRef.current;
-    previousReconnectPendingRef.current = reconnectPending;
-
-    if (enabled && wasReconnectPending && !reconnectPending) {
-      reloadStream();
-    }
-  }, [
-    enabled,
-    reconnectPending,
-    reloadStream,
-  ]);
+    return () => {
+      document.removeEventListener("visibilitychange", updatePageVisibility);
+    };
+  }, []);
 
   useEffect(() => () => {
     window.clearTimeout(retryTimerRef.current);
@@ -144,17 +128,17 @@ export default function ImagePreviewFeed({
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
-      {enabled ? (
+      {streamActive ? (
         <img
-          className="block aspect-4/3 w-full rounded-2xl bg-black/40 object-cover"
+          className="block aspect-video w-full rounded-2xl bg-black/40 object-contain"
           src={streamSource}
           alt={`${label} 即時預覽`}
           onLoad={handleStreamLoad}
           onError={handleStreamError}
         />
       ) : (
-        <div className="grid aspect-4/3 w-full place-items-center rounded-2xl bg-black/40 p-4 text-center text-sm font-bold text-neutral-400">
-          相機未啟用
+        <div className="grid aspect-video w-full place-items-center rounded-2xl bg-black/40 p-4 text-center text-sm font-bold text-neutral-400">
+          {enabled ? "等待相機連線…" : "相機未啟用"}
         </div>
       )}
       <span
@@ -162,6 +146,9 @@ export default function ImagePreviewFeed({
         title={device}
       >
         {label}
+      </span>
+      <span className="absolute bottom-4 left-4 z-10 rounded-lg border border-white/15 bg-[#07130f]/80 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-xl">
+        FPS: {formatImagePreviewFps(actualFps)}
       </span>
       {streamFailed ? (
         <div className="absolute inset-2 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
@@ -182,7 +169,7 @@ export default function ImagePreviewFeed({
           </div>
         </div>
       ) : null}
-      {enabled ? (
+      {streamActive ? (
         <ImagePreviewFullscreen
           label={label}
           streamSource={streamSource}

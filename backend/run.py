@@ -6,6 +6,8 @@ from pathlib import Path
 
 import uvicorn
 
+from app.core.runtime_paths import prepare_runtime_paths
+
 DEFAULT_PORT = 22222
 
 
@@ -43,9 +45,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     load_runtime_environment()
+    migrated_data = prepare_runtime_paths()
     args = parse_args()
-    if args.mock:
-        os.environ["PHYTO_AUTOSCOPY_MOCK"] = "1"
+    os.environ["PHYTO_AUTOSCOPY_MOCK"] = "1" if args.mock else "0"
+
+    if migrated_data:
+        print("已將 backend/data 的既有資料移至專案根目錄 data。")
 
     uvicorn.run(
         "app.main:create_app",

@@ -1,44 +1,81 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
+from time import monotonic
+
+from app.core.exceptions import CameraError
 
 logger = logging.getLogger(__name__)
+
+FRAME_RECOVERY_GRACE_SECONDS = 30.0
 
 
 class ImagePreviewService:
     def __init__(self, camera_manager) -> None:
         self.camera_manager = camera_manager
 
-    def mjpeg_stream(self, camera_id: str, first_frame=None) -> Iterator[bytes]:
+    async def mjpeg_stream(
+        self,
+        camera_id: str,
+        first_frame=None,
+        first_sequence: int | None = None,
+    ) -> AsyncIterator[bytes]:
         frame = first_frame
-        consecutive_failures = 0
-        while True:
-            status = self.camera_manager.get_status(camera_id)
-            if not status.enabled:
-                return
-            if frame is None:
-                try:
-                    frame = self.camera_manager.capture(camera_id)
-                    consecutive_failures = 0
-                except Exception:
-                    consecutive_failures += 1
-                    logger.warning(
-                        "Camera preview capture failed; retrying: %s",
-                        camera_id,
-                        exc_info=True,
-                    )
-                    if consecutive_failures >= 3:
+        sequence = first_sequence
+        recovery_started_at: float | None = None
+        begin_preview = getattr(self.camera_manager, "begin_preview", None)
+        end_preview = getattr(self.camera_manager, "end_preview", None)
+        wait_for_frame = getattr(self.camera_manager, "wait_for_frame", None)
+        if begin_preview is not None:
+            begin_preview(camera_id)
+        try:
+            while True:
+                status = self.camera_manager.get_status(camera_id)
+                if not status.enabled:
+                    return
+                if frame is None:
+                    try:
+                        if wait_for_frame is not None:
+                            frame, sequence = await asyncio.to_thread(
+                                wait_for_frame,
+                                camera_id,
+                                after_sequence=sequence,
+                                timeout=3.0,
+                            )
+                        else:
+                            frame = await asyncio.to_thread(
+                                self.camera_manager.capture,
+                                camera_id,
+                            )
+                        recovery_started_at = None
+                    except CameraError:
+                        # The worker owns reconnection and publishes the
+                        # actionable state.  Give an established stream a
+                        # bounded window to resume without becoming permanent.
+                        now = monotonic()
+                        if recovery_started_at is None:
+                            recovery_started_at = now
+                        if now - recovery_started_at >= FRAME_RECOVERY_GRACE_SECONDS:
+                            return
+                        await asyncio.sleep(1.0)
+                        continue
+                    except Exception:
+                        logger.exception(
+                            "相機 %s 影像串流發生未預期錯誤。",
+                            camera_id,
+                        )
                         return
-                    time.sleep(1.0)
-                    continue
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n"
-                + frame.data
-                + b"\r\n"
-            )
-            frame = None
-            preview_fps = max(1, status.preview_fps or 1)
-            time.sleep(1.0 / preview_fps)
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + frame.data
+                    + b"\r\n"
+                )
+                frame = None
+                preview_fps = max(1, status.preview_fps or 1)
+                await asyncio.sleep(1.0 / preview_fps)
+        finally:
+            if end_preview is not None:
+                end_preview(camera_id)

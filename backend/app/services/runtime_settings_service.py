@@ -42,7 +42,11 @@ def _apply_runtime_dependencies(context: AppContext, group: str) -> None:
 
     if group in {"cameras", "default"}:
         context.camera_manager.settings = context.settings
-        context.camera_manager.scan()
+        reconfigure = getattr(context.camera_manager, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure()
+        else:
+            context.camera_manager.scan()
 
     if group in {"motor", "default"}:
         controller = context.motor_controller

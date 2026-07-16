@@ -10,13 +10,34 @@ import { FiChevronDown } from "react-icons/fi";
 export default function SelectMenu({
   id,
   value,
-  options,
+  options = [],
   onValueChange,
   className,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const menuId = `${id}-options`;
+  const normalizedValue = String(value ?? "");
+  const normalizedOptions = options.map((option) => {
+    if (option !== null && typeof option === "object") {
+      return {
+        value: String(option.value ?? ""),
+        rawValue: option.value ?? "",
+        label: String(option.label ?? option.value ?? ""),
+        disabled: Boolean(option.disabled),
+      };
+    }
+
+    return {
+      value: String(option),
+      rawValue: option,
+      label: String(option),
+      disabled: false,
+    };
+  });
+  const selectedOption = normalizedOptions.find(
+    (option) => option.value === normalizedValue,
+  );
 
   useEffect(() => {
     function closeWhenOutside(event) {
@@ -55,7 +76,9 @@ export default function SelectMenu({
         aria-controls={menuId}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{value}</span>
+        <span className="min-w-0 truncate">
+          {selectedOption?.label || normalizedValue}
+        </span>
         <FiChevronDown
           className={`
             size-4 shrink-0 text-neutral-400 transition-transform duration-150
@@ -68,29 +91,31 @@ export default function SelectMenu({
         id={menuId}
         role="listbox"
         className={`
-          absolute top-[calc(100%+0.4rem)] left-0 z-[120] grid w-full overflow-hidden rounded-xl border border-white/15 bg-[#07130f]/95 p-1 shadow-2xl backdrop-blur-xl transition-opacity duration-150
+          absolute top-[calc(100%+0.4rem)] left-0 z-[120] grid max-h-64 w-full overflow-x-hidden overflow-y-auto rounded-xl border border-white/15 bg-[#07130f]/95 p-1 shadow-2xl backdrop-blur-xl transition-opacity duration-150
           ${open ? "opacity-100" : "pointer-events-none opacity-0"}
         `}
         aria-hidden={!open}
         inert={!open}
       >
-        {options.map((option) => (
+        {normalizedOptions.map((option) => (
           <button
             className={`
-              cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors duration-150 hover:bg-emerald-400/15 hover:text-emerald-100
-              ${option === value ? "bg-white/10 text-white" : "text-neutral-300"}
+              cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors duration-150 hover:bg-emerald-400/15 hover:text-emerald-100 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-transparent
+              ${option.value === normalizedValue ? "bg-white/10 text-white" : "text-neutral-300"}
             `}
             type="button"
             role="option"
-            aria-selected={option === value}
+            aria-selected={option.value === normalizedValue}
+            aria-disabled={option.disabled}
+            disabled={option.disabled}
             tabIndex={open ? 0 : -1}
-            key={option}
+            key={option.value}
             onClick={() => {
-              onValueChange(option);
+              onValueChange(option.rawValue);
               setOpen(false);
             }}
           >
-            {option}
+            {option.label}
           </button>
         ))}
       </div>

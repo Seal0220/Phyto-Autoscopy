@@ -115,7 +115,7 @@ if /I "%MODE%"=="production" (
   set "FRONTEND_COMMAND=call npm.cmd run dev"
 )
 
-call :start_child BACKEND_PID "%BACKEND_DIR%" BACKEND_COMMAND
+call :start_child BACKEND_PID "%ROOT%" BACKEND_COMMAND
 if not defined BACKEND_PID (
   echo Failed to start backend process.
   goto finish

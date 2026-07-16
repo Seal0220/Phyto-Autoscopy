@@ -13,6 +13,9 @@ from app.core.constants import CAMERA_ROLES
 from app.core.exceptions import ConfigError
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
 class ProjectSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -26,7 +29,7 @@ class HardwareSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     mock_mode: bool = False
-    camera_scan_max_index: int = 10
+    camera_scan_max_index: int = Field(default=10, ge=1, le=64)
 
 
 class PathSettings(BaseModel):
@@ -44,7 +47,7 @@ class CameraConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     device_name: str
-    device_index: int
+    device_index: int | None = Field(default=None, ge=0)
     width: int = 1280
     height: int = 960
     preview_fps: int = Field(default=5, ge=1, le=60)
@@ -147,6 +150,21 @@ class AppSettings(BaseModel):
         missing = sorted(required.difference(value))
         if missing:
             raise ValueError(f"缺少必要相機設定：{', '.join(missing)}")
+        enabled_indices: dict[int, str] = {}
+        for camera_id, config in value.items():
+            if not config.enabled:
+                continue
+            if config.device_index is None:
+                raise ValueError(
+                    f"已啟用相機必須選擇裝置：{camera_id}"
+                )
+            previous = enabled_indices.get(config.device_index)
+            if previous is not None:
+                raise ValueError(
+                    "已啟用相機不可共用裝置索引："
+                    f"{previous} 與 {camera_id} 都使用 {config.device_index}"
+                )
+            enabled_indices[config.device_index] = camera_id
         return value
 
 
@@ -192,7 +210,8 @@ def deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]
 
 def get_config_dir(config_dir: str | Path | None = None) -> Path:
     configured = config_dir or os.environ.get("PHYTO_AUTOSCOPY_CONFIG_DIR") or "config"
-    return Path(configured)
+    path = Path(configured)
+    return path if path.is_absolute() else BACKEND_ROOT / path
 
 
 def load_settings(config_dir: str | Path | None = None) -> AppSettings:
@@ -205,8 +224,9 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     data = deep_merge(data, read_json_file(root / "schedule.json"))
     data = deep_merge(data, read_json_file(root / "logging.json"))
 
-    if _truthy(os.environ.get("PHYTO_AUTOSCOPY_MOCK")):
-        data.setdefault("hardware", {})["mock_mode"] = True
+    mock_mode = os.environ.get("PHYTO_AUTOSCOPY_MOCK")
+    if mock_mode is not None:
+        data.setdefault("hardware", {})["mock_mode"] = _truthy(mock_mode)
 
     return AppSettings.model_validate(data)
 

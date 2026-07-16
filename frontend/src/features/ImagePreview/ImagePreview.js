@@ -25,8 +25,6 @@ export default function ImagePreview({
   onNotify,
 }) {
   const cameraBusy = [...busyActions].some((action) => action.startsWith("camera."));
-  const reconnectPending = busyActions.has("camera.reconnect")
-    || busyActions.has("camera.reconnect_all");
 
   return (
     <Panel
@@ -101,7 +99,7 @@ export default function ImagePreview({
                 device={meta.device}
                 enabled={enabled}
                 connected={connected}
-                reconnectPending={reconnectPending}
+                actualFps={imagePreview?.actual_fps}
                 onNotify={onNotify}
               />
               <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.035] px-3 py-2">

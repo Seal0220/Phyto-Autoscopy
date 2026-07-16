@@ -1,14 +1,20 @@
 "use client";
 
-import { FiSave } from "react-icons/fi";
+import { useEffect } from "react";
+import {
+  FiRefreshCw,
+  FiSave,
+} from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
+import useImagePreviewDevices from "@/features/ImagePreview/hooks/useImagePreviewDevices";
 import {
   imagePreviewSettingsSections,
   serializeImagePreviewSettingsPayload,
+  unavailableImagePreviewAssignments,
 } from "@/features/ImagePreview/lib/imagePreviewUtils";
 
 import ImagePreviewField from "./ImagePreviewField";
@@ -34,6 +40,58 @@ export default function ImagePreviewSettings({
     serializePayload: serializeImagePreviewSettingsPayload,
   });
   const sections = payload ? imagePreviewSettingsSections(payload) : [];
+  const {
+    scanResults,
+    scanRevision,
+    scanning,
+    scanDevices,
+  } = useImagePreviewDevices({
+    open,
+    onNotify,
+  });
+  const mockMode = scanResults.some((result) => result?.mock);
+
+  useEffect(() => {
+    if (!payload || scanRevision === 0) return;
+
+    for (const imagePreviewId of unavailableImagePreviewAssignments(
+      payload,
+      scanResults,
+    )) {
+      updateField(
+        ["cameras", imagePreviewId, "device_index"],
+        null,
+      );
+      updateField(
+        ["cameras", imagePreviewId, "enabled"],
+        false,
+      );
+    }
+  }, [
+    payload,
+    scanResults,
+    scanRevision,
+    updateField,
+  ]);
+
+  function updateImagePreviewField(
+    path,
+    value,
+  ) {
+    const isDeviceIndex = path.at(-1) === "device_index";
+    const nextValue = isDeviceIndex && value === ""
+      ? null
+      : value;
+
+    updateField(path, nextValue);
+
+    if (isDeviceIndex && nextValue === null) {
+      updateField(
+        [...path.slice(0, -1), "enabled"],
+        false,
+      );
+    }
+  }
 
   return (
     <SettingPanel
@@ -44,19 +102,39 @@ export default function ImagePreviewSettings({
       fieldsetClassName="gap-0"
       footerDividerClassName="mt-0! mb-4!"
       footer={(
-        <Button
-          variant="primary"
-          onClick={() => void saveGroup()}
-          disabled={!payload || saving || loading}
-        >
-          <FiSave
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          {saving ? "儲存中…" : "儲存影像預覽設定"}
-        </Button>
+        <>
+          <Button
+            onClick={() => void scanDevices()}
+            disabled={scanning || loading || saving}
+          >
+            <FiRefreshCw
+              className={`
+                size-4 shrink-0
+                ${scanning ? "animate-spin motion-reduce:animate-none" : ""}
+              `}
+              aria-hidden="true"
+            />
+            {scanning ? "掃描中…" : "重新掃描裝置"}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => void saveGroup()}
+            disabled={!payload || saving || loading}
+          >
+            <FiSave
+              className="size-4 shrink-0"
+              aria-hidden="true"
+            />
+            {saving ? "儲存中…" : "儲存影像預覽設定"}
+          </Button>
+        </>
       )}
     >
+      {mockMode ? (
+        <p className="m-0 border-b border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-200">
+          目前為模擬模式，不會搜尋實體攝影機；請以正式模式重新啟動服務。
+        </p>
+      ) : null}
       {loading && !payload ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
           讀取設定中…
@@ -96,7 +174,9 @@ export default function ImagePreviewSettings({
                   <ImagePreviewField
                     key={leaf.path.join(".")}
                     leaf={leaf}
-                    onChange={updateField}
+                    onChange={updateImagePreviewField}
+                    scanResults={scanResults}
+                    cameraDrafts={payload.cameras}
                   />
                 ))}
                 <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
@@ -104,7 +184,9 @@ export default function ImagePreviewSettings({
                     <ImagePreviewField
                       key={leaf.path.join(".")}
                       leaf={leaf}
-                      onChange={updateField}
+                      onChange={updateImagePreviewField}
+                      scanResults={scanResults}
+                      cameraDrafts={payload.cameras}
                     />
                   ))}
                 </div>

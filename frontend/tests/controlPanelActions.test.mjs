@@ -45,6 +45,7 @@ test("camera snapshot and reconnect actions use scoped HTTP endpoints and timeou
     },
   );
   assert.equal(cameraProxyTimeout(["snapshot-all"]), CAMERA_GROUP_ACTION_TIMEOUT_MS);
+  assert.equal(cameraProxyTimeout(["scan"]), CAMERA_GROUP_ACTION_TIMEOUT_MS);
   assert.equal(cameraProxyTimeout(["top", "snapshot"]), CAMERA_SINGLE_ACTION_TIMEOUT_MS);
   assert.equal(cameraProxyTimeout(["top", "status"]), undefined);
 });

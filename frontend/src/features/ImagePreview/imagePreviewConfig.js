@@ -1,10 +1,10 @@
 export const IMAGE_PREVIEW_META = {
   top: {
-    label: "頂視角",
+    label: "俯視角",
     device: "CHLOROCULUS EYE-TOP",
   },
   side: {
-    label: "固定側視角",
+    label: "側視角",
     device: "CHLOROCULUS EYE-SIDE",
   },
   rotating: {
@@ -57,11 +57,11 @@ export const IMAGE_PREVIEW_FIELD_META = {
   },
   device_index: {
     label: "裝置索引",
-    type: "number",
+    type: "select",
+    valueType: "number",
     min: 0,
-    max: 32,
-    step: 1,
-    description: "對應作業系統辨識到的相機編號。",
+    max: 63,
+    description: "選擇作業系統辨識到的相機裝置。",
   },
   preview_fps: {
     label: "預覽 FPS",

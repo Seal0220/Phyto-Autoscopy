@@ -1,6 +1,12 @@
-import { NumericInput } from "@/components/inputs/Input";
+import {
+  NumericInput,
+  SelectInput,
+} from "@/components/inputs/Input";
 import { ToggleRow } from "@/components/inputs/Toggle";
-import { imagePreviewFieldMeta } from "@/features/ImagePreview/lib/imagePreviewUtils";
+import {
+  imagePreviewDeviceOptions,
+  imagePreviewFieldMeta,
+} from "@/features/ImagePreview/lib/imagePreviewUtils";
 
 function fieldId(path) {
   return `image-preview-setting-${path.join("-")}`;
@@ -9,6 +15,8 @@ function fieldId(path) {
 export default function ImagePreviewField({
   leaf,
   onChange,
+  scanResults,
+  cameraDrafts,
 }) {
   const meta = imagePreviewFieldMeta(leaf);
 
@@ -21,6 +29,25 @@ export default function ImagePreviewField({
         label={meta.label}
         description={meta.description}
         onClick={() => onChange(leaf.path, !checked)}
+      />
+    );
+  }
+
+  if (meta.type === "select") {
+    const options = imagePreviewDeviceOptions(
+      scanResults,
+      leaf.path.at(-2),
+      cameraDrafts,
+    );
+
+    return (
+      <SelectInput
+        id={fieldId(leaf.path)}
+        label={meta.label}
+        value={leaf.value ?? ""}
+        onValueChange={(value) => onChange(leaf.path, value)}
+        options={options}
+        description={meta.description}
       />
     );
   }
