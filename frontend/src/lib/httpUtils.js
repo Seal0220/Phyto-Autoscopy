@@ -7,6 +7,32 @@ export class RequestTimeoutError extends Error {
   }
 }
 
+export class UnknownMutationOutcomeError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnknownMutationOutcomeError";
+  }
+}
+
+const UNKNOWN_MUTATION_RESPONSE_CODES = new Set([
+  "BACKEND_TIMEOUT",
+  "BACKEND_UNAVAILABLE",
+  "BACKEND_INVALID_RESPONSE",
+]);
+
+export function mutationResponseOutcomeUnknown(
+  response,
+  payload,
+) {
+  return Number(response?.status) >= 500
+    || UNKNOWN_MUTATION_RESPONSE_CODES.has(payload?.code);
+}
+
+export function mutationTransportOutcomeUnknown(error) {
+  return error instanceof RequestTimeoutError
+    || error instanceof TypeError;
+}
+
 export async function withRequestTimeout(
   task,
   {

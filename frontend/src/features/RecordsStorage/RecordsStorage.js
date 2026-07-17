@@ -35,7 +35,7 @@ export default function RecordsStorage({
   return (
     <Panel
       id="records-storage"
-      className="min-[981px]:col-start-1 min-[981px]:row-start-5 [scroll-margin-top:5.6rem] max-[980px]:[scroll-margin-top:8.8rem]"
+      className="min-[981px]:col-start-1 min-[981px]:row-start-5 [scroll-margin-top:8.75rem] max-[980px]:[scroll-margin-top:11.5rem]"
       aria-label="紀錄與儲存"
     >
       <PanelHeader

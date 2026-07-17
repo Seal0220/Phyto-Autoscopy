@@ -44,48 +44,303 @@ def _migrate_legacy_record_schema(connection: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_manual_correction_history(connection: sqlite3.Connection) -> None:
+    """Remove the legacy one-correction-per-frame UNIQUE constraint safely."""
+
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='manual_corrections'"
+    ).fetchone()
+    if row is None:
+        return
+    normalized_sql = "".join(str(row["sql"] or "").lower().split())
+    if "unique(analysis_id,frame_id,camera_id)" not in normalized_sql:
+        return
+    connection.execute("DROP TABLE IF EXISTS manual_corrections_history_new")
+    connection.execute(
+        """
+        CREATE TABLE manual_corrections_history_new (
+            correction_id TEXT PRIMARY KEY,
+            analysis_id TEXT NOT NULL,
+            frame_id INTEGER NOT NULL,
+            camera_id TEXT NOT NULL,
+            automatic_x_px REAL,
+            automatic_y_px REAL,
+            corrected_x_px REAL,
+            corrected_y_px REAL,
+            operator_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            reason TEXT,
+            invalid INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO manual_corrections_history_new(
+            correction_id, analysis_id, frame_id, camera_id,
+            automatic_x_px, automatic_y_px, corrected_x_px,
+            corrected_y_px, operator_id, created_at, reason, invalid
+        )
+        SELECT
+            correction_id, analysis_id, frame_id, camera_id,
+            automatic_x_px, automatic_y_px, corrected_x_px,
+            corrected_y_px, operator_id, created_at, reason, invalid
+        FROM manual_corrections
+        """
+    )
+    connection.execute("DROP TABLE manual_corrections")
+    connection.execute(
+        "ALTER TABLE manual_corrections_history_new RENAME TO manual_corrections"
+    )
+
+
+def _analysis_runs_record_is_required(connection: sqlite3.Connection) -> bool:
+    if not _table_exists(connection, "analysis_runs"):
+        return False
+    return any(
+        row["name"] == "record_id" and bool(row["notnull"])
+        for row in connection.execute("PRAGMA table_info(analysis_runs)").fetchall()
+    )
+
+
+def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> None:
+    """Allow analyses built from explicit camera directories without a Record."""
+
+    if not _analysis_runs_record_is_required(connection):
+        return
+    connection.execute("DROP TABLE IF EXISTS analysis_runs_source_new")
+    connection.execute(
+        """
+        CREATE TABLE analysis_runs_source_new (
+            analysis_id TEXT PRIMARY KEY,
+            record_id TEXT,
+            calibration_id TEXT,
+            method_name TEXT NOT NULL,
+            method_version TEXT NOT NULL,
+            git_commit TEXT NOT NULL,
+            parameters_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            output_path TEXT NOT NULL,
+            status TEXT NOT NULL,
+            stage TEXT,
+            current_frame INTEGER NOT NULL DEFAULT 0,
+            total_frames INTEGER NOT NULL DEFAULT 0,
+            progress REAL NOT NULL DEFAULT 0,
+            manual_review_completed INTEGER NOT NULL DEFAULT 0,
+            average_reprojection_error_px REAL,
+            last_error TEXT,
+            FOREIGN KEY(record_id) REFERENCES records(record_id),
+            FOREIGN KEY(calibration_id) REFERENCES calibration_profiles(calibration_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO analysis_runs_source_new
+        SELECT * FROM analysis_runs
+        """
+    )
+    connection.execute("DROP TABLE analysis_runs")
+    connection.execute(
+        "ALTER TABLE analysis_runs_source_new RENAME TO analysis_runs"
+    )
+
+
 def initialize_schema(database: Database) -> None:
-    with database.transaction() as connection:
-        _migrate_legacy_record_schema(connection)
+    connection = database.connection
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        with database.transaction() as connection:
+            _migrate_legacy_record_schema(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS records (
+                    record_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    record_path TEXT NOT NULL,
+                    ended_at TEXT
+                )
+                """
+            )
+            if "ended_at" not in _columns(connection, "records"):
+                connection.execute("ALTER TABLE records ADD COLUMN ended_at TEXT")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS captures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_id TEXT NOT NULL,
+                    cycle_id INTEGER,
+                    camera_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    angle_deg REAL,
+                    motor_position_deg REAL,
+                    file_path TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    error_message TEXT,
+                    FOREIGN KEY(record_id) REFERENCES records(record_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS settings_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    group_name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS calibration_profiles (
+                    calibration_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    valid INTEGER NOT NULL DEFAULT 0,
+                    output_path TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    last_error TEXT
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_runs (
+                    analysis_id TEXT PRIMARY KEY,
+                    record_id TEXT,
+                    calibration_id TEXT,
+                    method_name TEXT NOT NULL,
+                    method_version TEXT NOT NULL,
+                    git_commit TEXT NOT NULL,
+                    parameters_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    output_path TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    stage TEXT,
+                    current_frame INTEGER NOT NULL DEFAULT 0,
+                    total_frames INTEGER NOT NULL DEFAULT 0,
+                    progress REAL NOT NULL DEFAULT 0,
+                    manual_review_completed INTEGER NOT NULL DEFAULT 0,
+                    average_reprojection_error_px REAL,
+                    last_error TEXT,
+                    FOREIGN KEY(record_id) REFERENCES records(record_id),
+                    FOREIGN KEY(calibration_id) REFERENCES calibration_profiles(calibration_id)
+                )
+                """
+            )
+            if "average_reprojection_error_px" not in _columns(
+                connection,
+                "analysis_runs",
+            ):
+                connection.execute(
+                    "ALTER TABLE analysis_runs ADD COLUMN average_reprojection_error_px REAL"
+                )
+            _migrate_analysis_runs_nullable_record(connection)
 
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS records (
-                record_id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                status TEXT NOT NULL,
-                record_path TEXT NOT NULL,
-                ended_at TEXT
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_frame_pairs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_id TEXT NOT NULL,
+                    pair_id TEXT NOT NULL,
+                    frame_id INTEGER NOT NULL,
+                    cycle_id INTEGER,
+                    top_capture_id INTEGER,
+                    side_capture_id INTEGER,
+                    top_input_id INTEGER,
+                    side_input_id INTEGER,
+                    rotating_input_id INTEGER,
+                    top_timestamp TEXT,
+                    side_timestamp TEXT,
+                    rotating_timestamp TEXT,
+                    rotating_angle_deg REAL,
+                    timestamp_delta_ms REAL,
+                    rotating_timestamp_delta_ms REAL,
+                    frame_offset INTEGER NOT NULL DEFAULT 0,
+                    pair_status TEXT NOT NULL,
+                    UNIQUE(analysis_id, pair_id),
+                    UNIQUE(analysis_id, frame_id),
+                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE,
+                    FOREIGN KEY(top_capture_id) REFERENCES captures(id),
+                    FOREIGN KEY(side_capture_id) REFERENCES captures(id)
+                )
+                """
             )
-            """
-        )
-        if "ended_at" not in _columns(connection, "records"):
-            connection.execute("ALTER TABLE records ADD COLUMN ended_at TEXT")
-
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS captures (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                record_id TEXT NOT NULL,
-                cycle_id INTEGER,
-                camera_id TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                angle_deg REAL,
-                motor_position_deg REAL,
-                file_path TEXT NOT NULL,
-                status TEXT NOT NULL,
-                error_message TEXT,
-                FOREIGN KEY(record_id) REFERENCES records(record_id)
+            pair_columns = _columns(connection, "analysis_frame_pairs")
+            for name, sql_type in (
+                ("top_input_id", "INTEGER"),
+                ("side_input_id", "INTEGER"),
+                ("rotating_input_id", "INTEGER"),
+                ("rotating_timestamp", "TEXT"),
+                ("rotating_angle_deg", "REAL"),
+                ("rotating_timestamp_delta_ms", "REAL"),
+            ):
+                if name not in pair_columns:
+                    connection.execute(
+                        f"ALTER TABLE analysis_frame_pairs ADD COLUMN {name} {sql_type}"
+                    )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_detections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_id TEXT NOT NULL,
+                    frame_id INTEGER NOT NULL,
+                    camera_id TEXT NOT NULL,
+                    automatic_json TEXT,
+                    interpolated_json TEXT,
+                    resolved_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(analysis_id, frame_id, camera_id),
+                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+                )
+                """
             )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS settings_snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                group_name TEXT NOT NULL,
-                payload_json TEXT NOT NULL
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS manual_corrections (
+                    correction_id TEXT PRIMARY KEY,
+                    analysis_id TEXT NOT NULL,
+                    frame_id INTEGER NOT NULL,
+                    camera_id TEXT NOT NULL,
+                    automatic_x_px REAL,
+                    automatic_y_px REAL,
+                    corrected_x_px REAL,
+                    corrected_y_px REAL,
+                    operator_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    reason TEXT,
+                    invalid INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+                )
+                """
             )
-            """
-        )
+            _migrate_manual_correction_history(connection)
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_runs_record ON analysis_runs(record_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_runs_status ON analysis_runs(status)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_pairs_run ON analysis_frame_pairs(analysis_id, frame_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_detections_run ON analysis_detections(analysis_id, frame_id)"
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_manual_corrections_frame
+                ON manual_corrections(analysis_id, frame_id, camera_id, created_at)
+                """
+            )
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")

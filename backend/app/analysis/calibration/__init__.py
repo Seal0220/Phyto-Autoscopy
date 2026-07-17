@@ -1,0 +1,61 @@
+"""OpenCV chessboard calibration primitives for GOAL-02 analysis."""
+
+from .calibration_quality import (
+    calculate_point_coverage,
+    calculate_reprojection_errors,
+    require_matching_image_sizes,
+    validate_camera_matrix,
+    validate_distortion_coefficients,
+    validate_finite_matrix,
+    validate_image_size,
+)
+from .camera_calibration import (
+    DISTORTION_COEFFICIENT_ORDER,
+    CameraCalibrationResult,
+    ChessboardDetection,
+    calibrate_camera,
+    calibrate_camera_from_points,
+    calibrate_fisheye_camera_from_points,
+    camera_matrix_from_diagonal_fov,
+    compare_camera_projection_models_from_points,
+    create_chessboard_object_points,
+    detect_chessboard_corners,
+    distortion_coefficients_named,
+    normalize_pattern_size,
+    normalize_square_size_mm,
+)
+from .stereo_calibration import (
+    StereoCalibrationResult,
+    calculate_epipolar_rms_error,
+    calibrate_stereo,
+    calibrate_stereo_from_points,
+    compute_epipolar_lines,
+)
+
+__all__ = [
+    "DISTORTION_COEFFICIENT_ORDER",
+    "CameraCalibrationResult",
+    "ChessboardDetection",
+    "StereoCalibrationResult",
+    "calculate_epipolar_rms_error",
+    "calculate_point_coverage",
+    "calculate_reprojection_errors",
+    "calibrate_camera",
+    "calibrate_camera_from_points",
+    "calibrate_fisheye_camera_from_points",
+    "camera_matrix_from_diagonal_fov",
+    "compare_camera_projection_models_from_points",
+    "calibrate_stereo",
+    "calibrate_stereo_from_points",
+    "compute_epipolar_lines",
+    "create_chessboard_object_points",
+    "detect_chessboard_corners",
+    "distortion_coefficients_named",
+    "normalize_pattern_size",
+    "normalize_square_size_mm",
+    "require_matching_image_sizes",
+    "validate_camera_matrix",
+    "validate_distortion_coefficients",
+    "validate_finite_matrix",
+    "validate_image_size",
+]

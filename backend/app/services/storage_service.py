@@ -20,6 +20,7 @@ class StorageService:
             self.settings.paths.captures_dir,
             self.settings.paths.snapshots_dir,
             self.settings.paths.calibration_dir,
+            self.settings.paths.analysis_dir,
             self.settings.paths.database_path.parent,
             self.settings.paths.logs_dir,
             self.settings.paths.temp_dir,

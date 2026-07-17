@@ -17,7 +17,7 @@ export default function Control({
   return (
     <Panel
       id="control"
-      className="min-[981px]:col-start-1 min-[981px]:row-start-4 scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]"
+      className="min-[981px]:col-start-1 min-[981px]:row-start-4 scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
       aria-label="控制"
     >
       <PanelHeader

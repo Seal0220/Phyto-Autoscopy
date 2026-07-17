@@ -28,5 +28,5 @@ export async function loginAction(
     });
     return { error: "登入服務暫時無法使用，請稍後再試。" };
   }
-  redirect("/");
+  redirect("/capture");
 }

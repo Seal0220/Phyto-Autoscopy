@@ -9,8 +9,8 @@ const chiron = localFont({
 });
 
 export const metadata = {
-  title: "Phyto-Autoscopy | 控制介面",
-  description: "CHLOROCULUS local control interface",
+  title: "Phyto-Autoscopy",
+  description: "Phyto-Autoscopy 本機捕捉與分析介面",
 };
 
 export default function RootLayout({ children }) {

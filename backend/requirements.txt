@@ -3,6 +3,9 @@ uvicorn
 websockets
 opencv-python
 numpy
+scipy
+pandas
+aiofiles
 Phidget22
 pydantic
 sqlalchemy

@@ -10,7 +10,8 @@ import {
 import ImagePreview from "@/features/ImagePreview/ImagePreview";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 import Control from "@/features/Control/Control";
-import ControlPanelHeader from "@/features/ControlPanel/components/ControlPanelHeader";
+import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import { CAPTURE_SECONDARY_NAVIGATION_ITEMS } from "@/features/MainNavigation/mainNavigationConfig";
 import Notifications from "@/features/Notifications/Notifications";
 import useNotifications from "@/features/Notifications/hooks/useNotifications";
 import RecordsStorage from "@/features/RecordsStorage/RecordsStorage";
@@ -194,7 +195,7 @@ export default function ControlPanel() {
 
   return (
     <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <ControlPanelHeader
+      <MainNavigation
         isConnected={isConnected}
         emergencyStopping={busyActions.has("motor.emergency_stop")}
         logoutPending={logoutPending}
@@ -204,9 +205,10 @@ export default function ControlPanel() {
           "已送出緊急停止命令。",
         )}
         onLogout={() => void logout()}
+        secondaryItems={CAPTURE_SECONDARY_NAVIGATION_ITEMS}
       />
 
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-[8.8rem]">
+      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[8.75rem] min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-[11.5rem]">
         <ImagePreview
           imagePreviewById={imagePreviewById}
           busyActions={busyActions}

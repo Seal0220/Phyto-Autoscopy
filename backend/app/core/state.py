@@ -25,6 +25,8 @@ class AppContext:
     snapshot_service: Any
     schedule_service: Any
     health_service: Any
+    calibration_service: Any = None
+    analysis_service: Any = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     recent_errors: list[str] = field(default_factory=list)
     _error_lock: RLock = field(default_factory=RLock, init=False, repr=False)

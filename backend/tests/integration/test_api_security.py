@@ -48,6 +48,30 @@ def test_viewer_cannot_start_schedule(tmp_path, monkeypatch) -> None:
     assert response.status_code == 403
 
 
+def test_viewer_can_read_analysis_and_calibration_lists(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    headers = authorized_headers()
+    headers["X-Phyto-Role"] = "viewer"
+    with TestClient(create_app(), headers=headers) as client:
+        analysis_response = client.get("/api/analysis")
+        calibration_response = client.get("/api/calibrations")
+
+    assert analysis_response.status_code == 200
+    assert calibration_response.status_code == 200
+
+
+def test_viewer_cannot_mutate_analysis_or_calibration(tmp_path, monkeypatch) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    headers = authorized_headers()
+    headers["X-Phyto-Role"] = "viewer"
+    with TestClient(create_app(), headers=headers) as client:
+        analysis_response = client.post("/api/analysis", json={})
+        calibration_response = client.post("/api/calibrations", json={})
+
+    assert analysis_response.status_code == 403
+    assert calibration_response.status_code == 403
+
+
 def test_websocket_requires_a_one_use_ticket(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
     with TestClient(create_app(), headers=authorized_headers()) as client:

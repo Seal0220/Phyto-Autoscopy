@@ -20,6 +20,8 @@ SETTINGS_FILES = {
     "cameras": "cameras.json",
     "motor": "motor.json",
     "schedule": "schedule.json",
+    "analysis": "analysis.json",
+    "calibration": "calibration.json",
     "logging": "logging.json",
 }
 

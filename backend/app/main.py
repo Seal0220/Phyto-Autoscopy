@@ -9,7 +9,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import (
+    analysis_routes,
     auth_routes,
+    calibration_routes,
     camera_routes,
     capture_routes,
     schedule_routes,
@@ -36,7 +38,7 @@ def create_app() -> FastAPI:
     docs_enabled = os.environ.get("PHYTO_AUTOSCOPY_ENABLE_DOCS") == "1"
     app = FastAPI(
         title="Phyto-Autoscopy CHLOROCULUS",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         docs_url="/docs" if docs_enabled else None,
         redoc_url=None,
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
     # The FastAPI process is API-only. The browser-facing UI lives in
     # ../frontend and is the sole public entry point.
     app.include_router(auth_routes.router)
+    app.include_router(analysis_routes.router)
+    app.include_router(calibration_routes.router)
     app.include_router(system_routes.router)
     app.include_router(camera_routes.router)
     app.include_router(motor_routes.router)

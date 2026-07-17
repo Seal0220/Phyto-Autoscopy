@@ -8,17 +8,17 @@
       "preview_fps": 15,
       "capture_fps": 15,
       "jpeg_quality": 100,
-      "enabled": true
+      "enabled": false
     },
     "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
-      "device_index": 1,
+      "device_index": null,
       "width": 1920,
       "height": 1080,
       "preview_fps": 15,
       "capture_fps": 15,
       "jpeg_quality": 100,
-      "enabled": true
+      "enabled": false
     },
     "rotating": {
       "device_name": "CHLOROCULUS EYE-ARM",

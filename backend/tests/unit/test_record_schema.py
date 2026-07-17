@@ -41,8 +41,13 @@ def test_initialize_schema_creates_new_record_schema(tmp_path) -> None:
     capture_columns = {
         row["name"] for row in database.fetchall("PRAGMA table_info(captures)")
     }
+    analysis_columns = {
+        row["name"]
+        for row in database.fetchall("PRAGMA table_info(analysis_runs)")
+    }
     assert {"record_id", "record_path", "ended_at"} <= record_columns
     assert "record_id" in capture_columns
+    assert "average_reprojection_error_px" in analysis_columns
     database.close()
 
 

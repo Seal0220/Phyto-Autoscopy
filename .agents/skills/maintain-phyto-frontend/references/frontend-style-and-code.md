@@ -68,11 +68,15 @@ Use the following ownership model:
 ```text
 frontend/src/
 ├─ app/
+│  ├─ (pages)/               # every App Router page entry; group is absent from URLs
+│  │  ├─ page.js             # root login page; authenticated users redirect to /capture
+│  │  ├─ capture/page.js     # GOAL-01 capture controls
+│  │  ├─ analysis/           # analysis dashboard and nested analysis pages
+│  │  └─ models/page.js      # models placeholder
 │  ├─ actions/               # server actions such as authentication
 │  ├─ api/                   # same-origin BFF route handlers
 │  ├─ globals.css            # Tailwind v4 entry point only
-│  ├─ layout.js              # document shell, font, body foundation
-│  └─ page.js                # authenticated page entry
+│  └─ layout.js              # document shell, font, body foundation
 ├─ components/
 │  ├─ actions/               # shared ActionRow
 │  ├─ buttons/               # shared Button
@@ -86,9 +90,12 @@ frontend/src/
 │  └─ VerticalLine.js        # ungrouped shared primitive
 ├─ features/
 │  ├─ Login/                 # login UI
-│  ├─ ControlPanel/          # application composition and ControlPanelHeader
+│  ├─ ControlPanel/          # `/capture` composition boundary for GOAL-01 features
 │  ├─ ImagePreview/          # image preview, dedicated settings and utilities
 │  ├─ Control/               # direct hardware control and MotorControls
+│  ├─ MainNavigation/        # top-level route navigation and global header actions
+│  ├─ Analysis/              # `/analysis` feature, separate from capture controls
+│  ├─ Models/                # `/models` feature
 │  ├─ Notifications/         # toast/history UI and notification hook
 │  ├─ Schedule/              # Schedule, config, mode components and utilities
 │  ├─ RecordsStorage/        # record list, storage path settings and utilities
@@ -97,6 +104,8 @@ frontend/src/
 ├─ hooks/                    # truly cross-feature client lifecycles
 └─ lib/                      # truly cross-feature pure/server utilities
 ```
+
+Every `page.js` belongs below `app/(pages)/`, including the root `/` entry. Never place a page beside `app/layout.js` or inside `app/api`; keep `layout.js`, `actions/`, `api/`, `globals.css`, and application assets outside the route group. Because `(pages)` is a Next.js route group, it organizes source files without adding a URL segment.
 
 ### 3.1 `components`
 
@@ -112,7 +121,7 @@ A UI primitive should:
 
 ### 3.2 Feature folders
 
-Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`ImagePreview`, `Schedule`, `Control`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `ImagePreview.js` or `Schedule.js`. Every subcomponent in `components/` uses the owning feature as a PascalCase prefix in both its filename and component identifier, such as `ImagePreviewSettings.js`, `ScheduleModeCard.js`, or `ControlPanelHeader.js`. This explicit prefix prevents ambiguous imports such as `Field`, `Settings`, `Header`, `Section`, or `ModeCard` when several features are open together.
+Every independent business area belongs in `features/<Feature>/`, using the PascalCase feature directory names already present (`ImagePreview`, `Schedule`, `Control`, `Settings`, and so on). A feature entry component is named directly after the feature, such as `ImagePreview.js` or `Schedule.js`. Every subcomponent in `components/` uses the owning feature as a PascalCase prefix in both its filename and component identifier, such as `ImagePreviewSettings.js`, `ScheduleModeCard.js`, or `RecordsStorageSettings.js`. This explicit prefix prevents ambiguous imports such as `Field`, `Settings`, `Header`, `Section`, or `ModeCard` when several features are open together.
 
 `Control/components/MotorControls.js` is the deliberate exception to the normal feature-prefix rule: it names the hardware-specific motor control group requested by the product vocabulary. Keep `MotorControls`; do not restore a top-level `Motor` feature.
 
@@ -555,9 +564,9 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 ### 7.1 Control panel
 
-`features/ControlPanel/ControlPanel.js` is the application composition boundary. It coordinates global data, connection state, notifications, settings disclosure state, and feature placement. Keep feature-specific markup and transformations out of it.
+`features/ControlPanel/ControlPanel.js` is the GOAL-01 capture-system composition boundary and is mounted only by `/capture`. It coordinates capture data, connection state, notifications, settings disclosure state, and the five capture-page regions: `ImagePreview`, `SystemStatus`, `Schedule`, `Control`, and `RecordsStorage`. Keep feature-specific markup and transformations out of it, and do not mount these capture controls in `/analysis` or `/models`.
 
-`features/ControlPanel/components/ControlPanelHeader.js` owns application-level navigation/status/actions. Icon-only actions need accessible labels and must use existing button language.
+`features/MainNavigation/MainNavigation.js` owns the application-level `[捕捉] [分析] [模型]` route navigation, connection status, emergency stop, logout, and an optional secondary-navigation slot. On `/capture`, pass the five capture anchors as secondary navigation. Other top-level pages render only the route navigation and global actions. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
@@ -629,6 +638,27 @@ Motor and capture actions must have one authoritative activation point. The `控
 The motor origin is always the numeric `0°` reference and is not an editable setting. `設為原點` redefines the motor's current physical position as `0°`; `回到原點` consequently moves to `0°`. Never reintroduce an `origin_deg` field or a configurable origin-angle value in the frontend, API model, persisted settings, or hardware adapter. In motor movement settings, place `速度限制` and `加速度限制` in the same two-column grid with an explicit gap, and let the duration-style movement timeout span the full row beneath them.
 
 While a schedule is running, paused, or stopping, every user-initiated modification is locked across the control panel: schedule configuration and modes, direct motor controls, manual camera capture, and every settings group. Keep read-only views, notification history, record refresh, camera reconnection, schedule pause/resume/stop, and emergency stop available. Use native disabled controls inside a visually grayscale group, and preserve matching backend enforcement so stale clients cannot bypass the lock.
+
+### 7.5 Analysis creation and calibration
+
+Analysis creation has one source workflow. Do not show source-type cards, tabs, or add a data-source discriminator field. The `自動帶入` Record selector is an optional convenience inside the image-directory section: selecting a Record fills the three camera paths from persisted metadata, while selecting `無（手動填寫）` leaves them manual. Auto-filled paths remain editable and each camera remains independently enabled or disabled.
+
+Render the three canonical sources as `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Each source row owns its enabled toggle and path input, then shows scan-derived image count, resolution, pairing state, and safe Traditional Chinese errors. A source change invalidates the previous preview. Do not let the user proceed until the current paths have been scanned, enabled files are readable and resolution-consistent, and pairing is valid.
+
+The only method values and labels are:
+
+- `top_side`: `頂+側`; requires enabled `top` and `side` sources.
+- `top_side_rotating`: `頂+側+環繞`; requires all three sources, at least one valid rotating angle, rotating-containing frame groups, and a calibration profile with rotating geometry.
+
+Rotating angles may come from Record metadata, canonical filenames, or an imported angle CSV. Present their availability as source-validation state rather than as another analysis mode. Missing or invalid rotating observations must be explained before submission; during result rendering, a rejected rotating observation falls back to the `top+side` baseline for that frame instead of failing the complete run.
+
+Calibration belongs inside the analysis setup flow. The user may select a valid versioned profile or create a new one without leaving the workflow. A new profile covers enabled camera intrinsics/distortion, the fixed `top+side` transform, optional rotating-axis geometry and dynamic extrinsics, retained-image validation, and reprojection error. Show the chosen Brown/pinhole or fisheye model and its evaluation; never claim the CM1.3M30M12Q nominal AR0130, 2.1 mm lens, or 126° diagonal FOV is a solved calibration. Those values are initialization hints only.
+
+Calibration profiles are reusable and are rebuilt only after a lens, focal length, fixed mount, or rotating-arm geometry change. A failed calibration attempt exposes a local error clear/retry path and must not overwrite the last valid profile. The standalone calibration route redirects into this embedded setup step; it does not own a parallel creation workflow.
+
+The analysis request boundary sends `record_id`, `method`, `camera_sources.top|side|rotating` entries shaped as `{ enabled, path }`, and `calibration_id`. A manually entered source may send a null `record_id`. Never derive separate downstream pipelines from how paths were populated: both Record-filled and manual paths become the same immutable input manifest and use the same scan, pairing, analysis, and result flow.
+
+Each analysis owns one result page and one chart set. Show the `top+side` baseline and, for `top_side_rotating`, the refined three-view series on the same visualizations. Preserve baseline/refined 3D coordinates, per-camera reprojection errors, rotating angle, and whether the rotating observation was accepted so the refinement remains auditable.
 
 ## 8. Interaction and motion
 

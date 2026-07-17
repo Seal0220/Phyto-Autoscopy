@@ -66,7 +66,7 @@ export default function Schedule({
       />
       <Panel
         id="schedule"
-        className="min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]"
+        className="min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
         aria-label="排程"
       >
         <PanelHeader

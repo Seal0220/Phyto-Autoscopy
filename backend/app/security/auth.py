@@ -40,7 +40,13 @@ class Principal:
 
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
-    "viewer": frozenset({"status:read", "cameras:read", "records:read"}),
+    "viewer": frozenset({
+        "status:read",
+        "cameras:read",
+        "records:read",
+        "analysis:read",
+        "calibrations:read",
+    }),
     "operator": frozenset({"*"}),
     "admin": frozenset({"*"}),
 }
@@ -79,6 +85,10 @@ def ensure_permission(principal: Principal, permission: str) -> None:
 def permission_for_http(method: str, path: str) -> str:
     normalized_method = method.upper()
     if normalized_method in {"GET", "HEAD"}:
+        if path.startswith("/api/analysis"):
+            return "analysis:read"
+        if path.startswith("/api/calibrations"):
+            return "calibrations:read"
         if path.startswith("/api/settings"):
             return "settings:read"
         if path.startswith("/api/records"):
@@ -88,6 +98,10 @@ def permission_for_http(method: str, path: str) -> str:
         return "status:read"
     if path.startswith("/api/system/errors"):
         return "system:manage"
+    if path.startswith("/api/analysis"):
+        return "analysis:manage"
+    if path.startswith("/api/calibrations"):
+        return "calibrations:manage"
     if path.startswith("/api/settings"):
         return "settings:write"
     if path.startswith("/api/motor") or path.startswith("/api/cameras"):

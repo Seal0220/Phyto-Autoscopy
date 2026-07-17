@@ -15,8 +15,12 @@ from app.hardware.cameras.mock_camera import MockCameraManager
 from app.hardware.motor.mock_motor import MockMotorController
 from app.hardware.motor.phidget_stepper import PhidgetStepperController
 from app.repositories.capture_repository import CaptureRepository
+from app.repositories.analysis_repository import AnalysisRepository
+from app.repositories.calibration_repository import CalibrationRepository
 from app.repositories.record_repository import RecordRepository
+from app.services.calibration_service import CalibrationService
 from app.services.capture_service import CaptureService
+from app.services.analysis_service import AnalysisService
 from app.services.schedule_service import ScheduleService
 from app.services.health_service import HealthService
 from app.services.metadata_service import MetadataService
@@ -53,6 +57,8 @@ async def lifespan(app: FastAPI):
 
     record_repository = RecordRepository(database)
     capture_repository = CaptureRepository(database)
+    analysis_repository = AnalysisRepository(database)
+    calibration_repository = CalibrationRepository(database)
 
     metadata_service = MetadataService(storage, capture_repository)
     record_service = RecordService(settings, storage, record_repository)
@@ -82,6 +88,18 @@ async def lifespan(app: FastAPI):
         storage,
     )
     health_service = HealthService(settings)
+    calibration_service = CalibrationService(
+        settings,
+        calibration_repository,
+    )
+    analysis_service = AnalysisService(
+        settings,
+        analysis_repository,
+        record_repository,
+        capture_repository,
+        calibration_repository,
+        calibration_service=calibration_service,
+    )
 
     context = AppContext(
         settings=settings,
@@ -97,9 +115,13 @@ async def lifespan(app: FastAPI):
         snapshot_service=snapshot_service,
         schedule_service=schedule_service,
         health_service=health_service,
+        calibration_service=calibration_service,
+        analysis_service=analysis_service,
     )
     app.state.context = context
     schedule_service.error_reporter = context.add_error
+    analysis_service.error_reporter = context.add_error
+    analysis_service.recover_interrupted_runs()
 
     try:
         yield

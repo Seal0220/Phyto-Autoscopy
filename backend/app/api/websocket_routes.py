@@ -40,6 +40,20 @@ def build_snapshot(context: AppContext) -> dict[str, Any]:
     settings = context.settings
     schedule = context.schedule_service.get_status()
     disk = context.health_service.disk_status()
+    analysis_service = getattr(context, "analysis_service", None)
+    analysis = (
+        analysis_service.get_progress().model_dump(mode="json")
+        if analysis_service is not None
+        else {
+            "analysis_id": None,
+            "status": "idle",
+            "stage": None,
+            "current_frame": 0,
+            "total_frames": 0,
+            "progress": 0.0,
+            "last_error": None,
+        }
+    )
     return {
         "system": {
             "project_name": settings.project.name,
@@ -58,6 +72,7 @@ def build_snapshot(context: AppContext) -> dict[str, Any]:
         ],
         "motor": context.motor_controller.status().model_dump(mode="json"),
         "schedule": schedule.model_dump(mode="json"),
+        "analysis": analysis,
     }
 
 

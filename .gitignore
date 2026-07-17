@@ -8,12 +8,14 @@ venv/
 backend/data/
 data/captures/*
 data/calibration/*
+data/analysis/*
 data/database/*
 data/logs/*
 data/snapshots/*
 data/temp/*
 !data/captures/.gitkeep
 !data/calibration/.gitkeep
+!data/analysis/.gitkeep
 !data/database/.gitkeep
 !data/logs/.gitkeep
 !data/snapshots/.gitkeep

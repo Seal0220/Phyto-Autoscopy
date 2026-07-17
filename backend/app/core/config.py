@@ -4,7 +4,7 @@ import json
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,6 +38,7 @@ class PathSettings(BaseModel):
     captures_dir: Path = Path("data/captures")
     snapshots_dir: Path = Path("data/snapshots")
     calibration_dir: Path = Path("data/calibration")
+    analysis_dir: Path = Path("data/analysis")
     database_path: Path = Path("data/database/phyto_autoscopy.sqlite3")
     logs_dir: Path = Path("data/logs")
     temp_dir: Path = Path("data/temp")
@@ -122,6 +123,160 @@ class ScheduleSettings(BaseModel):
     return_to_origin: bool = True
 
 
+class AnalysisMethodSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Literal["top_side"] = "top_side"
+    reference: str = "Ruiz-Melero et al. 2024"
+
+
+class SynchronizationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    primary_key: Literal["cycle_id"] = "cycle_id"
+    timestamp_tolerance_ms: int = Field(default=1000, ge=0)
+    manual_frame_offset: int = 0
+    keep_unpaired_frames: bool = True
+
+
+class SegmentationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal["mog2"] = "mog2"
+    history: int | None = Field(default=None, ge=1)
+    variance_threshold: float | None = Field(default=None, gt=0)
+    detect_shadows: bool = False
+    learning_rate: float | None = Field(default=None, ge=-1, le=1)
+    initialization_frames: int | None = Field(default=None, ge=1)
+    opening_kernel_size: int | None = Field(default=None, ge=1)
+    closing_kernel_size: int | None = Field(default=None, ge=1)
+    erosion_kernel_size: int | None = Field(default=None, ge=1)
+    minimum_top_contour_area_px: float | None = Field(default=None, ge=0)
+    minimum_side_contour_area_px: float | None = Field(default=None, ge=0)
+
+    @field_validator(
+        "opening_kernel_size",
+        "closing_kernel_size",
+        "erosion_kernel_size",
+    )
+    @classmethod
+    def kernel_must_be_odd(cls, value: int | None) -> int | None:
+        if value is not None and value % 2 == 0:
+            raise ValueError("Morphology kernel 大小必須是正奇數。")
+        return value
+
+
+class LightingChangeSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lighting_change_area_px: float | None = Field(default=None, ge=0)
+    lighting_change_est_time_frames: int | None = Field(default=None, ge=1)
+
+
+class DetectionRoiSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    roi: list[int] | None = None
+    plant_base: list[float] | None = None
+    num_selected_points: int | None = Field(default=None, ge=1)
+    update_roi: bool = True
+    roi_update_margin_px: int | None = Field(default=None, ge=0)
+
+    @field_validator("roi")
+    @classmethod
+    def validate_roi(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return value
+        if len(value) != 4:
+            raise ValueError("ROI 必須為 [x, y, width, height]。")
+        if value[0] < 0 or value[1] < 0 or value[2] <= 0 or value[3] <= 0:
+            raise ValueError("ROI 位置不可為負值，且寬高必須大於零。")
+        return value
+
+    @field_validator("plant_base")
+    @classmethod
+    def validate_plant_base(
+        cls,
+        value: list[float] | None,
+    ) -> list[float] | None:
+        if value is not None and len(value) != 2:
+            raise ValueError("植物基部必須為 [x, y]。")
+        return value
+
+
+class SideDetectionSettings(DetectionRoiSettings):
+    maximum_epipolar_distance_px: float | None = Field(default=None, gt=0)
+    minimum_path_connectivity: Literal[4, 8] | None = None
+    minimum_path_edge_weight: Literal["inverse_distance_transform"] | None = None
+
+
+class InterpolationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal["linear"] = "linear"
+    maximum_gap_seconds: float | None = Field(default=None, gt=0)
+
+
+class ReprojectionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    high_error_threshold_px: float = Field(
+        default=10.0,
+        ge=10.0,
+        le=10.0,
+    )
+
+
+class AnalysisSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    method: AnalysisMethodSettings = Field(default_factory=AnalysisMethodSettings)
+    synchronization: SynchronizationSettings = Field(default_factory=SynchronizationSettings)
+    segmentation: SegmentationSettings = Field(default_factory=SegmentationSettings)
+    lighting_change: LightingChangeSettings = Field(default_factory=LightingChangeSettings)
+    top_detection: DetectionRoiSettings = Field(default_factory=DetectionRoiSettings)
+    side_detection: SideDetectionSettings = Field(default_factory=SideDetectionSettings)
+    interpolation: InterpolationSettings = Field(default_factory=InterpolationSettings)
+    reprojection: ReprojectionSettings = Field(default_factory=ReprojectionSettings)
+
+
+class IndividualCalibrationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: Literal["chessboard"] = "chessboard"
+    pattern_columns: int = Field(default=10, ge=2)
+    pattern_rows: int = Field(default=7, ge=2)
+    board_width_cm: float = Field(default=59.4, gt=0)
+    board_height_cm: float = Field(default=84.1, gt=0)
+
+
+class StereoCalibrationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: Literal["chessboard"] = "chessboard"
+    board_width_cm: float = Field(default=42.0, gt=0)
+    board_height_cm: float = Field(default=59.4, gt=0)
+
+
+class CalibrationQualitySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    store_error_per_image: bool = True
+    store_point_coverage: bool = True
+
+
+class CalibrationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    individual_calibration: IndividualCalibrationSettings = Field(
+        default_factory=IndividualCalibrationSettings
+    )
+    stereo_calibration: StereoCalibrationSettings = Field(
+        default_factory=StereoCalibrationSettings
+    )
+    quality: CalibrationQualitySettings = Field(default_factory=CalibrationQualitySettings)
+
+
 class LoggingSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -138,6 +293,8 @@ class AppSettings(BaseModel):
     cameras: dict[str, CameraConfig] = Field(default_factory=default_camera_configs)
     motor: MotorSettings = Field(default_factory=MotorSettings)
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
+    analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    calibration: CalibrationSettings = Field(default_factory=CalibrationSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @field_validator("cameras")
@@ -221,8 +378,13 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     for file_name in ("cameras.json", "motor.json"):
         data = deep_merge(data, read_json_file(root / file_name))
 
-    data = deep_merge(data, read_json_file(root / "schedule.json"))
-    data = deep_merge(data, read_json_file(root / "logging.json"))
+    for file_name in (
+        "schedule.json",
+        "analysis.json",
+        "calibration.json",
+        "logging.json",
+    ):
+        data = deep_merge(data, read_json_file(root / file_name))
 
     mock_mode = os.environ.get("PHYTO_AUTOSCOPY_MOCK")
     if mock_mode is not None:
@@ -236,6 +398,8 @@ def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | P
         "cameras": "cameras.json",
         "motor": "motor.json",
         "schedule": "schedule.json",
+        "analysis": "analysis.json",
+        "calibration": "calibration.json",
         "logging": "logging.json",
         "default": "default.json",
     }

@@ -86,6 +86,66 @@ def test_schedule_settings_persist_capture_on_return(tmp_path, monkeypatch) -> N
         assert reloaded.json()["schedule"]["capture_on_return"] is False
 
 
+def test_analysis_and_calibration_settings_are_readable_and_transactional(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        analysis_payload = client.get("/api/settings/analysis").json()
+        calibration_payload = client.get("/api/settings/calibration").json()
+
+        analysis_payload["analysis"]["reprojection"] = {
+            "high_error_threshold_px": 10.0,
+        }
+        calibration_payload["calibration"]["quality"] = {
+            "store_point_coverage": False,
+        }
+
+        analysis_update = client.post(
+            "/api/settings/analysis",
+            json={"payload": analysis_payload},
+        )
+        calibration_update = client.post(
+            "/api/settings/calibration",
+            json={"payload": calibration_payload},
+        )
+
+        assert analysis_update.status_code == 200
+        assert calibration_update.status_code == 200
+        assert (
+            client.app.state.context.settings.analysis.reprojection
+            .high_error_threshold_px
+        ) == 10.0
+        assert (
+            client.app.state.context.settings.calibration.quality
+            .store_point_coverage
+        ) is False
+
+
+def test_analysis_reprojection_threshold_is_fixed_at_ten_pixels(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    write_test_config(tmp_path, monkeypatch)
+    with TestClient(create_app(), headers=authorized_headers()) as client:
+        analysis_payload = client.get("/api/settings/analysis").json()
+        analysis_payload["analysis"]["reprojection"] = {
+            "high_error_threshold_px": 12.0,
+        }
+
+        response = client.post(
+            "/api/settings/analysis",
+            json={"payload": analysis_payload},
+        )
+
+        assert response.status_code == 400
+        assert (
+            client.app.state.context.settings.analysis.reprojection
+            .high_error_threshold_px
+        ) == 10.0
+
+
 def test_settings_apply_failure_restores_runtime_and_file(tmp_path, monkeypatch) -> None:
     config_dir = write_test_config(tmp_path, monkeypatch)
     with TestClient(create_app(), headers=authorized_headers()) as client:

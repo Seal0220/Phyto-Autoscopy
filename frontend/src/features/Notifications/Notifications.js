@@ -56,7 +56,13 @@ export default function Notifications({
       />
       <div className="grid w-full justify-items-end">
         <div
-          className={`grid w-full transition-all duration-400 ease-in-out motion-reduce:transition-none ${historyOpen ? "mb-2 grid-rows-[1fr]" : "pointer-events-none mb-0 grid-rows-[0fr]"}`}
+          className={`
+            grid w-full transition-[grid-template-rows,margin] duration-400 ease-in-out motion-reduce:transition-none
+            ${historyOpen
+              ? "mb-2 grid-rows-[1fr]"
+              : "pointer-events-none mb-0 grid-rows-[0fr]"
+            }
+          `}
           aria-hidden={!historyOpen}
           inert={!historyOpen}
         >

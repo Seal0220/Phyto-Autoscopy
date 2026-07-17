@@ -281,8 +281,8 @@ MotorControllerInterface
 | 裝置名稱                 | 程式代號                | 安裝位置       | 用途                         |
 | ------------------------ | ----------------------- | -------------- | ---------------------------- |
 | `CHLOROCULUS EYE-TOP`  | `camera_top`          | 植物正上方固定 | 記錄俯視輪廓與平面運動       |
-| `CHLOROCULUS EYE-SIDE` | `camera_fixed_side`   | 植物側邊固定   | 記錄植物高度、姿態與側向運動 |
-| `CHLOROCULUS EYE-ARM`  | `camera_rotating_arm` | 旋轉臂末端     | 取得不同角度的環繞影像       |
+| `CHLOROCULUS EYE-SIDE` | `camera_side`   | 植物側邊固定   | 記錄植物高度、姿態與側向運動 |
+| `CHLOROCULUS EYE-ARM`  | `camera_rotating` | 旋轉臂末端     | 取得不同角度的環繞影像       |
 
 所有相機透過 USB 連接 Windows 電腦，由 OpenCV 管理。
 
@@ -653,8 +653,8 @@ Web 介面顯示三台相機的即時畫面。
     "capture_interval_seconds": 60,
     "duration_minutes": 240,
     "capture_top": true,
-    "capture_fixed_side": true,
-    "capture_rotating_arm": true,
+    "capture_side": true,
+    "capture_rotating": true,
     "rotation_enabled": true,
     "rotation_start_deg": 0.0,
     "rotation_end_deg": 360.0,
@@ -1055,7 +1055,7 @@ camera 2
       "capture_fps": 10,
       "jpeg_quality": 95
     },
-    "fixed_side": {
+    "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
       "device_index": 1,
       "width": 1280,
@@ -1064,7 +1064,7 @@ camera 2
       "capture_fps": 10,
       "jpeg_quality": 95
     },
-    "rotating_arm": {
+    "rotating": {
       "device_name": "CHLOROCULUS EYE-ARM",
       "device_index": 2,
       "width": 1280,
@@ -1094,12 +1094,12 @@ data/captures/
    │  ├─ 000002.jpg
    │  └─ ...
    │
-   ├─ fixed_side/
+   ├─ side/
    │  ├─ 000001.jpg
    │  ├─ 000002.jpg
    │  └─ ...
    │
-   └─ rotating_arm/
+   └─ rotating/
       ├─ cycle_000001/
       │  ├─ angle_000.0.jpg
       │  ├─ angle_015.0.jpg
@@ -1145,9 +1145,9 @@ project_name,project_name_zh,device_name,session_id,cycle_id,camera_id,camera_na
 
 ```csv
 Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,top,CHLOROCULUS EYE-TOP,2026-07-10T10:00:00.100+08:00,,,top/000001.jpg,success,
-Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,fixed_side,CHLOROCULUS EYE-SIDE,2026-07-10T10:00:00.150+08:00,,,fixed_side/000001.jpg,success,
-Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,rotating_arm,CHLOROCULUS EYE-ARM,2026-07-10T10:00:02.000+08:00,0.0,0.0,rotating_arm/cycle_000001/angle_000.0.jpg,success,
-Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,rotating_arm,CHLOROCULUS EYE-ARM,2026-07-10T10:00:05.000+08:00,15.0,15.0,rotating_arm/cycle_000001/angle_015.0.jpg,success,
+Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,side,CHLOROCULUS EYE-SIDE,2026-07-10T10:00:00.150+08:00,,,side/000001.jpg,success,
+Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,rotating,CHLOROCULUS EYE-ARM,2026-07-10T10:00:02.000+08:00,0.0,0.0,rotating/cycle_000001/angle_000.0.jpg,success,
+Phyto-Autoscopy,綠色自視症,CHLOROCULUS,session_001,1,rotating,CHLOROCULUS EYE-ARM,2026-07-10T10:00:05.000+08:00,15.0,15.0,rotating/cycle_000001/angle_015.0.jpg,success,
 ```
 
 ---

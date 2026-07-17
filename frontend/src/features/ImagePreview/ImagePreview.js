@@ -29,7 +29,7 @@ export default function ImagePreview({
   return (
     <Panel
       id="image-preview"
-      className="col-span-full scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]"
+      className="col-span-full scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
       aria-label="影像預覽"
     >
       <PanelHeader

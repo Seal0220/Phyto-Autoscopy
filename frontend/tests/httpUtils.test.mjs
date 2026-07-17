@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  mutationResponseOutcomeUnknown,
+  mutationTransportOutcomeUnknown,
   RequestTimeoutError,
   messageFromError,
   parseJsonResponse,
@@ -80,4 +82,22 @@ test("withRequestTimeout preserves caller cancellation", async () => {
     request,
     (error) => error?.name === "AbortError",
   );
+});
+
+test("mutation outcome classifiers distinguish uncertain transport failures", () => {
+  assert.equal(mutationResponseOutcomeUnknown(
+    { status: 502 },
+    {},
+  ), true);
+  assert.equal(mutationResponseOutcomeUnknown(
+    { status: 400 },
+    { code: "VALIDATION_ERROR" },
+  ), false);
+  assert.equal(mutationResponseOutcomeUnknown(
+    { status: 408 },
+    { code: "BACKEND_TIMEOUT" },
+  ), true);
+  assert.equal(mutationTransportOutcomeUnknown(new TypeError("fetch failed")), true);
+  assert.equal(mutationTransportOutcomeUnknown(new RequestTimeoutError()), true);
+  assert.equal(mutationTransportOutcomeUnknown(new Error("validation")), false);
 });

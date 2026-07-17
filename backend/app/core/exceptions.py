@@ -38,6 +38,14 @@ class StorageError(PhytoAutoscopyError):
     error_code = "storage_error"
 
 
+class AnalysisError(PhytoAutoscopyError):
+    error_code = "analysis_error"
+
+
+class CalibrationError(PhytoAutoscopyError):
+    error_code = "calibration_error"
+
+
 class OperationCancelledError(PhytoAutoscopyError):
     error_code = "operation_cancelled"
 

@@ -41,6 +41,7 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                     "captures_dir": str(data_dir / "captures"),
                     "snapshots_dir": str(data_dir / "snapshots"),
                     "calibration_dir": str(data_dir / "calibration"),
+                    "analysis_dir": str(data_dir / "analysis"),
                     "database_path": str(data_dir / "database" / "test.sqlite3"),
                     "logs_dir": str(data_dir / "logs"),
                     "temp_dir": str(data_dir / "temp"),
@@ -104,6 +105,14 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                 }
             }
         ),
+        encoding="utf-8",
+    )
+    (config_dir / "analysis.json").write_text(
+        json.dumps({"analysis": {}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (config_dir / "calibration.json").write_text(
+        json.dumps({"calibration": {}}, ensure_ascii=False),
         encoding="utf-8",
     )
     (config_dir / "logging.json").write_text(

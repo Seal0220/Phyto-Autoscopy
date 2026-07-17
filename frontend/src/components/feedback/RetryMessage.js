@@ -6,6 +6,7 @@ export default function RetryMessage({
   message,
   onRetry,
   retrying = false,
+  retryLabel = "重新讀取",
 }) {
   return (
     <div
@@ -24,7 +25,7 @@ export default function RetryMessage({
           className="size-3.5 shrink-0"
           aria-hidden="true"
         />
-        {retrying ? "重新讀取中…" : "重新讀取"}
+        {retrying ? `${retryLabel}中…` : retryLabel}
       </Button>
     </div>
   );

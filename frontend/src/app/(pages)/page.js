@@ -1,4 +1,5 @@
-import ControlPanel from "@/features/ControlPanel/ControlPanel";
+import { redirect } from "next/navigation";
+
 import LoginForm from "@/features/Login/LoginForm";
 import { getSession } from "@/lib/session";
 
@@ -6,8 +7,10 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const session = await getSession();
-  if (!session) {
-    return <LoginForm />;
+
+  if (session) {
+    redirect("/capture");
   }
-  return <ControlPanel />;
+
+  return <LoginForm />;
 }

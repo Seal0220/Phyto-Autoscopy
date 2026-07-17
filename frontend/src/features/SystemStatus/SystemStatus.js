@@ -20,7 +20,7 @@ export default function SystemStatus({
   return (
     <Panel
       id="system-status"
-      className="scroll-mt-[5.6rem] max-[980px]:scroll-mt-[8.8rem]"
+      className="scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
       aria-label="系統狀態"
     >
       <PanelHeader title="系統狀態" />
