@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   parseJsonResponse,
   responseErrorMessage,
 } from "@/lib/httpUtils";
@@ -119,7 +120,10 @@ export default function usePhytoSocket() {
       if (stopped) return;
 
       setConnection("connecting");
-      ticketController?.abort();
+      abortRequest(
+        ticketController,
+        "已由新的即時連線票證請求取代。",
+      );
       ticketController = new AbortController();
 
       try {
@@ -311,7 +315,7 @@ export default function usePhytoSocket() {
     return () => {
       stopped = true;
       window.clearTimeout(retryTimer);
-      ticketController?.abort();
+      abortRequest(ticketController);
       rejectPending(new Error("即時連線已關閉。"));
       const socket = socketRef.current;
 

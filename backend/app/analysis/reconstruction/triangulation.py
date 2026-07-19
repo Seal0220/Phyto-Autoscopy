@@ -24,9 +24,9 @@ def triangulate_points(
     top = np.asarray(top_points, dtype=np.float64).reshape(-1, 2)
     side = np.asarray(side_points, dtype=np.float64).reshape(-1, 2)
     if len(top) != len(side) or not len(top):
-        raise ValueError("雙目三角化需要數量相同且非空的二維點。")
+        raise ValueError("雙鏡頭三角化需要數量相同且非空的二維點。")
     if not np.isfinite(top).all() or not np.isfinite(side).all():
-        raise ValueError("雙目二維點包含無效數值。")
+        raise ValueError("雙鏡頭二維點包含無效數值。")
     homogeneous = cv2.triangulatePoints(
         top_projection,
         side_projection,

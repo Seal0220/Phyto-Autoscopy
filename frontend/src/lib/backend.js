@@ -84,7 +84,10 @@ export async function fetchBackend(
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
-    controller.abort();
+    controller.abort(new DOMException(
+      "後端請求逾時。",
+      "AbortError",
+    ));
   }, timeoutMs);
 
   try {

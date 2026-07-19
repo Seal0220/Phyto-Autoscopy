@@ -247,11 +247,11 @@ def calibrate_stereo(
     """Detect paired corners and calibrate the top/side stereo cameras."""
 
     if not top_images or not side_images:
-        raise ValueError("至少需要一組頂視與側視雙目校正影像。")
+        raise ValueError("至少需要一組頂視與側視雙鏡頭校正影像。")
     if len(top_images) != len(side_images):
-        raise ValueError("頂視與側視雙目校正影像數量必須一致。")
+        raise ValueError("頂視與側視雙鏡頭校正影像數量必須一致。")
     if pair_ids is not None and len(pair_ids) != len(top_images):
-        raise ValueError("pair_ids 數量必須與雙目校正影像組數一致。")
+        raise ValueError("pair_ids 數量必須與雙鏡頭校正影像組數一致。")
 
     normalized_pattern = normalize_pattern_size(pattern_size)
     normalized_square_size = normalize_square_size_mm(square_size_mm)
@@ -304,7 +304,7 @@ def calibrate_stereo(
             successful_ids.append(pair_id)
 
     if not successful_ids:
-        raise ValueError("沒有任一組雙目影像同時偵測到棋盤角點。")
+        raise ValueError("沒有任一組雙鏡頭影像同時偵測到棋盤角點。")
 
     result = calibrate_stereo_from_points(
         top_points,
@@ -366,13 +366,13 @@ def calibrate_stereo_from_points(
     normalized_square_size = normalize_square_size_mm(square_size_mm)
     pair_count = len(top_image_points)
     if pair_count == 0:
-        raise ValueError("至少需要一組已偵測的雙目棋盤角點。")
+        raise ValueError("至少需要一組已偵測的雙鏡頭棋盤角點。")
     if len(side_image_points) != pair_count:
         raise ValueError("頂視與側視角點組數必須一致。")
     if pair_ids is not None and len(pair_ids) != pair_count:
-        raise ValueError("pair_ids 數量必須與雙目角點組數一致。")
+        raise ValueError("pair_ids 數量必須與雙鏡頭角點組數一致。")
     if total_pair_count is not None and total_pair_count < pair_count:
-        raise ValueError("total_pair_count 不得小於成功雙目角點組數。")
+        raise ValueError("total_pair_count 不得小於成功雙鏡頭角點組數。")
 
     expected_corner_count = normalized_pattern[0] * normalized_pattern[1]
     top_points = [
@@ -406,7 +406,7 @@ def calibrate_stereo_from_points(
         name="side_camera_matrix",
     ).copy()
     if projection_model not in {"brown_pinhole", "fisheye"}:
-        raise ValueError("雙目投影模型只能是 brown_pinhole 或 fisheye。")
+        raise ValueError("雙鏡頭投影模型只能是 brown_pinhole 或 fisheye。")
     fisheye = projection_model == "fisheye"
     if fisheye:
         top_distortion = np.asarray(
@@ -423,7 +423,7 @@ def calibrate_stereo_from_points(
             or not np.isfinite(top_distortion).all()
             or not np.isfinite(side_distortion).all()
         ):
-            raise ValueError("Fisheye 雙目畸變係數必須各包含四個有效數值。")
+            raise ValueError("Fisheye 雙鏡頭畸變係數必須各包含四個有效數值。")
     else:
         top_distortion = validate_distortion_coefficients(
             top_distortion_coefficients,
@@ -501,7 +501,7 @@ def calibrate_stereo_from_points(
                 flags=calibration_flags,
             )
     except cv2.error as error:
-        raise ValueError(f"雙目相機校正失敗：{error}") from error
+        raise ValueError(f"雙鏡頭相機校正失敗：{error}") from error
 
     top_matrix = validate_camera_matrix(top_matrix, name="top_camera_matrix")
     side_matrix = validate_camera_matrix(side_matrix, name="side_camera_matrix")
@@ -537,7 +537,7 @@ def calibrate_stereo_from_points(
         shape=(3, 3),
     )
     if not np.isfinite(rms_error):
-        raise ValueError("雙目校正產生無效的 RMS 重投影誤差。")
+        raise ValueError("雙鏡頭校正產生無效的 RMS 重投影誤差。")
 
     try:
         if fisheye:
@@ -583,7 +583,7 @@ def calibrate_stereo_from_points(
                 alpha=rectify_alpha,
             )
     except cv2.error as error:
-        raise ValueError(f"雙目影像矯正參數計算失敗：{error}") from error
+        raise ValueError(f"雙鏡頭影像矯正參數計算失敗：{error}") from error
 
     top_rectification = validate_finite_matrix(
         top_rectification,
@@ -710,7 +710,7 @@ def _calculate_stereo_pair_errors(
             None if fisheye else side_distortion_coefficients,
         )
         if not top_success or not side_success:
-            raise ValueError(f"雙目校正組 {pair_id} 無法求得校正物件姿態。")
+            raise ValueError(f"雙鏡頭校正組 {pair_id} 無法求得校正物件姿態。")
 
         if fisheye:
             top_projected, _ = cv2.fisheye.projectPoints(

@@ -1,23 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { normalizeSystemError } from "../lib/notificationUtils";
 
-export default function useNotifications(recentErrors) {
+export default function useNotifications() {
   const [toast, setToast] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const counterRef = useRef(0);
   const seenSystemMessagesRef = useRef(new Set());
+  const lastNotificationRef = useRef(null);
 
   const showNotification = useCallback((message, tone = "info") => {
+    const normalizedMessage = typeof message === "string"
+      ? message.trim()
+      : "";
+    if (!normalizedMessage) return;
+
+    const now = Date.now();
+    const previous = lastNotificationRef.current;
+    if (
+      previous?.message === normalizedMessage
+      && previous.tone === tone
+      && now - previous.createdAt < 1_000
+    ) {
+      return;
+    }
+
     counterRef.current += 1;
     const notification = {
-      id: `${Date.now()}-${counterRef.current}`,
-      message,
+      id: `${now}-${counterRef.current}`,
+      message: normalizedMessage,
       tone,
-      createdAt: Date.now(),
+      createdAt: now,
     };
+    lastNotificationRef.current = notification;
     setToast(notification);
     setNotifications((previous) => [notification, ...previous].slice(0, 50));
   }, []);
@@ -26,11 +43,12 @@ export default function useNotifications(recentErrors) {
 
   const clearNotifications = useCallback(() => {
     seenSystemMessagesRef.current.clear();
+    lastNotificationRef.current = null;
     setToast(null);
     setNotifications([]);
   }, []);
 
-  useEffect(() => {
+  const syncRecentErrors = useCallback((recentErrors) => {
     if (!Array.isArray(recentErrors)) return;
     for (const error of recentErrors) {
       const message = normalizeSystemError(error);
@@ -38,7 +56,7 @@ export default function useNotifications(recentErrors) {
       seenSystemMessagesRef.current.add(message);
       showNotification(message, "error");
     }
-  }, [recentErrors, showNotification]);
+  }, [showNotification]);
 
   return {
     toast,
@@ -46,5 +64,6 @@ export default function useNotifications(recentErrors) {
     showNotification,
     dismissNotification,
     clearNotifications,
+    syncRecentErrors,
   };
 }

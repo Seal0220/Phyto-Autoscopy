@@ -42,11 +42,11 @@ export const CALIBRATION_STATUS = Object.freeze({
     tone: "warning",
   },
   intrinsics_solved: {
-    label: "單目校正完成",
+    label: "單鏡頭校正完成",
     tone: "warning",
   },
   stereo_solved: {
-    label: "雙目校正完成",
+    label: "雙鏡頭校正完成",
     tone: "warning",
   },
   rotating_solved: {
@@ -79,13 +79,13 @@ export const CALIBRATION_WORKFLOW_STEPS = Object.freeze([
   },
   {
     key: "intrinsics",
-    label: "計算單目校正",
-    pendingLabel: "計算單目校正中…",
+    label: "計算單鏡頭校正",
+    pendingLabel: "計算單鏡頭校正中…",
   },
   {
     key: "stereo",
-    label: "計算雙目校正",
-    pendingLabel: "計算雙目校正中…",
+    label: "計算雙鏡頭校正",
+    pendingLabel: "計算雙鏡頭校正中…",
   },
   {
     key: "rotating",

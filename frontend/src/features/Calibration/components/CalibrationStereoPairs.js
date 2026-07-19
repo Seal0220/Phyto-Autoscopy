@@ -70,7 +70,7 @@ export default function CalibrationStereoPairs({
       );
       setLocalError("");
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message.trim() : "無法新增雙目影像配對。");
+      setLocalError(error instanceof Error ? error.message.trim() : "無法新增雙鏡頭影像配對。");
     }
   }
 
@@ -81,7 +81,7 @@ export default function CalibrationStereoPairs({
     >
       <SubsectionHeader
         titleId="calibration-stereo-pairs-title"
-        title="雙目影像配對"
+        title="雙鏡頭影像配對"
         description="每組影像必須讓同一個實測校正物件同時出現在俯視角與側視角；系統不會依檔名推測配對。"
       />
 
@@ -177,7 +177,7 @@ export default function CalibrationStereoPairs({
           </article>
         )) : (
           <div className="grid min-h-20 place-items-center rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400">
-            尚未建立雙目影像配對。
+            尚未建立雙鏡頭影像配對。
           </div>
         )}
       </div>

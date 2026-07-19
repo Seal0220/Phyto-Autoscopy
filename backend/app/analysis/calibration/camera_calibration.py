@@ -295,7 +295,7 @@ def calibrate_camera(
     """Detect corners and calibrate one camera from chessboard images."""
 
     if not images:
-        raise ValueError("至少需要一張單目校正影像。")
+        raise ValueError("至少需要一張單鏡頭校正影像。")
     if image_ids is not None and len(image_ids) != len(images):
         raise ValueError("image_ids 數量必須與校正影像數量一致。")
 
@@ -321,7 +321,7 @@ def calibrate_camera(
     )
     successful = [detection for detection in detections if detection.found]
     if not successful:
-        raise ValueError("所有單目校正影像皆無法偵測棋盤角點。")
+        raise ValueError("所有單鏡頭校正影像皆無法偵測棋盤角點。")
 
     result = calibrate_camera_from_points(
         [detection.corners for detection in successful],
@@ -411,7 +411,7 @@ def calibrate_camera_from_points(
             criteria=criteria,
         )
     except cv2.error as error:
-        raise ValueError(f"單目相機校正失敗：{error}") from error
+        raise ValueError(f"單鏡頭相機校正失敗：{error}") from error
 
     camera_matrix = validate_camera_matrix(
         camera_matrix,
@@ -422,7 +422,7 @@ def calibrate_camera_from_points(
         name="distortion_coefficients",
     )
     if not np.isfinite(rms_error):
-        raise ValueError("單目校正產生無效的 RMS 重投影誤差。")
+        raise ValueError("單鏡頭校正產生無效的 RMS 重投影誤差。")
 
     ids = tuple(
         str(image_ids[index]) if image_ids is not None else str(index)
@@ -535,14 +535,14 @@ def calibrate_fisheye_camera_from_points(
             criteria=DEFAULT_CALIBRATION_CRITERIA,
         )
     except cv2.error as error:
-        raise ValueError(f"Fisheye 單目相機校正失敗：{error}") from error
+        raise ValueError(f"Fisheye 單鏡頭相機校正失敗：{error}") from error
     camera_matrix = validate_camera_matrix(
         camera_matrix,
         name="fisheye_camera_matrix",
     )
     distortion = np.asarray(distortion, dtype=np.float64).reshape(4, 1)
     if not np.isfinite(distortion).all() or not np.isfinite(rms_error):
-        raise ValueError("Fisheye 單目校正產生無效數值。")
+        raise ValueError("Fisheye 單鏡頭校正產生無效數值。")
     ids = tuple(
         str(image_ids[index]) if image_ids is not None else str(index)
         for index in range(len(points))

@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   parseJsonResponse,
   responseErrorMessage,
@@ -41,7 +42,7 @@ export default function useSchedule({
       mountedRef.current = false;
       loadingDefaultsRef.current = false;
       defaultsAbortRef.current = null;
-      controller?.abort();
+      abortRequest(controller);
     };
   }, []);
 

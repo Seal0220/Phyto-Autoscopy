@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   RequestTimeoutError,
   UnknownMutationOutcomeError,
@@ -39,13 +40,16 @@ export default function useCalibrationCatalog() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      loadControllerRef.current?.abort();
-      createControllerRef.current?.abort();
+      abortRequest(loadControllerRef.current);
+      abortRequest(createControllerRef.current);
     };
   }, []);
 
   const load = useCallback(async () => {
-    loadControllerRef.current?.abort();
+    abortRequest(
+      loadControllerRef.current,
+      "已由新的校正清單讀取取代。",
+    );
     const controller = new AbortController();
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;

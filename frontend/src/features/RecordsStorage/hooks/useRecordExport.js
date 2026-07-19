@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   parseJsonResponse,
   responseErrorMessage,
@@ -32,7 +33,7 @@ export default function useRecordExport({
       mountedRef.current = false;
 
       for (const pending of pendingExportsRef.current.values()) {
-        pending.controller.abort();
+        abortRequest(pending.controller);
       }
 
       pendingExportsRef.current.clear();

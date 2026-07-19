@@ -42,7 +42,7 @@ export default function CalibrationSourcePicker({
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
           <h4 className="m-0 text-sm font-black text-white">
-            {cameraLabel}單目影像
+            {cameraLabel}單鏡頭影像
           </h4>
           <p className="mt-1 text-xs font-semibold text-neutral-400">
             手動選擇已知棋盤規格且覆蓋主要視野的影像。

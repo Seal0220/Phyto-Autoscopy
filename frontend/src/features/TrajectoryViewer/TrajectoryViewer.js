@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
@@ -20,6 +21,7 @@ import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import ReprojectionErrors from "@/features/ReprojectionErrors/ReprojectionErrors";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import TrajectoryViewer2D from "./components/TrajectoryViewer2D";
 import TrajectoryViewer3D from "./components/TrajectoryViewer3D";
@@ -31,6 +33,7 @@ export default function TrajectoryViewer({
   analysisId,
 }) {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     run,
     trajectory,
@@ -48,6 +51,15 @@ export default function TrajectoryViewer({
   } = useTrajectoryResults({
     analysisId,
   });
+
+  useEffect(() => {
+    const error = exportError || loadError;
+    if (error) showNotification(error, "error");
+  }, [
+    exportError,
+    loadError,
+    showNotification,
+  ]);
   const manualPoints = trajectory.filter((point) => (
     point.topType === "Manual" || point.sideType === "Manual"
   )).length;

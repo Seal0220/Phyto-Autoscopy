@@ -606,7 +606,7 @@ class CaptureRecordValidator:
                 issues.append(
                     RecordValidationIssue(
                         "no_pairable_rotating_frames",
-                        "環繞影像沒有可加入雙目影格群組的同步配對。",
+                        "環繞影像沒有可加入雙鏡頭影格群組的同步配對。",
                     )
                 )
 

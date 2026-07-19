@@ -15,5 +15,5 @@ export default async function CalibrationPage() {
     redirect("/");
   }
 
-  redirect("/analysis/new?step=calibration");
+  redirect("/analysis#camera-calibration");
 }

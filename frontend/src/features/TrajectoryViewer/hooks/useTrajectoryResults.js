@@ -9,7 +9,10 @@ import {
 
 import { downloadAnalysisExport } from "@/features/AnalysisRun/lib/analysisRunApiUtils";
 import { normalizeAnalysisRun } from "@/features/AnalysisRun/lib/analysisRunUtils";
-import { messageFromError } from "@/lib/httpUtils";
+import {
+  abortRequest,
+  messageFromError,
+} from "@/lib/httpUtils";
 
 import { normalizeReprojectionErrors } from "@/features/ReprojectionErrors/lib/reprojectionUtils";
 import { loadTrajectoryResults } from "../lib/trajectoryApiUtils";
@@ -40,7 +43,10 @@ export default function useTrajectoryResults({
   const load = useCallback(async () => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
-    loadControllerRef.current?.abort();
+    abortRequest(
+      loadControllerRef.current,
+      "已由新的分析結果讀取取代。",
+    );
     const controller = new AbortController();
     loadControllerRef.current = controller;
     setLoading(true);
@@ -90,8 +96,8 @@ export default function useTrajectoryResults({
     return () => {
       mountedRef.current = false;
       generationRef.current += 1;
-      loadControllerRef.current?.abort();
-      exportControllerRef.current?.abort();
+      abortRequest(loadControllerRef.current);
+      abortRequest(exportControllerRef.current);
     };
   }, [load]);
 

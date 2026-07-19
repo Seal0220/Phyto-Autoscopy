@@ -60,7 +60,7 @@ class CalibrationCreateRequest(BaseModel):
     @model_validator(mode="after")
     def validate_pairs(self) -> "CalibrationCreateRequest":
         if any(len(pair) != 2 for pair in self.stereo_image_pairs):
-            raise ValueError("每組雙目校正影像必須包含俯視與側視兩個路徑。")
+            raise ValueError("每組雙鏡頭校正影像必須包含俯視與側視兩個路徑。")
         image_paths = [
             *self.top_image_paths,
             *self.side_image_paths,
@@ -70,11 +70,11 @@ class CalibrationCreateRequest(BaseModel):
         if any(not path.strip() for path in image_paths):
             raise ValueError("校正影像路徑不得為空。")
         if any(pair[0].strip() == pair[1].strip() for pair in self.stereo_image_pairs):
-            raise ValueError("雙目校正的俯視與側視影像不得是同一檔案。")
+            raise ValueError("雙鏡頭校正的俯視與側視影像不得是同一檔案。")
         top_paths = {path.strip() for path in self.top_image_paths}
         side_paths = {path.strip() for path in self.side_image_paths}
         if top_paths & side_paths:
-            raise ValueError("俯視與側視單目校正影像不得重複使用同一檔案。")
+            raise ValueError("俯視與側視單鏡頭校正影像不得重複使用同一檔案。")
         if self.rotating_images:
             angles = [item.angle_deg for item in self.rotating_images]
             if len(set(angles)) < 3:

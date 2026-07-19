@@ -155,18 +155,18 @@ export default function CalibrationCreateForm({
     >
       <SubsectionHeader
         title="建立校正檔案"
-        description="來源影像保持唯讀；建立後會依序偵測角點、計算單目校正、計算雙目校正，再由使用者驗證。"
+        description="來源影像保持唯讀；建立後會依序偵測角點、計算單鏡頭校正、計算雙鏡頭校正，再由使用者驗證。"
       />
 
       <InnerPanel as="section">
         <SubsectionHeader
           title="論文 A1／A2 基準與實測值"
-          description="論文基準只供比較。棋盤格尺寸、雙目內角點規格及世界座標轉換必須來自實際量測，不會由板面尺寸推導。"
+          description="論文基準只供比較。棋盤格尺寸、雙鏡頭內角點規格及世界座標轉換必須來自實際量測，不會由板面尺寸推導。"
         />
         <div className="grid gap-3 min-[720px]:grid-cols-2">
           <article className="grid gap-2 rounded-xl border border-white/10 bg-black/10 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="m-0 text-sm font-black text-white">A1 單目校正板</h4>
+              <h4 className="m-0 text-sm font-black text-white">A1 單鏡頭校正板</h4>
               <StatusPill tone={
                 comparison.individualComplete
                 && comparison.patternComplete
@@ -189,7 +189,7 @@ export default function CalibrationCreateForm({
           </article>
           <article className="grid gap-2 rounded-xl border border-white/10 bg-black/10 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="m-0 text-sm font-black text-white">A2 雙目校正板</h4>
+              <h4 className="m-0 text-sm font-black text-white">A2 雙鏡頭校正板</h4>
               <StatusPill tone={
                 comparison.stereoComplete && comparison.stereoMatches
                   ? "success"
@@ -233,7 +233,7 @@ export default function CalibrationCreateForm({
         />
         <CalibrationSourcePicker
           cameraId="rotating"
-          cameraLabel="環繞視角"
+          cameraLabel="旋臂視角"
           images={sourceImages}
           selectedPaths={draft.rotatingImages.map((item) => item.path)}
           onToggle={(path) => togglePath(
@@ -306,7 +306,7 @@ export default function CalibrationCreateForm({
         <div className="grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-4">
           <NumericInput
             id="calibration-pattern-columns"
-            label="單目內角點欄數"
+            label="單鏡頭內角點欄數"
             min={2}
             step={1}
             value={draft.patternColumns}
@@ -317,7 +317,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-pattern-rows"
-            label="單目內角點列數"
+            label="單鏡頭內角點列數"
             min={2}
             step={1}
             value={draft.patternRows}
@@ -328,7 +328,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-square-x"
-            label="單目格距 X"
+            label="單鏡頭格距 X"
             min={0.001}
             step={0.1}
             suffix="mm"
@@ -340,7 +340,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-square-y"
-            label="單目格距 Y"
+            label="單鏡頭格距 Y"
             min={0.001}
             step={0.1}
             suffix="mm"
@@ -352,7 +352,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-individual-board-width"
-            label="單目板面寬度"
+            label="單鏡頭板面寬度"
             min={0.1}
             step={0.1}
             suffix="cm"
@@ -364,7 +364,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-individual-board-height"
-            label="單目板面高度"
+            label="單鏡頭板面高度"
             min={0.1}
             step={0.1}
             suffix="cm"
@@ -376,7 +376,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-pattern-columns"
-            label="雙目內角點欄數"
+            label="雙鏡頭內角點欄數"
             min={2}
             step={1}
             value={draft.stereoPatternColumns}
@@ -387,7 +387,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-pattern-rows"
-            label="雙目內角點列數"
+            label="雙鏡頭內角點列數"
             min={2}
             step={1}
             value={draft.stereoPatternRows}
@@ -398,7 +398,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-square-x"
-            label="雙目格距 X"
+            label="雙鏡頭格距 X"
             min={0.001}
             step={0.1}
             suffix="mm"
@@ -410,7 +410,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-square-y"
-            label="雙目格距 Y"
+            label="雙鏡頭格距 Y"
             min={0.001}
             step={0.1}
             suffix="mm"
@@ -422,7 +422,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-board-width"
-            label="雙目板面寬度"
+            label="雙鏡頭板面寬度"
             min={0.1}
             step={0.1}
             suffix="cm"
@@ -434,7 +434,7 @@ export default function CalibrationCreateForm({
           />
           <NumericInput
             id="calibration-stereo-board-height"
-            label="雙目板面高度"
+            label="雙鏡頭板面高度"
             min={0.1}
             step={0.1}
             suffix="cm"
@@ -450,7 +450,7 @@ export default function CalibrationCreateForm({
       <InnerPanel as="section">
         <SubsectionHeader
           title="世界座標與剛體轉換"
-          description="T_world_from_stereo 將雙目校正座標轉為 mm 世界座標。預填單位矩陣只方便輸入，不代表其符合實際裝置。"
+          description="T_world_from_stereo 將雙鏡頭校正座標轉為 mm 世界座標。預填單位矩陣只方便輸入，不代表其符合實際裝置。"
         />
         <div className="grid gap-3 min-[720px]:grid-cols-2">
           <TextInput

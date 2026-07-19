@@ -15,7 +15,10 @@ import {
   normalizeAnalysisRun,
   normalizeFramePairs,
 } from "@/features/AnalysisRun/lib/analysisRunUtils";
-import { messageFromError } from "@/lib/httpUtils";
+import {
+  abortRequest,
+  messageFromError,
+} from "@/lib/httpUtils";
 
 import {
   deleteTipCorrection,
@@ -97,7 +100,10 @@ export default function useTipReview({
   } = {}) => {
     const generation = indexGenerationRef.current + 1;
     indexGenerationRef.current = generation;
-    indexControllerRef.current?.abort();
+    abortRequest(
+      indexControllerRef.current,
+      "已由新的修正索引讀取取代。",
+    );
     const controller = new AbortController();
     indexControllerRef.current = controller;
     setLoading(true);
@@ -159,9 +165,15 @@ export default function useTipReview({
     if (frameId == null) return false;
     const generation = frameGenerationRef.current + 1;
     frameGenerationRef.current = generation;
-    frameControllerRef.current?.abort();
+    abortRequest(
+      frameControllerRef.current,
+      "已由新的影格讀取取代。",
+    );
     const controller = new AbortController();
-    const abortFromCaller = () => controller.abort(signal?.reason);
+    const abortFromCaller = () => abortRequest(
+      controller,
+      signal?.reason,
+    );
     if (signal?.aborted) abortFromCaller();
     else signal?.addEventListener("abort", abortFromCaller, { once: true });
     frameControllerRef.current = controller;
@@ -206,9 +218,9 @@ export default function useTipReview({
       mountedRef.current = false;
       indexGenerationRef.current += 1;
       frameGenerationRef.current += 1;
-      indexControllerRef.current?.abort();
-      frameControllerRef.current?.abort();
-      mutationControllerRef.current?.abort();
+      abortRequest(indexControllerRef.current);
+      abortRequest(frameControllerRef.current);
+      abortRequest(mutationControllerRef.current);
     };
   }, [loadIndex]);
 

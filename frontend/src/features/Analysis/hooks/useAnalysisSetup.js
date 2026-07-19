@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   RequestTimeoutError,
   UnknownMutationOutcomeError,
@@ -22,7 +23,8 @@ import {
   validateAnalysisRun,
 } from "../lib/analysisApiUtils";
 import {
-  analysisDefaultEndFrame,
+  analysisMethodFromCameraSources,
+  analysisSetupFromRecord,
   analysisSourcesFromPayload,
   buildAnalysisCreatePayload,
   calibrationProfilesFromPayload,
@@ -33,6 +35,17 @@ import {
 
 function mutationOutcomeUnknown(error) {
   return error instanceof UnknownMutationOutcomeError;
+}
+
+function sourceLocationsMatch(
+  left,
+  right,
+) {
+  return left?.recordId === right?.recordId
+    && ["top", "side", "rotating"].every((cameraId) => (
+      left?.cameraSources?.[cameraId]?.path
+      === right?.cameraSources?.[cameraId]?.path
+    ));
 }
 
 export default function useAnalysisSetup({
@@ -60,6 +73,7 @@ export default function useAnalysisSetup({
   const loadControllerRef = useRef(null);
   const mutationControllerRef = useRef(null);
   const sourceScanControllerRef = useRef(null);
+  const setupRef = useRef(setup);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -68,13 +82,75 @@ export default function useAnalysisSetup({
       mountedRef.current = false;
       loadingRef.current = false;
       mutationRef.current = "";
-      loadControllerRef.current?.abort();
-      mutationControllerRef.current?.abort();
-      sourceScanControllerRef.current?.abort();
+      abortRequest(loadControllerRef.current);
+      abortRequest(mutationControllerRef.current);
+      abortRequest(sourceScanControllerRef.current);
       loadControllerRef.current = null;
       mutationControllerRef.current = null;
       sourceScanControllerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    setupRef.current = setup;
+  }, [setup]);
+
+  const performSourceScan = useCallback(async (sourceSetup) => {
+    abortRequest(
+      sourceScanControllerRef.current,
+      "已由新的影像目錄掃描取代。",
+    );
+    const controller = new AbortController();
+    sourceScanControllerRef.current = controller;
+    setSourceScanning(true);
+    setStepError("");
+
+    try {
+      const preview = await previewAnalysisSources(
+        {
+          record_id: sourceSetup.recordId || null,
+          method: sourceSetup.method,
+          camera_sources: sourceSetup.cameraSources,
+        },
+        controller.signal,
+      );
+      if (!mountedRef.current || controller.signal.aborted) return false;
+
+      setSetup((previous) => {
+        if (!sourceLocationsMatch(previous, sourceSetup)) return previous;
+
+        const next = {
+          ...previous,
+          sourcePreview: preview,
+          endFrame: preview?.total_frame_count > 0
+            ? String(preview.total_frame_count)
+            : previous.endFrame,
+        };
+        setupRef.current = next;
+        return next;
+      });
+      if (!preview?.ready) {
+        setStepError(
+          preview?.errors?.[0]
+          || "影像目錄尚未具備分析條件。",
+        );
+      }
+      return Boolean(preview?.ready);
+    } catch (error) {
+      if (error?.name === "AbortError") return false;
+      if (mountedRef.current) {
+        setStepError(messageFromError(
+          error,
+          "掃描影像目錄失敗。",
+        ));
+      }
+      return false;
+    } finally {
+      if (sourceScanControllerRef.current === controller) {
+        sourceScanControllerRef.current = null;
+        if (mountedRef.current) setSourceScanning(false);
+      }
+    }
   }, []);
 
   const loadOptions = useCallback(async () => {
@@ -96,34 +172,18 @@ export default function useAnalysisSetup({
 
       setSources(nextSources);
       setCalibrations(nextCalibrations);
-      setSetup((previous) => {
-        const selectedSource = nextSources.find(
-          (source) => source.record_id === previous.recordId,
+      const selectedSource = nextSources.find(
+        (source) => source.record_id === setupRef.current.recordId,
+      );
+      if (selectedSource) {
+        const nextSetup = analysisSetupFromRecord(
+          setupRef.current,
+          selectedSource,
         );
-        if (!selectedSource) return previous;
-
-        return {
-          ...previous,
-          endFrame: previous.endFrame || analysisDefaultEndFrame(selectedSource),
-          cameraSources: {
-            top: {
-              enabled: true,
-              path: previous.cameraSources.top.path
-                || selectedSource.camera_directories.top,
-            },
-            side: {
-              enabled: true,
-              path: previous.cameraSources.side.path
-                || selectedSource.camera_directories.side,
-            },
-            rotating: {
-              enabled: previous.method === "top_side_rotating",
-              path: previous.cameraSources.rotating.path
-                || selectedSource.camera_directories.rotating,
-            },
-          },
-        };
-      });
+        setupRef.current = nextSetup;
+        setSetup(nextSetup);
+        void performSourceScan(nextSetup);
+      }
       setLoadError("");
       return true;
     } catch (error) {
@@ -147,54 +207,41 @@ export default function useAnalysisSetup({
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, []);
+  }, [performSourceScan]);
 
   useEffect(() => {
     void loadOptions();
   }, [loadOptions]);
 
-  function selectRecord(recordId) {
+  async function selectRecord(recordId) {
     const source = sources.find((item) => item.record_id === recordId);
-    setSetup((previous) => ({
-      ...previous,
-      recordId,
-      endFrame: analysisDefaultEndFrame(source),
-      cameraSources: {
-        top: {
-          enabled: true,
-          path: source?.camera_directories?.top || "",
-        },
-        side: {
-          enabled: true,
-          path: source?.camera_directories?.side || "",
-        },
-        rotating: {
-          enabled: previous.method === "top_side_rotating",
-          path: source?.camera_directories?.rotating || "",
-        },
-      },
-      sourcePreview: null,
-    }));
+    const nextSetup = analysisSetupFromRecord(
+      setupRef.current,
+      source,
+    );
+    setupRef.current = nextSetup;
+    setSetup(nextSetup);
     setStepError("");
+
+    if (!source) {
+      abortRequest(sourceScanControllerRef.current);
+      sourceScanControllerRef.current = null;
+      setSourceScanning(false);
+      return false;
+    }
+
+    return performSourceScan(nextSetup);
   }
 
   function updateSetup(key, value) {
-    setSetup((previous) => ({
-      ...previous,
-      [key]: value,
-      ...(key === "method"
-        ? {
-          cameraSources: {
-            ...previous.cameraSources,
-            rotating: {
-              ...previous.cameraSources.rotating,
-              enabled: value === "top_side_rotating",
-            },
-          },
-          sourcePreview: null,
-        }
-        : {}),
-    }));
+    setSetup((previous) => {
+      const next = {
+        ...previous,
+        [key]: value,
+      };
+      setupRef.current = next;
+      return next;
+    });
     setStepError("");
   }
 
@@ -202,59 +249,36 @@ export default function useAnalysisSetup({
     cameraId,
     patch,
   ) {
-    setSetup((previous) => ({
-      ...previous,
-      cameraSources: {
-        ...previous.cameraSources,
-        [cameraId]: {
-          ...previous.cameraSources[cameraId],
-          ...patch,
-        },
+    const previous = setupRef.current;
+    const currentSource = previous.cameraSources[cameraId];
+    const pathChanged = Object.hasOwn(patch, "path")
+      && patch.path !== currentSource.path;
+    const cameraSources = {
+      ...previous.cameraSources,
+      [cameraId]: {
+        ...currentSource,
+        ...patch,
       },
-      sourcePreview: null,
-    }));
+    };
+    const next = {
+      ...previous,
+      cameraSources,
+      method: analysisMethodFromCameraSources(cameraSources),
+      sourcePreview: pathChanged ? null : previous.sourcePreview,
+    };
+    setupRef.current = next;
+    setSetup(next);
+
+    if (pathChanged) {
+      abortRequest(sourceScanControllerRef.current);
+      sourceScanControllerRef.current = null;
+      setSourceScanning(false);
+    }
     setStepError("");
   }
 
-  async function scanSources() {
-    sourceScanControllerRef.current?.abort();
-    const controller = new AbortController();
-    sourceScanControllerRef.current = controller;
-    setSourceScanning(true);
-    setStepError("");
-    try {
-      const preview = await previewAnalysisSources(
-        {
-          record_id: setup.recordId || null,
-          method: setup.method,
-          camera_sources: setup.cameraSources,
-        },
-        controller.signal,
-      );
-      if (!mountedRef.current || controller.signal.aborted) return false;
-      setSetup((previous) => ({
-        ...previous,
-        sourcePreview: preview,
-        endFrame: preview?.total_frame_count > 0
-          ? String(preview.total_frame_count)
-          : previous.endFrame,
-      }));
-      if (!preview?.ready) {
-        setStepError(preview?.errors?.[0] || "影像目錄尚未具備分析條件。");
-      }
-      return Boolean(preview?.ready);
-    } catch (error) {
-      if (error?.name === "AbortError") return false;
-      if (mountedRef.current) {
-        setStepError(messageFromError(error, "掃描影像目錄失敗。"));
-      }
-      return false;
-    } finally {
-      if (sourceScanControllerRef.current === controller) {
-        sourceScanControllerRef.current = null;
-        if (mountedRef.current) setSourceScanning(false);
-      }
-    }
+  function scanSources() {
+    return performSourceScan(setupRef.current);
   }
 
   function updateRoi(

@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   RequestTimeoutError,
 } from "@/lib/httpUtils";
@@ -53,10 +54,10 @@ export default function useAnalysisDashboard() {
     return () => {
       mountedRef.current = false;
       loadingRef.current = false;
-      controllerRef.current?.abort();
+      abortRequest(controllerRef.current);
       controllerRef.current = null;
       for (const controller of exportControllersRef.current.values()) {
-        controller.abort();
+        abortRequest(controller);
       }
       exportControllersRef.current.clear();
     };

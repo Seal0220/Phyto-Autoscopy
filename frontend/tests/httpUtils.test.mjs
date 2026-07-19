@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  abortRequest,
   mutationResponseOutcomeUnknown,
   mutationTransportOutcomeUnknown,
   RequestTimeoutError,
@@ -10,6 +11,16 @@ import {
   responseErrorMessage,
   withRequestTimeout,
 } from "../src/lib/httpUtils.js";
+
+test("abortRequest always supplies an AbortError reason", () => {
+  const controller = new AbortController();
+
+  assert.equal(abortRequest(controller), true);
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(controller.signal.reason?.name, "AbortError");
+  assert.equal(controller.signal.reason?.message, "請求已取消。");
+  assert.equal(abortRequest(controller), false);
+});
 
 function waitUntilAborted(signal) {
   return new Promise((resolve, reject) => {

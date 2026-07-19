@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
@@ -16,6 +17,7 @@ import {
   StatusPill,
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
 import AnalysisRunMetadata from "./components/AnalysisRunMetadata";
@@ -26,6 +28,7 @@ export default function AnalysisRun({
   analysisId,
 }) {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     run,
     progress,
@@ -47,6 +50,37 @@ export default function AnalysisRun({
   } = useAnalysisRun({
     analysisId,
   });
+
+  useEffect(() => {
+    if (loadError) showNotification(loadError, "error");
+  }, [
+    loadError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (mutationError) showNotification(mutationError, "error");
+  }, [
+    mutationError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (exportError) showNotification(exportError, "error");
+  }, [
+    exportError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (!socketError) return;
+    showNotification(socketError.message, "error");
+    resetSocketError();
+  }, [
+    resetSocketError,
+    showNotification,
+    socketError,
+  ]);
   const hasMatchingProgress = Boolean(
     run
     && progress?.analysis_id

@@ -66,7 +66,7 @@ export default function CalibrationProfileList({ profiles }) {
                     </dd>
                   </div>
                   <div className="min-w-0">
-                    <dt className="font-black text-neutral-500">雙目誤差</dt>
+                    <dt className="font-black text-neutral-500">雙鏡頭誤差</dt>
                     <dd className="mt-1 m-0 font-bold text-neutral-200">
                       {errorLabel(profile.stereo_mean_reprojection_error)}
                     </dd>

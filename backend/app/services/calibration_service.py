@@ -364,7 +364,7 @@ class CalibrationService:
             }
             if top_sources & side_sources:
                 raise CalibrationError(
-                    "俯視與側視單目校正影像不得重複使用同一檔案。"
+                    "俯視與側視單鏡頭校正影像不得重複使用同一檔案。"
                 )
             stereo_pairs = [
                 [
@@ -378,7 +378,7 @@ class CalibrationService:
                 for pair in stereo_pairs
             ):
                 raise CalibrationError(
-                    "雙目校正的俯視與側視影像不得是同一檔案。"
+                    "雙鏡頭校正的俯視與側視影像不得是同一檔案。"
                 )
             rotating_images = [
                 {
@@ -822,7 +822,7 @@ class CalibrationService:
                         )
                 if profile.stereo_chessboard_pattern is None:
                     raise CalibrationError(
-                        "雙目棋盤內角點規格尚未設定，不能由論文板面尺寸推導。"
+                        "雙鏡頭棋盤內角點規格尚未設定，不能由論文板面尺寸推導。"
                     )
                 for index, pair in enumerate(profile.selected_images["stereo"]):
                     top_detection = self._detection_payload(
@@ -886,7 +886,7 @@ class CalibrationService:
                 if not any(item.get("found") for item in side):
                     raise CalibrationError("側視校正影像未偵測到任何棋盤角點。")
                 if not any(item.get("usable") for item in stereo):
-                    raise CalibrationError("沒有雙目校正影像同時偵測到棋盤角點。")
+                    raise CalibrationError("沒有雙鏡頭校正影像同時偵測到棋盤角點。")
                 if rotating and len({
                     item["angle_deg"]
                     for item in rotating
@@ -944,7 +944,7 @@ class CalibrationService:
             profile.valid = False
             try:
                 if profile.square_size_mm is None:
-                    raise CalibrationError("單目棋盤格實測尺寸尚未設定。")
+                    raise CalibrationError("單鏡頭棋盤格實測尺寸尚未設定。")
                 candidate_results = {}
                 model_evaluations = {}
                 image_sizes = {}
@@ -1105,7 +1105,7 @@ class CalibrationService:
                 self._persist(profile)
                 if isinstance(error, CalibrationError):
                     raise
-                raise CalibrationError(f"單目相機校正失敗：{error}") from error
+                raise CalibrationError(f"單鏡頭相機校正失敗：{error}") from error
             return self._persist(profile)
 
     def solve_stereo(self, calibration_id: str) -> CalibrationProfile:
@@ -1120,7 +1120,7 @@ class CalibrationService:
                     or profile.stereo_square_size_mm is None
                 ):
                     raise CalibrationError(
-                        "雙目棋盤內角點與棋盤格實測尺寸尚未設定。"
+                        "雙鏡頭棋盤內角點與棋盤格實測尺寸尚未設定。"
                     )
                 required = (
                     profile.top_camera_matrix,
@@ -1129,14 +1129,14 @@ class CalibrationService:
                     profile.side_distortion_coefficients,
                 )
                 if any(value is None for value in required):
-                    raise CalibrationError("請先完成俯視與側視單目校正。")
+                    raise CalibrationError("請先完成俯視與側視單鏡頭校正。")
                 pairs = [
                     item
                     for item in profile.corner_detections.get("stereo", [])
                     if item.get("usable")
                 ]
                 if not pairs:
-                    raise CalibrationError("沒有可用的雙目棋盤角點配對。")
+                    raise CalibrationError("沒有可用的雙鏡頭棋盤角點配對。")
                 top_size = self._matching_detection_size(
                     [item["top"] for item in pairs],
                     camera_id="stereo:top",
@@ -1148,7 +1148,7 @@ class CalibrationService:
                 expected_size = (profile.image_width, profile.image_height)
                 require_matching_image_sizes(
                     [expected_size, top_size, side_size],
-                    names=["單目校正", "雙目俯視影像", "雙目側視影像"],
+                    names=["單鏡頭校正", "雙鏡頭俯視影像", "雙鏡頭側視影像"],
                 )
                 result = calibrate_stereo_from_points(
                     [item["top"]["corners"] for item in pairs],
@@ -1208,7 +1208,7 @@ class CalibrationService:
                 self._persist(profile)
                 if isinstance(error, CalibrationError):
                     raise
-                raise CalibrationError(f"雙目相機校正失敗：{error}") from error
+                raise CalibrationError(f"雙鏡頭相機校正失敗：{error}") from error
             return self._persist(profile)
 
     def solve_rotating(self, calibration_id: str) -> CalibrationProfile:
@@ -1328,14 +1328,14 @@ class CalibrationService:
             "valid",
             "potentially_invalid",
         }:
-            raise ValueError("請先完成角點偵測、單目與雙目校正。")
+            raise ValueError("請先完成角點偵測、單鏡頭與雙鏡頭校正。")
         required = {
             "影像寬度": profile.image_width,
             "影像高度": profile.image_height,
-            "單目棋盤內角點": profile.chessboard_pattern,
-            "單目棋盤實測 square size": profile.square_size_mm,
-            "雙目棋盤內角點": profile.stereo_chessboard_pattern,
-            "雙目棋盤實測 square size": profile.stereo_square_size_mm,
+            "單鏡頭棋盤內角點": profile.chessboard_pattern,
+            "單鏡頭棋盤實測 square size": profile.square_size_mm,
+            "雙鏡頭棋盤內角點": profile.stereo_chessboard_pattern,
+            "雙鏡頭棋盤實測 square size": profile.stereo_square_size_mm,
             "俯視 Camera Matrix": profile.top_camera_matrix,
             "側視 Camera Matrix": profile.side_camera_matrix,
             "俯視畸變係數": profile.top_distortion_coefficients,
@@ -1405,15 +1405,15 @@ class CalibrationService:
             shape=(3, 3),
         )
         if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6):
-            raise ValueError("雙目旋轉矩陣不是正交矩陣。")
+            raise ValueError("雙鏡頭旋轉矩陣不是正交矩陣。")
         if not np.isclose(np.linalg.det(rotation), 1.0, atol=1e-6):
-            raise ValueError("雙目旋轉矩陣行列式必須為 1。")
+            raise ValueError("雙鏡頭旋轉矩陣行列式必須為 1。")
         translation = validate_finite_matrix(
             profile.translation_vector,
             name="translation_vector",
         ).reshape(-1)
         if translation.size != 3 or np.linalg.norm(translation) <= 1e-9:
-            raise ValueError("雙目平移向量必須是非零的三維向量。")
+            raise ValueError("雙鏡頭平移向量必須是非零的三維向量。")
         for name, value, shape in (
             ("essential_matrix", profile.essential_matrix, (3, 3)),
             ("fundamental_matrix", profile.fundamental_matrix, (3, 3)),

@@ -321,6 +321,42 @@ export function analysisDefaultEndFrame(source) {
     : "";
 }
 
+export function analysisMethodFromCameraSources(cameraSources) {
+  return cameraSources?.rotating?.enabled
+    ? "top_side_rotating"
+    : "top_side";
+}
+
+export function analysisSetupFromRecord(
+  setup,
+  source,
+) {
+  const directories = source?.camera_directories || {};
+  const cameraSources = {
+    top: {
+      enabled: true,
+      path: stringOrEmpty(directories.top),
+    },
+    side: {
+      enabled: true,
+      path: stringOrEmpty(directories.side),
+    },
+    rotating: {
+      enabled: Boolean(stringOrEmpty(directories.rotating)),
+      path: stringOrEmpty(directories.rotating),
+    },
+  };
+
+  return {
+    ...setup,
+    recordId: stringOrEmpty(source?.record_id),
+    method: analysisMethodFromCameraSources(cameraSources),
+    endFrame: analysisDefaultEndFrame(source),
+    cameraSources,
+    sourcePreview: null,
+  };
+}
+
 function parseRequiredNumber(
   value,
   label,
@@ -422,6 +458,12 @@ export function validateAnalysisSetupStep(
         setup.sourcePreview?.errors?.[0]
         || "請先掃描影像目錄並確認配對有效。",
       );
+    }
+    if (
+      setup.method === "top_side_rotating"
+      && Number(setup.sourcePreview.rotating_pairable_frame_count) <= 0
+    ) {
+      throw new Error("請重新掃描並確認至少有一組包含旋臂視角的同步影格。");
     }
     return true;
   }

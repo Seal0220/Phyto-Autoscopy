@@ -82,7 +82,7 @@ export default function AnalysisSetupCalibrationStep({
                   <dt className="text-xs font-black text-neutral-500">相機</dt>
                   <dd className="mt-1 m-0 font-bold text-neutral-200">
                     {calibration.supports_rotating
-                      ? "俯視角 / 側視角 / 環繞視角"
+                      ? "俯視角 / 側視角 / 旋臂視角"
                       : "俯視角 / 側視角"
                     }
                   </dd>
@@ -112,7 +112,7 @@ export default function AnalysisSetupCalibrationStep({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-black text-neutral-500">雙目重投影誤差</dt>
+                  <dt className="text-xs font-black text-neutral-500">雙鏡頭重投影誤差</dt>
                   <dd className="mt-1 m-0 font-bold text-neutral-200">
                     {errorValue(calibration.stereo_mean_reprojection_error)}
                   </dd>
@@ -156,7 +156,7 @@ export default function AnalysisSetupCalibrationStep({
         }) : (
           <InnerPanel>
             <p className="m-0 py-4 text-center text-sm font-semibold text-neutral-400">
-              尚無相機校正。請先建立並驗證俯視角與側視角的雙目校正。
+              尚無相機校正。請先建立並驗證俯視角與側視角的雙鏡頭校正。
             </p>
           </InnerPanel>
         )}

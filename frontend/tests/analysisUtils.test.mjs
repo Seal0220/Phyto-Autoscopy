@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   analysisDefaultEndFrame,
+  analysisMethodFromCameraSources,
   analysisProgressPercent,
+  analysisSetupFromRecord,
   analysisSourcesFromPayload,
   buildAnalysisCreatePayload,
   calibrationProfilesFromPayload,
@@ -12,6 +14,32 @@ import {
   mergeAnalysisRuns,
   validateAnalysisSetupStep,
 } from "../src/features/Analysis/lib/analysisUtils.js";
+
+test("record auto-fill derives the method from rotating availability", () => {
+  const initial = createInitialAnalysisSetup();
+  const populated = analysisSetupFromRecord(initial, {
+    record_id: "record-auto",
+    total_frame_count: 8,
+    camera_directories: {
+      top: "record-auto/top",
+      side: "record-auto/side",
+      rotating: "record-auto/rotating",
+    },
+  });
+
+  assert.equal(populated.recordId, "record-auto");
+  assert.equal(populated.endFrame, "8");
+  assert.equal(populated.method, "top_side_rotating");
+  assert.equal(populated.cameraSources.rotating.enabled, true);
+  assert.equal(
+    analysisMethodFromCameraSources({
+      rotating: {
+        enabled: false,
+      },
+    }),
+    "top_side",
+  );
+});
 
 function validSetup() {
   const setup = createInitialAnalysisSetup("record-1");
@@ -362,6 +390,7 @@ test("advanced analysis requires rotating source, angle preview, and calibration
     ...setup.sourcePreview,
     rotating_frame_count: 12,
     rotating_angle_count: 12,
+    rotating_pairable_frame_count: 12,
     camera_resolutions: {
       ...setup.sourcePreview.camera_resolutions,
       rotating: [1280, 960],

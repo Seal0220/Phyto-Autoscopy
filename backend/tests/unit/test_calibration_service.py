@@ -190,7 +190,7 @@ def test_intrinsics_reject_mixed_resolutions_and_persists_recoverable_error(
     )
     harness.service.detect_corners(profile.calibration_id)
 
-    with pytest.raises(CalibrationError, match="單目相機校正失敗"):
+    with pytest.raises(CalibrationError, match="單鏡頭相機校正失敗"):
         harness.service.solve_intrinsics(profile.calibration_id)
 
     failed = harness.repository.get(profile.calibration_id)

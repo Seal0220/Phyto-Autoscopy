@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
@@ -15,6 +16,7 @@ import {
   PanelHeader,
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import CalibrationMatrices from "./components/CalibrationMatrices";
 import CalibrationPreviewGallery from "./components/CalibrationPreviewGallery";
@@ -25,6 +27,7 @@ import useCalibrationDetail from "./hooks/useCalibrationDetail";
 
 export default function CalibrationDetail({ calibrationId }) {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     profile,
     report,
@@ -39,6 +42,20 @@ export default function CalibrationDetail({ calibrationId }) {
     clearActionError,
   } = useCalibrationDetail(calibrationId);
 
+  useEffect(() => {
+    if (loadError) showNotification(loadError, "error");
+  }, [
+    loadError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (actionError) showNotification(actionError, "error");
+  }, [
+    actionError,
+    showNotification,
+  ]);
+
   async function handleDelete() {
     const confirmed = window.confirm(
       `確定刪除 ${calibrationId}？\n\n已被分析引用的校正檔案不會被刪除；此操作成功後無法復原。`,
@@ -46,7 +63,8 @@ export default function CalibrationDetail({ calibrationId }) {
     if (!confirmed) return;
     const deleted = await remove();
     if (deleted) {
-      router.replace("/analysis/calibration");
+      showNotification("已刪除相機校正項目。", "success");
+      router.replace("/analysis#camera-calibration");
     }
   }
 

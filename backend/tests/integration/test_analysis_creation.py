@@ -276,7 +276,10 @@ def test_analysis_rejects_calibration_projected_as_stale(
         service.calibration_service = StaleCalibrationService()
         with pytest.raises(AnalysisError, match="尚未通過驗證|可能已失效"):
             service.validate(run.analysis_id)
-        assert service.list_sources()[0].calibration_status == "missing_or_invalid"
+        source = service.list_sources()[0]
+        assert source.calibration_status == "missing_or_invalid"
+        assert source.ready is True
+        assert "沒有有效的相機校正設定檔。" not in source.not_ready_reasons
     finally:
         service.close()
         dataset["database"].close()

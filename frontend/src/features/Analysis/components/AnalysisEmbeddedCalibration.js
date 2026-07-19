@@ -16,7 +16,11 @@ import CalibrationCreateForm from "@/features/Calibration/components/Calibration
 import CalibrationWorkflowActions from "@/features/Calibration/components/CalibrationWorkflowActions";
 import useCalibrationCatalog from "@/features/Calibration/hooks/useCalibrationCatalog";
 import { runCalibrationStep } from "@/features/Calibration/lib/calibrationApiUtils";
-import { messageFromError } from "@/lib/httpUtils";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
+import {
+  abortRequest,
+  messageFromError,
+} from "@/lib/httpUtils";
 
 export default function AnalysisEmbeddedCalibration({
   onProfileChange,
@@ -28,14 +32,28 @@ export default function AnalysisEmbeddedCalibration({
   const [workflowError, setWorkflowError] = useState("");
   const stepControllerRef = useRef(null);
   const catalog = useCalibrationCatalog();
+  const { showNotification } = useNotificationsContext();
 
   useEffect(() => () => {
-    stepControllerRef.current?.abort();
+    abortRequest(stepControllerRef.current);
     stepControllerRef.current = null;
   }, []);
 
+  useEffect(() => {
+    const error = workflowError || catalog.createError || catalog.loadError;
+    if (error) showNotification(error, "error");
+  }, [
+    catalog.createError,
+    catalog.loadError,
+    showNotification,
+    workflowError,
+  ]);
+
   function closeWorkflow() {
-    stepControllerRef.current?.abort();
+    abortRequest(
+      stepControllerRef.current,
+      "已由新的校正步驟取代。",
+    );
     stepControllerRef.current = null;
     setPendingStep("");
     setWorkflowError("");
@@ -51,7 +69,7 @@ export default function AnalysisEmbeddedCalibration({
 
   async function runStep(step) {
     if (!profile?.calibration_id || pendingStep) return;
-    stepControllerRef.current?.abort();
+    abortRequest(stepControllerRef.current);
     const controller = new AbortController();
     stepControllerRef.current = controller;
     setPendingStep(step);

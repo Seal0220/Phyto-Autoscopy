@@ -543,7 +543,7 @@ Do not use a status pill where the information needs the title/content/note stru
 
 All transient application notifications should flow through the shared notification state and the bottom-right toast/history interface. Do not recreate a separate "近期通知" panel inside a dashboard section.
 
-Notification UI and application placement belong in `features/Notifications/Notifications.js`; notification state belongs in `features/Notifications/hooks/useNotifications.js`.
+Notification UI belongs in `features/Notifications/Notifications.js`; notification state belongs in `features/Notifications/hooks/useNotifications.js`. Mount `NotificationsProvider` once from the root layout so capture, analysis, calibration, models, navigation actions, and future pages share the same bottom-right history. Feature components use `useNotificationsContext`; never mount another `Notifications` instance locally.
 
 Notification interactions always use transitions: trigger, collapse, and close actions use the established 150ms color/fill transition, while history expansion/collapse and toast entry/exit use a 200ms opacity or grid-row transition. Preserve `motion-reduce:transition-none`, and keep hidden history content inert and outside keyboard focus.
 
@@ -641,9 +641,13 @@ While a schedule is running, paused, or stopping, every user-initiated modificat
 
 ### 7.5 Analysis creation and calibration
 
-Analysis creation has one source workflow. Do not show source-type cards, tabs, or add a data-source discriminator field. The `自動帶入` Record selector is an optional convenience inside the image-directory section: selecting a Record fills the three camera paths from persisted metadata, while selecting `無（手動填寫）` leaves them manual. Auto-filled paths remain editable and each camera remains independently enabled or disabled.
+Analysis creation has one source workflow. Do not show source-type cards, analysis-method cards, tabs, or add a data-source discriminator field. Put the `可分析紀錄` list inside the first step of `新增分析`; do not render it as a separate dashboard panel. Give the list a fixed maximum height and let its record items scroll internally. Selecting a Record fills the three camera paths from persisted metadata and immediately scans them, while `手動填寫` clears the automatic Record source. Auto-filled paths remain editable and each camera remains independently enabled or disabled.
 
-Render the three canonical sources as `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Each source row owns its enabled toggle and path input, then shows scan-derived image count, resolution, pairing state, and safe Traditional Chinese errors. A source change invalidates the previous preview. Do not let the user proceed until the current paths have been scanned, enabled files are readable and resolution-consistent, and pairing is valid.
+Render the `影像目錄` heading, camera rows, and controls directly in the setup panel. Do not wrap that section in another `InnerPanel`, repeat its heading, or add a decorative nested surface. The scan result is a same-level sibling section separated by the established white/10 rule. Transient step validation and source-scan warnings belong only in the global bottom-right notification history; do not duplicate them as amber or rose warning blocks inside `新增分析`.
+
+Render the three canonical sources as `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Each source row owns its enabled toggle and path input, then shows scan-derived image count, resolution, pairing state, and safe Traditional Chinese errors. A path change invalidates the previous preview. Do not let the user proceed until the current paths have been scanned, enabled files are readable and resolution-consistent, and pairing is valid.
+
+Treat camera toggles as Boolean analysis flags. Changing only an enabled flag preserves paths and the current scan preview; changing a directory path cancels any stale scan and invalidates that preview. Infer `top_side_rotating` when `rotating` is enabled and otherwise use `top_side`, rather than presenting separate method-selection buttons.
 
 The only method values and labels are:
 
@@ -653,6 +657,8 @@ The only method values and labels are:
 Rotating angles may come from Record metadata, canonical filenames, or an imported angle CSV. Present their availability as source-validation state rather than as another analysis mode. Missing or invalid rotating observations must be explained before submission; during result rendering, a rejected rotating observation falls back to the `top+side` baseline for that frame instead of failing the complete run.
 
 Calibration belongs inside the analysis setup flow. The user may select a valid versioned profile or create a new one without leaving the workflow. A new profile covers enabled camera intrinsics/distortion, the fixed `top+side` transform, optional rotating-axis geometry and dynamic extrinsics, retained-image validation, and reprojection error. Show the chosen Brown/pinhole or fisheye model and its evaluation; never claim the CM1.3M30M12Q nominal AR0130, 2.1 mm lens, or 126° diagonal FOV is a solved calibration. Those values are initialization hints only.
+
+The analysis dashboard owns a standalone `相機校正` panel using the same `Panel`/`PanelHeader`/settings-gear structure as capture features. Its collapsed content lists calibration counts, results, and every calibration item; its settings disclosure contains the detailed creation form. The `/analysis/calibration` convenience route returns to this panel instead of opening analysis creation. Source-list readiness depends only on readable, pairable capture data; missing calibration remains informational there and is enforced later in the calibration setup step.
 
 Calibration profiles are reusable and are rebuilt only after a lens, focal length, fixed mount, or rotating-arm geometry change. A failed calibration attempt exposes a local error clear/retry path and must not overwrite the last valid profile. The standalone calibration route redirects into this embedded setup step; it does not own a parallel creation workflow.
 

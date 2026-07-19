@@ -5,13 +5,12 @@ import {
 } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
-import { SelectInput, TextInput } from "@/components/inputs/Input";
-import { ToggleRow } from "@/components/inputs/Toggle";
-import InnerPanel from "@/components/panels/InnerPanel";
-import { StatusPill } from "@/components/panels/Panel";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
+import { TextInput } from "@/components/inputs/Input";
+import { ToggleRow } from "@/components/inputs/Toggle";
+import { StatusPill } from "@/components/panels/Panel";
 
-import { ANALYSIS_METHODS } from "../analysisConfig";
+import AnalysisAvailableRecords from "./AnalysisAvailableRecords";
 
 const CAMERAS = [
   {
@@ -24,7 +23,7 @@ const CAMERAS = [
   },
   {
     id: "rotating",
-    label: "環繞視角",
+    label: "旋臂視角",
   },
 ];
 
@@ -39,16 +38,15 @@ export default function AnalysisSetupSourcesStep({
   setup,
   scanning,
   onRecordSelect,
-  onMethodChange,
   onCameraSourceChange,
   onScan,
 }) {
   const preview = setup.sourcePreview;
   const previewDescription = setup.method === "top_side_rotating"
     ? [
-      `雙目可配對 ${preview?.pairable_frame_count || 0}`,
+      `雙鏡頭可配對 ${preview?.pairable_frame_count || 0}`,
       `/ ${preview?.total_frame_count || 0} 組；`,
-      `其中 ${preview?.rotating_pairable_frame_count || 0} 組含環繞影像。`,
+      `其中 ${preview?.rotating_pairable_frame_count || 0} 組含旋臂影像。`,
     ].join(" ")
     : [
       `可配對 ${preview?.pairable_frame_count || 0}`,
@@ -58,64 +56,22 @@ export default function AnalysisSetupSourcesStep({
   return (
     <section
       className="grid gap-5"
-      aria-labelledby="analysis-source-step-title"
+      aria-label="影像來源"
     >
-      <SubsectionHeader
-        titleId="analysis-source-step-title"
-        title="分析方法與影像目錄"
-        description="可由紀錄自動帶入後再修改，也可不選紀錄並直接填寫三個相機目錄。"
+      <AnalysisAvailableRecords
+        selectedRecordId={setup.recordId}
+        sources={sources}
+        onSelect={onRecordSelect}
       />
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {Object.entries(ANALYSIS_METHODS).map(([methodId, method]) => (
-          <label
-            className={`grid cursor-pointer gap-2 rounded-[22px] border p-4 transition-[background-color,border-color] duration-200 focus-within:outline-2 focus-within:outline-emerald-300 ${
-              setup.method === methodId
-                ? "border-emerald-200/75 bg-emerald-500/20"
-                : "border-white/10 bg-white/6 hover:border-emerald-200/35 hover:bg-white/9"
-            }`}
-            key={methodId}
-          >
-            <input
-              className="sr-only"
-              type="radio"
-              name="analysis-method"
-              value={methodId}
-              checked={setup.method === methodId}
-              onChange={() => onMethodChange(methodId)}
-            />
-            <span className="text-sm font-black tracking-widest text-emerald-200">
-              {method.label}
-            </span>
-            <span className="text-xs font-semibold leading-5 text-neutral-400">
-              {method.description}
-            </span>
-          </label>
-        ))}
-      </div>
-
-      <InnerPanel>
+      <section
+        className="grid gap-4 border-t border-white/10 pt-5"
+        aria-labelledby="analysis-source-step-title"
+      >
         <SubsectionHeader
+          titleId="analysis-source-step-title"
           title="影像目錄"
-          description="啟用的相機會形成同一份不可變分析輸入清單。"
-        />
-
-        <SelectInput
-          id="analysis-record-autofill"
-          label="自動帶入"
-          value={setup.recordId}
-          options={[
-            {
-              value: "",
-              label: "無（手動填寫）",
-            },
-            ...sources.map((source) => ({
-              value: source.record_id,
-              label: source.record_id,
-            })),
-          ]}
-          description="只負責填入目錄；填入後仍可修改路徑或關閉相機。"
-          onValueChange={onRecordSelect}
+          description="啟用的相機會形成同一份不可變分析輸入清單；路徑可在自動帶入後繼續修改。"
         />
 
         <div className="grid gap-3">
@@ -185,11 +141,15 @@ export default function AnalysisSetupSourcesStep({
             {scanning ? "掃描中…" : "掃描目錄"}
           </Button>
         </div>
-      </InnerPanel>
+      </section>
 
       {preview ? (
-        <InnerPanel>
+        <section
+          className="grid gap-4 border-t border-white/10 pt-5"
+          aria-labelledby="analysis-scan-result-title"
+        >
           <SubsectionHeader
+            titleId="analysis-scan-result-title"
             title="掃描結果"
             description={previewDescription}
           />
@@ -210,14 +170,7 @@ export default function AnalysisSetupSourcesStep({
               </div>
             ))}
           </dl>
-          {preview.errors?.length ? (
-            <ul className="m-0 grid gap-1 pl-5 text-xs font-semibold text-amber-200">
-              {preview.errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
-          ) : null}
-        </InnerPanel>
+        </section>
       ) : null}
     </section>
   );

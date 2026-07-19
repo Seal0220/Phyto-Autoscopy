@@ -27,6 +27,7 @@ import {
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import TipReviewCanvas from "./components/TipReviewCanvas";
 import TipReviewControls from "./components/TipReviewControls";
@@ -44,6 +45,7 @@ export default function TipReview({
   analysisId,
 }) {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     run,
     frameIds,
@@ -83,6 +85,16 @@ export default function TipReview({
     || frameLoading
     || !frame
     || frame.pair.frame_id !== currentFrameId;
+
+  useEffect(() => {
+    const error = mutationError || frameError || loadError;
+    if (error) showNotification(error, "error");
+  }, [
+    frameError,
+    loadError,
+    mutationError,
+    showNotification,
+  ]);
   const runDisplay = analysisRunDisplay(run);
 
   useEffect(() => {

@@ -12,8 +12,7 @@ import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 import Control from "@/features/Control/Control";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import { CAPTURE_SECONDARY_NAVIGATION_ITEMS } from "@/features/MainNavigation/mainNavigationConfig";
-import Notifications from "@/features/Notifications/Notifications";
-import useNotifications from "@/features/Notifications/hooks/useNotifications";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import RecordsStorage from "@/features/RecordsStorage/RecordsStorage";
 import useRecordsStorage from "@/features/RecordsStorage/hooks/useRecordsStorage";
 import Schedule from "@/features/Schedule/Schedule";
@@ -36,12 +35,9 @@ export default function ControlPanel() {
     command,
   } = usePhytoSocket();
   const {
-    toast,
-    notifications,
     showNotification,
-    dismissNotification,
-    clearNotifications,
-  } = useNotifications(snapshot?.system?.recent_errors);
+    syncRecentErrors,
+  } = useNotificationsContext();
   const [busyActions, setBusyActions] = useState(() => new Set());
   const [logoutPending, setLogoutPending] = useState(false);
   const [openSettingsGroups, setOpenSettingsGroups] = useState([]);
@@ -73,6 +69,13 @@ export default function ControlPanel() {
   }, [
     showNotification,
     socketError,
+  ]);
+
+  useEffect(() => {
+    syncRecentErrors(snapshot?.system?.recent_errors);
+  }, [
+    snapshot?.system?.recent_errors,
+    syncRecentErrors,
   ]);
 
   useEffect(() => {
@@ -159,14 +162,6 @@ export default function ControlPanel() {
       }
     }
   }
-
-  const clearNotificationErrors = useCallback(async () => {
-    const result = await runAction("system.errors.reset");
-
-    if (result !== null) {
-      clearNotifications();
-    }
-  }, [clearNotifications, runAction]);
 
   function toggleSettings(group) {
     setOpenSettingsGroups((current) => (
@@ -260,14 +255,6 @@ export default function ControlPanel() {
           onLoad={loadRecords}
         />
       </div>
-      <Notifications
-        toast={toast}
-        notifications={notifications}
-        clearing={busyActions.has("system.errors.reset")}
-        clearDisabled={!isConnected}
-        onClear={() => void clearNotificationErrors()}
-        onClose={dismissNotification}
-      />
     </main>
   );
 }

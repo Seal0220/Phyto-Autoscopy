@@ -225,7 +225,7 @@ def _fundamental_from_projections(
     matrix = _skew(epipole) @ side @ np.linalg.pinv(top)
     norm = np.linalg.norm(matrix)
     if norm <= 1e-12 or not np.isfinite(matrix).all():
-        raise AnalysisError("無法由雙目投影矩陣建立校正後 Fundamental Matrix。")
+        raise AnalysisError("無法由雙鏡頭投影矩陣建立校正後 Fundamental Matrix。")
     return matrix / norm
 
 
@@ -619,14 +619,12 @@ class AnalysisService:
                         continue
                     available_calibrations.append(profile)
                 reasons = list(validation.not_ready_reasons)
-                if not available_calibrations:
-                    reasons.append("沒有有效的相機校正設定檔。")
                 calibration_status = (
                     "valid"
                     if available_calibrations
                     else "missing_or_invalid"
                 )
-                ready = validation.ready and bool(available_calibrations)
+                ready = validation.ready
                 top_count = validation.top_frame_count
                 side_count = validation.side_frame_count
                 rotating_count = full_validation.rotating_frame_count
@@ -1052,7 +1050,7 @@ class AnalysisService:
                     if start_frame <= pair.frame_id <= end_frame
                 ]
                 if not any(pair.pair_status in PAIRABLE_STATUSES for pair in selected_pairs):
-                    raise AnalysisError("指定範圍沒有可分析的雙目影格配對。")
+                    raise AnalysisError("指定範圍沒有可分析的雙鏡頭影格配對。")
                 if not synchronization.keep_unpaired_frames:
                     selected_pairs = [
                         pair

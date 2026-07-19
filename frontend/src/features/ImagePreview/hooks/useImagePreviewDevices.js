@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   RequestTimeoutError,
   messageFromError,
   parseJsonResponse,
@@ -37,7 +38,7 @@ export default function useImagePreviewDevices({
       mountedRef.current = false;
       scanningRef.current = false;
       scannedRef.current = false;
-      abortRef.current?.abort();
+      abortRequest(abortRef.current);
       abortRef.current = null;
     };
   }, []);

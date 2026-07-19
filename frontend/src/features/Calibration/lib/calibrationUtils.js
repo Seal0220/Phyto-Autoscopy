@@ -138,10 +138,10 @@ export function appendStereoPair(
     throw new Error("請先選擇一張俯視角與一張側視角影像。");
   }
   if (topPath === sidePath) {
-    throw new Error("雙目校正的俯視角與側視角影像不得是同一檔案。");
+    throw new Error("雙鏡頭校正的俯視角與側視角影像不得是同一檔案。");
   }
   if (pairs.some((pair) => pair[0] === topPath && pair[1] === sidePath)) {
-    throw new Error("這組雙目影像已經加入。");
+    throw new Error("這組雙鏡頭影像已經加入。");
   }
   return [
     ...pairs,
@@ -190,17 +190,17 @@ export function parseRigidTransform(matrix) {
 
 export function buildCalibrationCreatePayload(draft) {
   if (!draft.topImagePaths.length) {
-    throw new Error("請至少選擇一張俯視角單目校正影像。");
+    throw new Error("請至少選擇一張俯視角單鏡頭校正影像。");
   }
   if (!draft.sideImagePaths.length) {
-    throw new Error("請至少選擇一張側視角單目校正影像。");
+    throw new Error("請至少選擇一張側視角單鏡頭校正影像。");
   }
   if (!draft.stereoImagePairs.length) {
-    throw new Error("請至少建立一組雙目校正影像配對。");
+    throw new Error("請至少建立一組雙鏡頭校正影像配對。");
   }
   const sidePaths = new Set(draft.sideImagePaths);
   if (draft.topImagePaths.some((path) => sidePaths.has(path))) {
-    throw new Error("同一張影像不可同時作為俯視角與側視角單目校正來源。");
+    throw new Error("同一張影像不可同時作為俯視角與側視角單鏡頭校正來源。");
   }
   if (draft.rotatingImages.length > 0) {
     if (draft.rotatingImages.length < 3) {
@@ -246,51 +246,51 @@ export function buildCalibrationCreatePayload(draft) {
     diagonal_fov_deg: 126,
     pattern_columns: integerAtLeastTwo(
       draft.patternColumns,
-      "單目棋盤內角點欄數",
+      "單鏡頭棋盤內角點欄數",
     ),
     pattern_rows: integerAtLeastTwo(
       draft.patternRows,
-      "單目棋盤內角點列數",
+      "單鏡頭棋盤內角點列數",
     ),
     square_size_mm_x: positiveNumber(
       draft.squareSizeMmX,
-      "單目棋盤格 X 尺寸",
+      "單鏡頭棋盤格 X 尺寸",
     ),
     square_size_mm_y: positiveNumber(
       draft.squareSizeMmY,
-      "單目棋盤格 Y 尺寸",
+      "單鏡頭棋盤格 Y 尺寸",
     ),
     stereo_pattern_columns: integerAtLeastTwo(
       draft.stereoPatternColumns,
-      "雙目棋盤內角點欄數",
+      "雙鏡頭棋盤內角點欄數",
     ),
     stereo_pattern_rows: integerAtLeastTwo(
       draft.stereoPatternRows,
-      "雙目棋盤內角點列數",
+      "雙鏡頭棋盤內角點列數",
     ),
     stereo_square_size_mm_x: positiveNumber(
       draft.stereoSquareSizeMmX,
-      "雙目棋盤格 X 尺寸",
+      "雙鏡頭棋盤格 X 尺寸",
     ),
     stereo_square_size_mm_y: positiveNumber(
       draft.stereoSquareSizeMmY,
-      "雙目棋盤格 Y 尺寸",
+      "雙鏡頭棋盤格 Y 尺寸",
     ),
     individual_board_width_cm: positiveNumber(
       draft.individualBoardWidthCm,
-      "單目校正板寬度",
+      "單鏡頭校正板寬度",
     ),
     individual_board_height_cm: positiveNumber(
       draft.individualBoardHeightCm,
-      "單目校正板高度",
+      "單鏡頭校正板高度",
     ),
     stereo_board_width_cm: positiveNumber(
       draft.stereoBoardWidthCm,
-      "雙目校正板寬度",
+      "雙鏡頭校正板寬度",
     ),
     stereo_board_height_cm: positiveNumber(
       draft.stereoBoardHeightCm,
-      "雙目校正板高度",
+      "雙鏡頭校正板高度",
     ),
     notes: String(draft.notes || "").trim(),
     world_coordinate_system: {

@@ -56,7 +56,7 @@ export default function CalibrationSummary({ profile }) {
           note="俯視角／側視角需一致"
         />
         <StatusCard
-          title="雙目重投影誤差"
+          title="雙鏡頭重投影誤差"
           content={profile.stereo_mean_reprojection_error === null
             || profile.stereo_mean_reprojection_error === undefined
             ? "尚未計算"
@@ -88,25 +88,25 @@ export default function CalibrationSummary({ profile }) {
               </dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-xs font-black text-neutral-500">俯視角單目影像</dt>
+              <dt className="text-xs font-black text-neutral-500">俯視角單鏡頭影像</dt>
               <dd className="mt-1 m-0 font-bold text-neutral-100">
                 {selected.top?.length || 0} 張
               </dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-xs font-black text-neutral-500">側視角單目影像</dt>
+              <dt className="text-xs font-black text-neutral-500">側視角單鏡頭影像</dt>
               <dd className="mt-1 m-0 font-bold text-neutral-100">
                 {selected.side?.length || 0} 張
               </dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-xs font-black text-neutral-500">雙目影像配對</dt>
+              <dt className="text-xs font-black text-neutral-500">雙鏡頭影像配對</dt>
               <dd className="mt-1 m-0 font-bold text-neutral-100">
                 {selected.stereo?.length || 0} 組
               </dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-xs font-black text-neutral-500">旋臂視角單目影像</dt>
+              <dt className="text-xs font-black text-neutral-500">旋臂視角單鏡頭影像</dt>
               <dd className="mt-1 m-0 font-bold text-neutral-100">
                 {selected.rotating?.length || 0} 張
               </dd>
@@ -198,11 +198,11 @@ export default function CalibrationSummary({ profile }) {
       <InnerPanel as="section">
         <SubsectionHeader
           title="論文基準與實際差異"
-          description="A1／A2 數字是 Ruiz-Melero et al. 2024 的比較基準；雙目內角點與格距不是論文公開參數。"
+          description="A1／A2 數字是 Ruiz-Melero et al. 2024 的比較基準；雙鏡頭內角點與格距不是論文公開參數。"
         />
         <div className="grid gap-3 min-[720px]:grid-cols-2">
           <article className="grid gap-2 rounded-xl border border-white/10 bg-black/10 p-3 text-sm">
-            <h4 className="m-0 text-sm font-black text-white">A1 單目校正</h4>
+            <h4 className="m-0 text-sm font-black text-white">A1 單鏡頭校正</h4>
             <p className="m-0 font-semibold text-neutral-300">
               論文：10 × 7 內角點，59.4 × 84.1 cm
             </p>
@@ -214,7 +214,7 @@ export default function CalibrationSummary({ profile }) {
             </p>
           </article>
           <article className="grid gap-2 rounded-xl border border-white/10 bg-black/10 p-3 text-sm">
-            <h4 className="m-0 text-sm font-black text-white">A2 雙目校正</h4>
+            <h4 className="m-0 text-sm font-black text-white">A2 雙鏡頭校正</h4>
             <p className="m-0 font-semibold text-neutral-300">
               論文：42.0 × 59.4 cm；未公開內角點數與格距
             </p>

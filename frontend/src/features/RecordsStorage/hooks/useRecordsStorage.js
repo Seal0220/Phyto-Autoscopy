@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  abortRequest,
   messageFromError,
   parseJsonResponse,
   responseErrorMessage,
@@ -36,7 +37,7 @@ export default function useRecordsStorage({
       loadAbortRef.current = null;
       reloadRequestedRef.current = false;
       window.clearTimeout(reloadTimerRef.current);
-      loadController?.abort();
+      abortRequest(loadController);
     };
   }, []);
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
@@ -9,7 +10,6 @@ import {
   FiPlay,
   FiRefreshCw,
   FiSave,
-  FiX,
 } from "react-icons/fi";
 
 import ActionRow from "@/components/actions/ActionRow";
@@ -20,6 +20,7 @@ import {
   PanelHeader,
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisSetupCalibrationStep from "./components/AnalysisSetupCalibrationStep";
 import AnalysisSetupParametersStep from "./components/AnalysisSetupParametersStep";
@@ -34,6 +35,7 @@ export default function AnalysisNew({
   initialStep = 1,
 }) {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     sources,
     calibrations,
@@ -62,7 +64,6 @@ export default function AnalysisNew({
     createRun,
     validateRun,
     startRun,
-    clearMutationError,
   } = useAnalysisSetup({
     initialRecordId,
     initialStep,
@@ -76,6 +77,39 @@ export default function AnalysisNew({
   const hasOptions = sources.length > 0 || calibrations.length > 0;
   const mutationLocked = Boolean(mutationPending) || mutationRequiresRefresh;
 
+  useEffect(() => {
+    if (loadError) showNotification(loadError, "error");
+  }, [
+    loadError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (mutationError) showNotification(mutationError, "error");
+  }, [
+    mutationError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (stepError) showNotification(stepError, "warning");
+  }, [
+    showNotification,
+    stepError,
+  ]);
+
+  useEffect(() => {
+    const errors = setup.sourcePreview?.errors;
+    if (!Array.isArray(errors)) return;
+
+    for (const error of errors) {
+      showNotification(error, "warning");
+    }
+  }, [
+    setup.sourcePreview,
+    showNotification,
+  ]);
+
   function renderStep() {
     if (currentStep === 1) {
       return (
@@ -84,7 +118,6 @@ export default function AnalysisNew({
           setup={setup}
           scanning={sourceScanning}
           onRecordSelect={selectRecord}
-          onMethodChange={(method) => updateSetup("method", method)}
           onCameraSourceChange={updateCameraSource}
           onScan={scanSources}
         />
@@ -253,76 +286,49 @@ export default function AnalysisNew({
 
                 {renderStep()}
 
-                {stepError ? (
-                  <div
-                    className="rounded-xl border border-amber-200/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200"
-                    role="alert"
-                  >
-                    {stepError}
-                  </div>
-                ) : null}
-
-                {mutationError ? (
-                  <div
-                    className="grid gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3"
-                    role="alert"
-                  >
-                    <p className="m-0 text-sm font-semibold text-rose-200">
-                      {mutationError}
-                    </p>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {!mutationRequiresRefresh ? (
-                        <Button onClick={clearMutationError}>
-                          <FiX
-                            className="size-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          清除錯誤
-                        </Button>
-                      ) : null}
-                      {mutationRequiresRefresh ? (
-                        <Button
-                          variant="primary"
-                          onClick={() => router.push("/analysis")}
-                        >
-                          <FiRefreshCw
-                            className="size-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          返回並確認狀態
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
                 <ActionRow className="w-full">
-                  {currentStep > 1 && !createdRun ? (
-                    <Button
-                      disabled={Boolean(mutationPending)}
-                      onClick={previousStep}
-                    >
-                      <FiArrowLeft
-                        className="size-4 shrink-0"
-                        aria-hidden="true"
-                      />
-                      上一步
-                    </Button>
-                  ) : null}
-
-                  {currentStep < 5 ? (
+                  {mutationRequiresRefresh ? (
                     <Button
                       className="ml-auto"
                       variant="primary"
-                      onClick={nextStep}
+                      onClick={() => router.push("/analysis")}
                     >
-                      <FiArrowRight
+                      <FiRefreshCw
                         className="size-4 shrink-0"
                         aria-hidden="true"
                       />
-                      下一步
+                      返回並確認狀態
                     </Button>
-                  ) : finalActions()}
+                  ) : (
+                    <>
+                      {currentStep > 1 && !createdRun ? (
+                        <Button
+                          disabled={Boolean(mutationPending)}
+                          onClick={previousStep}
+                        >
+                          <FiArrowLeft
+                            className="size-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          上一步
+                        </Button>
+                      ) : null}
+
+                      {currentStep < 5 ? (
+                        <Button
+                          className="ml-auto"
+                          variant="primary"
+                          onClick={nextStep}
+                        >
+                          <FiArrowRight
+                            className="size-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          下一步
+                        </Button>
+                      ) : finalActions()}
+                    </>
+                  )}
                 </ActionRow>
               </>
             ) : null}

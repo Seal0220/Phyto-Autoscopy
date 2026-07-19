@@ -13,6 +13,7 @@ import {
   setNestedValue,
 } from "@/features/Settings/lib/settingsUtils";
 import {
+  abortRequest,
   RequestTimeoutError,
   messageFromError,
   parseJsonResponse,
@@ -51,8 +52,8 @@ export default function useSettings({
       savingRef.current = false;
       loadAbortRef.current = null;
       saveAbortRef.current = null;
-      loadController?.abort();
-      saveController?.abort();
+      abortRequest(loadController);
+      abortRequest(saveController);
     };
   }, []);
 
@@ -65,8 +66,8 @@ export default function useSettings({
     savingRef.current = false;
     loadAbortRef.current = null;
     saveAbortRef.current = null;
-    loadController?.abort();
-    saveController?.abort();
+    abortRequest(loadController);
+    abortRequest(saveController);
     setPayload(null);
     setLoading(false);
     setSaving(false);

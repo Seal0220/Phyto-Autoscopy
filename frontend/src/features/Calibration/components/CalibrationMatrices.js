@@ -43,7 +43,7 @@ export default function CalibrationMatrices({ profile }) {
   return (
     <div className="grid gap-4">
       <SubsectionHeader
-        title="相機內參、畸變與雙目幾何"
+        title="相機內參、畸變與雙鏡頭幾何"
         description="以下均為本次 OpenCV 計算與實測世界座標轉換的保存值。"
       />
 
@@ -74,7 +74,7 @@ export default function CalibrationMatrices({ profile }) {
         <CalibrationMatrix
           title="相機間平移（t）"
           value={profile.translation_vector}
-          description="單位由實測雙目棋盤格尺寸決定。"
+          description="單位由實測雙鏡頭棋盤格尺寸決定。"
         />
         <CalibrationMatrix
           title="Essential Matrix（E）"

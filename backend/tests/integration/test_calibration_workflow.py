@@ -23,7 +23,7 @@ def test_complete_calibration_service_workflow_and_delete_protection(tmp_path) -
     seed_synthetic_corner_detections(profile, synthetic_stereo_points())
     harness.repository.update(profile)
 
-    with pytest.raises(CalibrationError, match="請先完成俯視與側視單目校正"):
+    with pytest.raises(CalibrationError, match="請先完成俯視與側視單鏡頭校正"):
         harness.service.solve_stereo(profile.calibration_id)
     failed = harness.repository.get(profile.calibration_id)
     assert failed is not None

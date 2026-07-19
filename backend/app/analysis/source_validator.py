@@ -305,7 +305,7 @@ def validate_analysis_sources(
         issues.append(
             RecordValidationIssue(
                 code="no_pairable_rotating_frames",
-                message="環繞影像沒有可加入雙目影格群組的同步配對。",
+                message="環繞影像沒有可加入雙鏡頭影格群組的同步配對。",
             )
         )
     common_root = (

@@ -1,9 +1,9 @@
 # CHLOROCULUS 整合式三鏡頭植物尖端分析實作註記
 
 本目錄提供 `top_side`（頂+側）與 `top_side_rotating`（頂+側+環繞）。
-前者保留 Ruiz-Melero 等人於 2024 年發表的植物尖端追蹤流程；後者以雙目
+前者保留 Ruiz-Melero 等人於 2024 年發表的植物尖端追蹤流程；後者以雙鏡頭
 結果為基準，再依旋臂角度求得動態相機姿態，以局部偵測與穩健多視角最佳化
-提升精度。環繞觀測無效時只捨棄該影格的精修，保留原本的雙目結果。
+提升精度。環繞觀測無效時只捨棄該影格的精修，保留原本的雙鏡頭結果。
 
 ## 不可推導的參數
 
@@ -17,11 +17,11 @@
 - epipolar 最大距離、Minimum Path adjacency；
 - 線性插值最大缺口時間。
 
-同樣地，論文沒有公開雙目棋盤內角點規格、實測 square size 或植物基部世界
+同樣地，論文沒有公開雙鏡頭棋盤內角點規格、實測 square size 或植物基部世界
 座標轉換。Calibration Profile 因此強制要求：
 
 - 個別相機棋盤內角點與實測 X/Y square size；
-- 雙目棋盤內角點與實測 X/Y square size；
+- 雙鏡頭棋盤內角點與實測 X/Y square size；
 - 明確量測且經驗證的 `T_world_from_stereo` 4×4 rigid transform。
 
 ## CHLOROCULUS 工程選擇

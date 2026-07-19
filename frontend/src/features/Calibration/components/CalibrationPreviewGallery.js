@@ -15,10 +15,10 @@ import {
 } from "../lib/calibrationUtils";
 
 function previewLabel(item) {
-  if (item.cameraId === "top") return "俯視角單目";
-  if (item.cameraId === "side") return "側視角單目";
-  if (item.cameraId === "stereo:top") return "雙目配對俯視角";
-  return "雙目配對側視角";
+  if (item.cameraId === "top") return "俯視角單鏡頭";
+  if (item.cameraId === "side") return "側視角單鏡頭";
+  if (item.cameraId === "stereo:top") return "雙鏡頭配對俯視角";
+  return "雙鏡頭配對側視角";
 }
 
 function CalibrationPreviewImage({
@@ -89,7 +89,7 @@ export default function CalibrationPreviewGallery({ profile }) {
     <div className="grid gap-3">
       <SubsectionHeader
         title="棋盤角點預覽"
-        description="顯示所有單目影像及雙目配對兩側的角點偵測結果；預覽僅供檢查，不會成為新的校正來源。"
+        description="顯示所有單鏡頭影像及雙鏡頭配對兩側的角點偵測結果；預覽僅供檢查，不會成為新的校正來源。"
       />
       {items.length ? (
         <div className="grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3">

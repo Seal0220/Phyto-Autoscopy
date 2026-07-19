@@ -8,7 +8,6 @@ import {
 import {
   FiAlertOctagon,
   FiLogOut,
-  FiX,
 } from "react-icons/fi";
 import { PiPlantFill } from "react-icons/pi";
 import { usePathname } from "next/navigation";
@@ -16,7 +15,9 @@ import { usePathname } from "next/navigation";
 import Button from "@/components/buttons/Button";
 import NavLink from "@/components/navigation/NavLink";
 import { StatusPill } from "@/components/panels/Panel";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import {
+  abortRequest,
   messageFromError,
   RequestTimeoutError,
 } from "@/lib/httpUtils";
@@ -34,9 +35,9 @@ export default function MainNavigation({
   secondaryItems = [],
 }) {
   const pathname = usePathname();
+  const { showNotification } = useNotificationsContext();
   const [localEmergencyPending, setLocalEmergencyPending] = useState(false);
   const [localLogoutPending, setLocalLogoutPending] = useState(false);
-  const [actionError, setActionError] = useState("");
   const mountedRef = useRef(false);
   const emergencyControllerRef = useRef(null);
   const logoutControllerRef = useRef(null);
@@ -46,14 +47,13 @@ export default function MainNavigation({
 
     return () => {
       mountedRef.current = false;
-      emergencyControllerRef.current?.abort();
-      logoutControllerRef.current?.abort();
+      abortRequest(emergencyControllerRef.current);
+      abortRequest(logoutControllerRef.current);
     };
   }, []);
 
   async function handleEmergencyStop() {
     if (onEmergencyStop) {
-      setActionError("");
       onEmergencyStop();
       return;
     }
@@ -63,7 +63,6 @@ export default function MainNavigation({
     const controller = new AbortController();
     emergencyControllerRef.current = controller;
     setLocalEmergencyPending(true);
-    setActionError("");
 
     try {
       await postMainNavigationAction(
@@ -79,14 +78,15 @@ export default function MainNavigation({
         : "緊急停止失敗，請立即檢查設備狀態。";
 
       if (mountedRef.current) {
-        setActionError(
+        showNotification(
           error instanceof RequestTimeoutError
             || error instanceof TypeError
             ? fallback
             : messageFromError(
               error,
               fallback,
-            ),
+          ),
+          "error",
         );
       }
     } finally {
@@ -102,7 +102,6 @@ export default function MainNavigation({
 
   async function handleLogout() {
     if (onLogout) {
-      setActionError("");
       onLogout();
       return;
     }
@@ -112,7 +111,6 @@ export default function MainNavigation({
     const controller = new AbortController();
     logoutControllerRef.current = controller;
     setLocalLogoutPending(true);
-    setActionError("");
 
     try {
       await postMainNavigationAction(
@@ -129,14 +127,15 @@ export default function MainNavigation({
         : "登出失敗，請稍後重試。";
 
       if (mountedRef.current) {
-        setActionError(
+        showNotification(
           error instanceof RequestTimeoutError
             || error instanceof TypeError
             ? fallback
             : messageFromError(
               error,
               fallback,
-            ),
+          ),
+          "error",
         );
       }
     } finally {
@@ -221,32 +220,6 @@ export default function MainNavigation({
         </div>
 
         <div className="col-start-3 flex min-w-0 items-center justify-end gap-2 max-[980px]:col-start-2 max-[980px]:row-start-1">
-          {actionError ? (
-            <div
-              className="flex min-w-0 items-center gap-1"
-              role="alert"
-            >
-              <span className="sr-only">{actionError}</span>
-              <span
-                className="max-w-44 truncate text-xs font-bold text-rose-200 max-[1180px]:hidden"
-                title={actionError}
-                aria-hidden="true"
-              >
-                {actionError}
-              </span>
-              <button
-                type="button"
-                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-xl border border-rose-200/40 bg-rose-500/15 text-rose-200 transition-[background-color,border-color,color,opacity] duration-150 hover:border-rose-100/70 hover:bg-rose-500/25 focus-visible:outline-2 focus-visible:outline-emerald-300"
-                aria-label="清除操作錯誤"
-                onClick={() => setActionError("")}
-              >
-                <FiX
-                  className="size-4"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          ) : null}
           {isConnected !== null ? (
             <div className="max-[720px]:hidden">
               <StatusPill tone={isConnected ? "success" : "warning"}>

@@ -10,9 +10,9 @@ import {
 const CAMERA_LABELS = {
   top: "俯視角",
   side: "側視角",
-  stereo: "雙目",
-  "stereo:top": "雙目俯視角",
-  "stereo:side": "雙目側視角",
+  stereo: "雙鏡頭",
+  "stereo:top": "雙鏡頭俯視角",
+  "stereo:side": "雙鏡頭側視角",
 };
 
 function errorLabel(value) {
@@ -117,7 +117,7 @@ export default function CalibrationQualityReport({ report }) {
           note={`${successes.side || 0} / ${counts.side || 0} 張角點成功`}
         />
         <StatusCard
-          title="雙目平均誤差"
+          title="雙鏡頭平均誤差"
           content={errorLabel(means.stereo)}
           note={`${successes.stereo || 0} / ${counts.stereo || 0} 組可用`}
         />
@@ -186,7 +186,7 @@ export default function CalibrationQualityReport({ report }) {
           </div>
         ) : (
           <p className="m-0 rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400">
-            完成單目與雙目校正後會顯示校正點覆蓋資料。
+            完成單鏡頭與雙鏡頭校正後會顯示校正點覆蓋資料。
           </p>
         )}
       </section>
@@ -238,7 +238,7 @@ export default function CalibrationQualityReport({ report }) {
       <section className="grid gap-3">
         <SubsectionHeader
           title="逐圖／逐配對重投影誤差"
-          description="單目顯示 RMS 與最大誤差；雙目顯示兩側、合併與 Epipolar RMS 誤差。"
+          description="單鏡頭顯示 RMS 與最大誤差；雙鏡頭顯示兩側、合併與 Epipolar RMS 誤差。"
         />
         {errors.length ? (
           <div className="max-h-96 overflow-auto rounded-xl border border-white/10">

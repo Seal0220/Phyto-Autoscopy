@@ -1,7 +1,7 @@
 export const ANALYSIS_METHODS = {
   top_side: {
     label: "頂+側",
-    description: "保留原論文的俯視與側視偵測、極線約束及雙目三角測量。",
+    description: "保留原論文的俯視與側視偵測、極線約束及雙鏡頭三角測量。",
     reference: "Ruiz-Melero et al. 2024",
   },
   top_side_rotating: {
@@ -81,7 +81,7 @@ export const ANALYSIS_STATUS_META = {
 
 export const ANALYSIS_STAGE_LABELS = {
   validating: "驗證輸入資料",
-  pairing_frames: "配對雙目影格",
+  pairing_frames: "配對雙鏡頭影格",
   calibrating: "套用相機校正",
   initializing_background: "初始化背景模型",
   detecting_top_tip: "偵測俯視尖端",

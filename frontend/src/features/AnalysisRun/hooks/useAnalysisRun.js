@@ -8,7 +8,10 @@ import {
 } from "react";
 
 import usePhytoSocket from "@/hooks/usePhytoSocket";
-import { messageFromError } from "@/lib/httpUtils";
+import {
+  abortRequest,
+  messageFromError,
+} from "@/lib/httpUtils";
 
 import {
   downloadAnalysisExport,
@@ -61,7 +64,10 @@ export default function useAnalysisRun({
   } = {}) => {
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
-    loadControllerRef.current?.abort();
+    abortRequest(
+      loadControllerRef.current,
+      "已由新的分析執行讀取取代。",
+    );
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
@@ -129,9 +135,9 @@ export default function useAnalysisRun({
       mountedRef.current = false;
       window.clearInterval(interval);
       loadGenerationRef.current += 1;
-      loadControllerRef.current?.abort();
-      mutationControllerRef.current?.abort();
-      exportControllerRef.current?.abort();
+      abortRequest(loadControllerRef.current);
+      abortRequest(mutationControllerRef.current);
+      abortRequest(exportControllerRef.current);
     };
   }, [load]);
 

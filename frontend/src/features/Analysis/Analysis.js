@@ -1,11 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FiCrosshair,
   FiPlus,
   FiRefreshCw,
-  FiX,
 } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
@@ -16,13 +15,15 @@ import {
   PanelHeader,
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import Calibration from "@/features/Calibration/Calibration";
+import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisDashboardRuns from "./components/AnalysisDashboardRuns";
-import AnalysisDashboardSources from "./components/AnalysisDashboardSources";
 import useAnalysisDashboard from "./hooks/useAnalysisDashboard";
 
 export default function Analysis() {
   const router = useRouter();
+  const { showNotification } = useNotificationsContext();
   const {
     sources,
     runs,
@@ -47,6 +48,35 @@ export default function Analysis() {
   ].includes(run.status)).length;
   const hasData = sources.length > 0 || runs.length > 0;
 
+  useEffect(() => {
+    if (loadError) showNotification(loadError, "error");
+  }, [
+    loadError,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (!socketError) return;
+    showNotification(
+      `${socketError.message} 分析進度仍會定時重新讀取。`,
+      "error",
+    );
+    resetSocketError();
+  }, [
+    resetSocketError,
+    showNotification,
+    socketError,
+  ]);
+
+  useEffect(() => {
+    if (exportFailure?.message) {
+      showNotification(exportFailure.message, "error");
+    }
+  }, [
+    exportFailure,
+    showNotification,
+  ]);
+
   function openNewAnalysis(recordId = "") {
     const query = recordId
       ? `?record=${encodeURIComponent(recordId)}`
@@ -64,13 +94,6 @@ export default function Analysis() {
             title="分析"
             action={(
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button onClick={() => router.push("/analysis/calibration")}>
-                  <FiCrosshair
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  相機校正
-                </Button>
                 <Button
                   disabled={loading}
                   onClick={() => void load()}
@@ -104,24 +127,6 @@ export default function Analysis() {
               />
             ) : null}
 
-            {socketError ? (
-              <div
-                className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-amber-200/30 bg-amber-500/10 p-3"
-                role="alert"
-              >
-                <p className="m-0 min-w-0 flex-1 text-sm font-semibold text-amber-200">
-                  {socketError.message} 分析進度仍會定時重新讀取。
-                </p>
-                <Button onClick={resetSocketError}>
-                  <FiX
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  清除連線錯誤
-                </Button>
-              </div>
-            ) : null}
-
             {!loadError || hasData ? (
               <div className="grid gap-3 min-[520px]:grid-cols-3">
                 <StatusCard
@@ -144,29 +149,25 @@ export default function Analysis() {
           </div>
         </Panel>
 
+        <Calibration />
+
         {(!loadError || hasData) ? (
-          <>
-            <AnalysisDashboardSources
-              sources={sources}
-              onCreate={openNewAnalysis}
-            />
-            <AnalysisDashboardRuns
-              runs={runs}
-              exportingIds={exportingIds}
-              exportFailure={exportFailure}
-              onClearExportError={clearExportFailure}
-              onExport={(analysisId) => void exportRun(analysisId)}
-              onOpen={(analysisId) => router.push(
-                `/analysis/${encodeURIComponent(analysisId)}`,
-              )}
-              onReview={(analysisId) => router.push(
-                `/analysis/${encodeURIComponent(analysisId)}/review`,
-              )}
-              onResults={(analysisId) => router.push(
-                `/analysis/${encodeURIComponent(analysisId)}/results`,
-              )}
-            />
-          </>
+          <AnalysisDashboardRuns
+            runs={runs}
+            exportingIds={exportingIds}
+            exportFailure={exportFailure}
+            onClearExportError={clearExportFailure}
+            onExport={(analysisId) => void exportRun(analysisId)}
+            onOpen={(analysisId) => router.push(
+              `/analysis/${encodeURIComponent(analysisId)}`,
+            )}
+            onReview={(analysisId) => router.push(
+              `/analysis/${encodeURIComponent(analysisId)}/review`,
+            )}
+            onResults={(analysisId) => router.push(
+              `/analysis/${encodeURIComponent(analysisId)}/results`,
+            )}
+          />
         ) : null}
       </div>
     </main>

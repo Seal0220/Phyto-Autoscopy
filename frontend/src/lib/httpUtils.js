@@ -14,6 +14,22 @@ export class UnknownMutationOutcomeError extends Error {
   }
 }
 
+export function abortRequest(
+  controller,
+  reason = "請求已取消。",
+) {
+  if (!controller || controller.signal.aborted) return false;
+
+  const abortReason = reason instanceof Error
+    ? reason
+    : new DOMException(
+      String(reason || "請求已取消。"),
+      "AbortError",
+    );
+  controller.abort(abortReason);
+  return true;
+}
+
 const UNKNOWN_MUTATION_RESPONSE_CODES = new Set([
   "BACKEND_TIMEOUT",
   "BACKEND_UNAVAILABLE",
@@ -54,7 +70,10 @@ export async function withRequestTimeout(
   const abortFromCaller = () => {
     if (abortCause) return;
     abortCause = "caller";
-    controller.abort(signal?.reason);
+    abortRequest(
+      controller,
+      signal?.reason,
+    );
   };
 
   if (signal?.aborted) {
@@ -66,7 +85,10 @@ export async function withRequestTimeout(
   const timeoutId = setTimeout(() => {
     if (abortCause) return;
     abortCause = "timeout";
-    controller.abort();
+    abortRequest(
+      controller,
+      "請求逾時。",
+    );
   }, timeoutMs);
 
   try {
