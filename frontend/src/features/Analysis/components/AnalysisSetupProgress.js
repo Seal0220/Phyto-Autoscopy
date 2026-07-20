@@ -11,7 +11,7 @@ export default function AnalysisSetupProgress({
       className="min-w-0 overflow-x-auto"
       aria-label="新增分析步驟"
     >
-      <ol className="grid min-w-180 grid-cols-5 gap-2">
+      <ol className="grid min-w-144 grid-cols-4 gap-2">
         {ANALYSIS_SETUP_STEPS.map((step) => {
           const current = step.id === currentStep;
           const reached = step.id <= highestStep;

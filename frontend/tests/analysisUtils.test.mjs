@@ -7,8 +7,8 @@ import {
   analysisProgressPercent,
   analysisSetupFromRecord,
   analysisSourcesFromPayload,
+  activeCalibrationFromPayload,
   buildAnalysisCreatePayload,
-  calibrationProfilesFromPayload,
   createInitialAnalysisSetup,
   mergeAnalysisProgress,
   mergeAnalysisRuns,
@@ -110,14 +110,12 @@ const sources = [
     not_ready_reasons: [],
   },
 ];
-const calibrations = [
-  {
-    calibration_id: "calibration-1",
-    valid: true,
-    image_width: 1280,
-    image_height: 960,
-  },
-];
+const activeCalibration = {
+  calibration_id: "calibration-1",
+  valid: true,
+  image_width: 1280,
+  image_height: 960,
+};
 
 test("analysis dashboard normalizes source wrappers and nested runs", () => {
   const normalized = analysisSourcesFromPayload({
@@ -235,23 +233,23 @@ test("analysis websocket progress updates only its matching dashboard run", () =
 test("analysis setup requires scanned sources and valid calibration", () => {
   const setup = validSetup();
 
-  assert.equal(validateAnalysisSetupStep(setup, 5, sources, calibrations), true);
+  assert.equal(validateAnalysisSetupStep(setup, 4, activeCalibration), true);
   setup.sourcePreview = {
     ready: false,
     errors: ["缺少側視影像"],
   };
   assert.throws(
-    () => validateAnalysisSetupStep(setup, 1, sources, calibrations),
+    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
     /缺少側視影像/,
   );
+  setup.sourcePreview = validSetup().sourcePreview;
   assert.throws(
     () => validateAnalysisSetupStep(
       setup,
-      2,
-      sources,
-      [{ ...calibrations[0], valid: false }],
+      1,
+      { ...activeCalibration, valid: false },
     ),
-    /相機校正目前無效/,
+    /啟用的相機校正無效/,
   );
 });
 
@@ -260,7 +258,7 @@ test("analysis parameter validation rejects even morphology kernels", () => {
   setup.parameters.openingKernelSize = "4";
 
   assert.throws(
-    () => validateAnalysisSetupStep(setup, 4, sources, calibrations),
+    () => validateAnalysisSetupStep(setup, 3, activeCalibration),
     /核心大小必須是正奇數/,
   );
 });
@@ -271,9 +269,8 @@ test("analysis range stays within source frames and analysis image bounds", () =
   assert.throws(
     () => validateAnalysisSetupStep(
       tooManyFrames,
-      3,
-      sources,
-      calibrations,
+      2,
+      activeCalibration,
     ),
     /不可超過此紀錄的 12 組影格/,
   );
@@ -284,9 +281,8 @@ test("analysis range stays within source frames and analysis image bounds", () =
   assert.throws(
     () => validateAnalysisSetupStep(
       outsideImage,
-      3,
-      sources,
-      calibrations,
+      2,
+      activeCalibration,
     ),
     /俯視 ROI 不可超出 1280 × 960/,
   );
@@ -308,9 +304,8 @@ test("analysis ROI uses capture resolution even when calibration resolution diff
   assert.equal(
     validateAnalysisSetupStep(
       setup,
-      3,
-      sources,
-      calibrations,
+      2,
+      activeCalibration,
     ),
     true,
   );
@@ -320,9 +315,8 @@ test("analysis ROI uses capture resolution even when calibration resolution diff
   assert.throws(
     () => validateAnalysisSetupStep(
       setup,
-      3,
-      sources,
-      calibrations,
+      2,
+      activeCalibration,
     ),
     /側視 ROI 不可超出 800 × 600 的分析影像範圍/,
   );
@@ -338,7 +332,7 @@ test("analysis setup preserves explicitly disabled optional cleanup", () => {
   setup.parameters.sideUpdateRoi = false;
   setup.parameters.sideRoiUpdateMargin = "";
 
-  assert.equal(validateAnalysisSetupStep(setup, 4, sources, calibrations), true);
+  assert.equal(validateAnalysisSetupStep(setup, 3, activeCalibration), true);
 
   const payload = buildAnalysisCreatePayload(setup);
   assert.equal(payload.parameters.segmentation.opening_kernel_size, null);
@@ -397,17 +391,19 @@ test("advanced analysis requires rotating source, angle preview, and calibration
     },
   };
 
-  assert.equal(validateAnalysisSetupStep(setup, 1, sources, calibrations), true);
   assert.throws(
-    () => validateAnalysisSetupStep(setup, 2, sources, calibrations),
-    /動態外參/,
+    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
+    /包含旋臂幾何/,
+  );
+  assert.throws(
+    () => validateAnalysisSetupStep(setup, 1, null),
+    /沒有已啟用的相機校正/,
   );
   assert.equal(
     validateAnalysisSetupStep(
       setup,
-      2,
-      sources,
-      [{ ...calibrations[0], supports_rotating: true }],
+      1,
+      { ...activeCalibration, supports_rotating: true },
     ),
     true,
   );
@@ -426,11 +422,15 @@ test("manual directories create an analysis without a record ID", () => {
   assert.equal(payload.camera_sources.side.path, "D:/dataset/side");
 });
 
-test("analysis list adapters accept calibration wrappers and clamp progress", () => {
+test("analysis reads only the active calibration adapter and clamps progress", () => {
   assert.equal(
-    calibrationProfilesFromPayload({ profiles: [{ calibration_id: "c1", valid: true }] })[0].valid,
+    activeCalibrationFromPayload({
+      calibration_id: "c1",
+      valid: true,
+    }).valid,
     true,
   );
+  assert.equal(activeCalibrationFromPayload(null), null);
   assert.equal(analysisProgressPercent(-1), 0);
   assert.equal(analysisProgressPercent(0.258), 26);
   assert.equal(analysisProgressPercent(4), 100);

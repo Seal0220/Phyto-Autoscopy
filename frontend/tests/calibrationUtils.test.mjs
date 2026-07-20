@@ -1,280 +1,154 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
-  appendStereoPair,
-  buildCalibrationCreatePayload,
-  calibrationBaselineComparison,
-  calibrationPreviewItems,
-  calibrationProfilesFromPayload,
-  calibrationStatus,
-  calibrationWorkflowAvailability,
-  calibrationWorkflowStepState,
-  createCalibrationDraft,
-  distortionNamed,
-  isValidCalibrationId,
-  parseRigidTransform,
-  sourceImagesFromPayload,
-  toggleCalibrationPath,
+  calibrationAngleCompleted,
+  calibrationLockState,
+  intrinsicCaptureNotice,
+  suggestedCalibrationAngles,
 } from "../src/features/Calibration/lib/calibrationUtils.js";
 
-function validDraft() {
-  return {
-    ...createCalibrationDraft(),
-    topImagePaths: ["data/captures/top.png"],
-    sideImagePaths: ["data/captures/side.png"],
-    stereoImagePairs: [[
-      "data/captures/top.png",
-      "data/captures/side.png",
-    ]],
-    squareSizeMmX: "12.5",
-    squareSizeMmY: "12.5",
-    stereoPatternColumns: "8",
-    stereoPatternRows: "6",
-    stereoSquareSizeMmX: "20",
-    stereoSquareSizeMmY: "20",
-    individualBoardWidthCm: "59.4",
-    individualBoardHeightCm: "84.1",
-    stereoBoardWidthCm: "42.0",
-    stereoBoardHeightCm: "59.4",
-    worldTransformConfirmed: true,
-  };
+const frontendRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+
+function source(relativePath) {
+  return readFileSync(
+    path.join(frontendRoot, "src", relativePath),
+    "utf8",
+  );
 }
 
-test("calibration defaults do not pretend paper board sizes were measured", () => {
-  const draft = createCalibrationDraft();
-  assert.equal(draft.individualBoardWidthCm, "");
-  assert.equal(draft.individualBoardHeightCm, "");
-  assert.equal(draft.stereoBoardWidthCm, "");
-  assert.equal(draft.stereoBoardHeightCm, "");
-  assert.equal(draft.stereoPatternColumns, "");
-  assert.equal(draft.stereoPatternRows, "");
-  assert.equal(draft.worldTransformConfirmed, false);
-});
-
-test("calibration route IDs reject traversal and unbounded values", () => {
-  assert.equal(isValidCalibrationId("calibration_2026-07-17_001"), true);
-  assert.equal(isValidCalibrationId("../calibration"), false);
-  assert.equal(isValidCalibrationId("校正-1"), false);
-  assert.equal(isValidCalibrationId("a".repeat(161)), false);
-});
-
-test("calibration create payload requires measured world transform confirmation", () => {
-  const draft = validDraft();
-  draft.worldTransformConfirmed = false;
-  assert.throws(
-    () => buildCalibrationCreatePayload(draft),
-    /已經實際量測或驗證/,
-  );
-});
-
-test("calibration create payload preserves every explicit measured field", () => {
-  const payload = buildCalibrationCreatePayload(validDraft());
-  assert.deepEqual(payload.top_image_paths, ["data/captures/top.png"]);
-  assert.deepEqual(payload.side_image_paths, ["data/captures/side.png"]);
-  assert.deepEqual(payload.stereo_image_pairs, [[
-    "data/captures/top.png",
-    "data/captures/side.png",
-  ]]);
-  assert.equal(payload.pattern_columns, 10);
-  assert.equal(payload.pattern_rows, 7);
-  assert.equal(payload.square_size_mm_x, 12.5);
-  assert.equal(payload.square_size_mm_y, 12.5);
-  assert.equal(payload.stereo_pattern_columns, 8);
-  assert.equal(payload.stereo_pattern_rows, 6);
-  assert.equal(payload.stereo_square_size_mm_x, 20);
-  assert.equal(payload.stereo_square_size_mm_y, 20);
-  assert.equal(payload.individual_board_width_cm, 59.4);
-  assert.equal(payload.individual_board_height_cm, 84.1);
-  assert.equal(payload.stereo_board_width_cm, 42);
-  assert.equal(payload.stereo_board_height_cm, 59.4);
-  assert.deepEqual(payload.world_transform_matrix, [
-    [1, 0, 0, 0],
-    [0, 1, 0, 0],
-    [0, 0, 1, 0],
-    [0, 0, 0, 1],
-  ]);
-});
-
-test("calibration rejects reusing one image as both intrinsic camera roles", () => {
-  const draft = validDraft();
-  draft.sideImagePaths = [
-    "data/captures/top.png",
-    "data/captures/side.png",
-  ];
-
-  assert.throws(
-    () => buildCalibrationCreatePayload(draft),
-    /不可同時作為俯視角與側視角/,
-  );
-});
-
-test("rigid transform rejects scaling and invalid homogeneous row", () => {
-  assert.throws(
-    () => parseRigidTransform([
-      [2, 0, 0, 0],
-      [0, 1, 0, 0],
-      [0, 0, 1, 0],
-      [0, 0, 0, 1],
-    ]),
-    /正交矩陣/,
-  );
-  assert.throws(
-    () => parseRigidTransform([
-      [1, 0, 0, 0],
-      [0, 1, 0, 0],
-      [0, 0, 1, 0],
-      [0, 0, 1, 1],
-    ]),
-    /最後一列/,
-  );
-});
-
-test("paper comparison identifies actual board differences without deriving missing values", () => {
-  const matching = calibrationBaselineComparison(validDraft());
-  assert.deepEqual(matching, {
-    individualComplete: true,
-    stereoComplete: true,
-    patternComplete: true,
-    individualMatches: true,
-    stereoMatches: true,
-    patternMatches: true,
-  });
-  const changed = validDraft();
-  changed.stereoBoardWidthCm = "40";
-  changed.patternColumns = "9";
-  assert.equal(calibrationBaselineComparison(changed).stereoMatches, false);
-  assert.equal(calibrationBaselineComparison(changed).patternMatches, false);
-});
-
-test("image selection and explicit stereo pairing remain deterministic", () => {
-  assert.deepEqual(toggleCalibrationPath([], "top.png"), ["top.png"]);
-  assert.deepEqual(toggleCalibrationPath(["top.png"], "top.png"), []);
+test("calibration lock ownership survives a workspace refresh", () => {
   assert.deepEqual(
-    appendStereoPair([], "top.png", "side.png"),
-    [["top.png", "side.png"]],
-  );
-  assert.throws(
-    () => appendStereoPair(
-      [["top.png", "side.png"]],
-      "top.png",
-      "side.png",
-    ),
-    /已經加入/,
-  );
-});
-
-test("payload adapters reject malformed list rows", () => {
-  assert.deepEqual(sourceImagesFromPayload([
+    calibrationLockState({
+      lock: { locked: true },
+      lock_owned_by_requester: true,
+    }),
     {
-      path: "a.png",
+      ownsLock: true,
+      lockedByAnotherOperator: false,
     },
-    null,
-    {},
-  ]), [{ path: "a.png" }]);
-  assert.deepEqual(calibrationProfilesFromPayload({
-    profiles: [{ calibration_id: "calibration-1" }],
-  }), [{ calibration_id: "calibration-1" }]);
-  assert.equal(calibrationStatus("potentially_invalid").label, "可能失效");
-});
-
-test("preview adapter includes all individual and stereo views", () => {
-  const previews = calibrationPreviewItems({
-    corner_detections: {
-      top: [{
-        image_id: "top.png",
-        found: true,
-        preview_name: "top.jpg",
-      }],
-      side: [{
-        image_id: "side.png",
-        found: false,
-        preview_name: "side.jpg",
-      }],
-      stereo: [{
-        pair_id: "pair-1",
-        top: {
-          image_id: "stereo-top.png",
-          found: true,
-          preview_name: "stereo-top.jpg",
-        },
-        side: {
-          image_id: "stereo-side.png",
-          found: true,
-          preview_name: "stereo-side.jpg",
-        },
-      }],
-    },
-  });
-  assert.equal(previews.length, 4);
+  );
   assert.deepEqual(
-    previews.map((item) => item.previewName),
-    ["top.jpg", "side.jpg", "stereo-top.jpg", "stereo-side.jpg"],
+    calibrationLockState({
+      lock: { locked: true },
+      lock_owned_by_requester: false,
+    }),
+    {
+      ownsLock: false,
+      lockedByAnotherOperator: true,
+    },
   );
 });
 
-test("workflow availability follows persisted outputs instead of status labels", () => {
-  const availability = calibrationWorkflowAvailability({
-    status: "failed",
-    corner_detections: {
-      top: [{ found: true }],
-      side: [{ found: true }],
-      stereo: [{ usable: true }],
-    },
-    top_camera_matrix: [[1]],
-    top_distortion_coefficients: [0],
-    side_camera_matrix: [[1]],
-    side_distortion_coefficients: [0],
-    rotation_matrix: [[1]],
-    translation_vector: [1, 0, 0],
-    essential_matrix: [[1]],
-    fundamental_matrix: [[1]],
-    top_projection_matrix: [[1]],
-    side_projection_matrix: [[1]],
-    disparity_to_depth_matrix: [[1]],
-  });
-  assert.deepEqual(availability, {
-    corners: true,
-    intrinsics: true,
-    stereo: true,
-    rotating: false,
-    validate: true,
-  });
+test("suggested angles respect the configured motor-safe interval", () => {
+  assert.deepEqual(
+    suggestedCalibrationAngles([40, 190]),
+    [45, 90, 135, 180],
+  );
+  assert.deepEqual(
+    suggestedCalibrationAngles(undefined),
+    [0, 45, 90, 135, 180, 225, 270, 315],
+  );
 });
 
-test("workflow labels do not report failed corner arrays as completed", () => {
-  const failed = {
-    status: "failed",
-    corner_detections: {
-      top: [{ found: false }],
-      side: [{ found: false }],
-      stereo: [{ usable: false }],
+test("rotating observation completion requires a real recorded angle", () => {
+  const detection = {
+    accepted: true,
+    detections: {
+      rotating: { board_detected: true },
     },
   };
-  assert.equal(
-    calibrationWorkflowStepState(failed, "corners"),
-    "尚未執行",
-  );
 
-  const complete = {
-    corner_detections: {
-      top: [{ found: true }],
-      side: [{ found: true }],
-      stereo: [{ usable: true }],
-    },
-  };
   assert.equal(
-    calibrationWorkflowStepState(complete, "corners"),
-    "已完成",
+    calibrationAngleCompleted([
+      { ...detection, motor_angle_deg: null },
+    ], 0),
+    false,
+  );
+  assert.equal(
+    calibrationAngleCompleted([
+      { ...detection, motor_angle_deg: 89.8 },
+    ], 90),
+    true,
   );
 });
 
-test("distortion coefficients use OpenCV k1 k2 p1 p2 k3 order", () => {
-  assert.deepEqual(distortionNamed([1, 2, 3, 4, 5]), [
-    { name: "k1", value: 1 },
-    { name: "k2", value: 2 },
-    { name: "p1", value: 3 },
-    { name: "p2", value: 4 },
-    { name: "k3", value: 5 },
-  ]);
+test("automatic intrinsic capture explains accepted and rejected samples", () => {
+  assert.deepEqual(
+    intrinsicCaptureNotice("俯視角", {
+      samples: [{ accepted: true }],
+    }),
+    {
+      message: "俯視角已接受新的內參樣本。",
+      tone: "success",
+    },
+  );
+  assert.deepEqual(
+    intrinsicCaptureNotice("側視角", {
+      samples: [{
+        accepted: false,
+        rejection_reason: "姿態重複。",
+      }],
+    }),
+    {
+      message: "側視角樣本未儲存：姿態重複。",
+      tone: "warning",
+    },
+  );
+});
+
+test("calibration page keeps errors in global notifications and confirms leaving", () => {
+  const page = source("features/Calibration/Calibration.js");
+  const hook = source("features/Calibration/hooks/useUnifiedCalibration.js");
+  const status = source(
+    "features/Calibration/components/CalibrationExtrinsicStatus.js",
+  );
+
+  assert.match(page, /useNotificationsContext/);
+  assert.match(page, /showNotification\(error, "error"\)/);
+  assert.match(page, /socketError\.message/);
+  assert.doesNotMatch(page, /role="alert"/);
+  assert.match(hook, /usePhytoSocket/);
+  assert.match(hook, /snapshot\?\.calibration/);
+  assert.match(hook, /CATALOG_REFRESH_INTERVAL_MS = 30_000/);
+  assert.match(hook, /beforeunload/);
+  assert.match(hook, /window\.confirm/);
+  assert.match(hook, /\/api\/calibration\/lock\/refresh/);
+  assert.match(status, /\/api\/calibration\/storage\/reconcile/);
+  assert.match(status, /重新同步校正檔/);
+  assert.doesNotMatch(status, /內參|相機已連線|校正板辨識/);
+});
+
+test("calibration intrinsics combine each camera preview with concise controls", () => {
+  const intrinsics = source(
+    "features/Calibration/components/CalibrationIntrinsics.js",
+  );
+  const cameraStream = source("components/media/CameraStream.js");
+  const extrinsics = source(
+    "features/Calibration/components/CalibrationExtrinsics.js",
+  );
+
+  assert.match(intrinsics, /<CameraStream/);
+  assert.match(intrinsics, /min-\[720px\]:grid-cols-2/);
+  assert.match(intrinsics, /min-\[1180px\]:grid-cols-3/);
+  assert.doesNotMatch(intrinsics, /標記|角點|清晰度|去畸變預覽/);
+  assert.match(cameraStream, /全螢幕/);
+  assert.match(extrinsics, /role="list"/);
+  assert.match(extrinsics, /aria-label="外參觀測品質"/);
+});
+
+test("analysis contains no calibration mutation UI and BFF exposes unified proxy", () => {
+  const analysis = source("features/Analysis/AnalysisNew.js");
+  const proxy = source("app/api/calibration/[...path]/route.js");
+
+  assert.doesNotMatch(analysis, /CalibrationSetup|CalibrationStep/);
+  assert.match(proxy, /backendPath\("\/api\/calibration", path\)/);
+  assert.match(proxy, /handler as PATCH/);
+  assert.match(proxy, /handler as POST/);
 });

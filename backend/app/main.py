@@ -11,7 +11,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api import (
     analysis_routes,
     auth_routes,
-    calibration_routes,
     camera_routes,
     capture_routes,
     schedule_routes,
@@ -19,6 +18,7 @@ from app.api import (
     record_routes,
     settings_routes,
     system_routes,
+    unified_calibration_routes,
     websocket_routes,
 )
 from app.core.exceptions import (
@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
     # ../frontend and is the sole public entry point.
     app.include_router(auth_routes.router)
     app.include_router(analysis_routes.router)
-    app.include_router(calibration_routes.router)
+    app.include_router(unified_calibration_routes.router)
     app.include_router(system_routes.router)
     app.include_router(camera_routes.router)
     app.include_router(motor_routes.router)

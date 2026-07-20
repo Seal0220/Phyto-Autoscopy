@@ -26,8 +26,8 @@ import {
   analysisMethodFromCameraSources,
   analysisSetupFromRecord,
   analysisSourcesFromPayload,
+  activeCalibrationFromPayload,
   buildAnalysisCreatePayload,
-  calibrationProfilesFromPayload,
   createInitialAnalysisSetup,
   normalizeCreatedAnalysisRun,
   validateAnalysisSetupStep,
@@ -50,15 +50,14 @@ function sourceLocationsMatch(
 
 export default function useAnalysisSetup({
   initialRecordId = "",
-  initialStep = 1,
 }) {
   const [sources, setSources] = useState([]);
-  const [calibrations, setCalibrations] = useState([]);
+  const [activeCalibration, setActiveCalibration] = useState(null);
   const [setup, setSetup] = useState(() => (
     createInitialAnalysisSetup(initialRecordId)
   ));
-  const [currentStep, setCurrentStep] = useState(initialStep);
-  const [highestStep, setHighestStep] = useState(initialStep);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [highestStep, setHighestStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [stepError, setStepError] = useState("");
@@ -73,6 +72,7 @@ export default function useAnalysisSetup({
   const loadControllerRef = useRef(null);
   const mutationControllerRef = useRef(null);
   const sourceScanControllerRef = useRef(null);
+  const sourceScanTimerRef = useRef(null);
   const setupRef = useRef(setup);
 
   useEffect(() => {
@@ -82,12 +82,14 @@ export default function useAnalysisSetup({
       mountedRef.current = false;
       loadingRef.current = false;
       mutationRef.current = "";
+      window.clearTimeout(sourceScanTimerRef.current);
       abortRequest(loadControllerRef.current);
       abortRequest(mutationControllerRef.current);
       abortRequest(sourceScanControllerRef.current);
       loadControllerRef.current = null;
       mutationControllerRef.current = null;
       sourceScanControllerRef.current = null;
+      sourceScanTimerRef.current = null;
     };
   }, []);
 
@@ -129,12 +131,6 @@ export default function useAnalysisSetup({
         setupRef.current = next;
         return next;
       });
-      if (!preview?.ready) {
-        setStepError(
-          preview?.errors?.[0]
-          || "影像目錄尚未具備分析條件。",
-        );
-      }
       return Boolean(preview?.ready);
     } catch (error) {
       if (error?.name === "AbortError") return false;
@@ -166,23 +162,31 @@ export default function useAnalysisSetup({
         controller.signal,
       );
       const nextSources = analysisSourcesFromPayload(sourcePayload);
-      const nextCalibrations = calibrationProfilesFromPayload(calibrationPayload);
+      const nextActiveCalibration = activeCalibrationFromPayload(
+        calibrationPayload,
+      );
 
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setSources(nextSources);
-      setCalibrations(nextCalibrations);
+      setActiveCalibration(nextActiveCalibration);
       const selectedSource = nextSources.find(
         (source) => source.record_id === setupRef.current.recordId,
       );
-      if (selectedSource) {
-        const nextSetup = analysisSetupFromRecord(
+      const nextSetup = selectedSource
+        ? analysisSetupFromRecord(
           setupRef.current,
           selectedSource,
-        );
-        setupRef.current = nextSetup;
-        setSetup(nextSetup);
-        void performSourceScan(nextSetup);
+        )
+        : setupRef.current;
+      const setupWithCalibration = {
+        ...nextSetup,
+        calibrationId: nextActiveCalibration?.calibration_id || "",
+      };
+      setupRef.current = setupWithCalibration;
+      setSetup(setupWithCalibration);
+      if (selectedSource) {
+        void performSourceScan(setupWithCalibration);
       }
       setLoadError("");
       return true;
@@ -214,6 +218,8 @@ export default function useAnalysisSetup({
   }, [loadOptions]);
 
   async function selectRecord(recordId) {
+    window.clearTimeout(sourceScanTimerRef.current);
+    sourceScanTimerRef.current = null;
     const source = sources.find((item) => item.record_id === recordId);
     const nextSetup = analysisSetupFromRecord(
       setupRef.current,
@@ -270,9 +276,14 @@ export default function useAnalysisSetup({
     setSetup(next);
 
     if (pathChanged) {
+      window.clearTimeout(sourceScanTimerRef.current);
       abortRequest(sourceScanControllerRef.current);
       sourceScanControllerRef.current = null;
       setSourceScanning(false);
+      sourceScanTimerRef.current = window.setTimeout(() => {
+        sourceScanTimerRef.current = null;
+        void performSourceScan(setupRef.current);
+      }, 400);
     }
     setStepError("");
   }
@@ -308,17 +319,6 @@ export default function useAnalysisSetup({
     setStepError("");
   }
 
-  function upsertCalibration(profile) {
-    const [normalized] = calibrationProfilesFromPayload([profile]);
-    if (!normalized?.calibration_id) return;
-    setCalibrations((current) => [
-      normalized,
-      ...current.filter(
-        (item) => item.calibration_id !== normalized.calibration_id,
-      ),
-    ]);
-  }
-
   function goToStep(step) {
     if (createdRun || step < 1 || step > highestStep) return;
     setCurrentStep(step);
@@ -330,10 +330,9 @@ export default function useAnalysisSetup({
       validateAnalysisSetupStep(
         setup,
         currentStep,
-        sources,
-        calibrations,
+        activeCalibration,
       );
-      const next = Math.min(5, currentStep + 1);
+      const next = Math.min(4, currentStep + 1);
       setCurrentStep(next);
       setHighestStep((previous) => Math.max(previous, next));
       setStepError("");
@@ -399,9 +398,8 @@ export default function useAnalysisSetup({
     try {
       validateAnalysisSetupStep(
         setup,
-        5,
-        sources,
-        calibrations,
+        4,
+        activeCalibration,
       );
     } catch (error) {
       setStepError(messageFromError(
@@ -490,7 +488,7 @@ export default function useAnalysisSetup({
 
   return {
     sources,
-    calibrations,
+    activeCalibration,
     setup,
     currentStep,
     highestStep,
@@ -509,7 +507,6 @@ export default function useAnalysisSetup({
     scanSources,
     updateRoi,
     updateParameter,
-    upsertCalibration,
     goToStep,
     nextStep,
     previousStep,

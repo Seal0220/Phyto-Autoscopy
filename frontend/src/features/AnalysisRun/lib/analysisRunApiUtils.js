@@ -188,11 +188,11 @@ export async function downloadAnalysisExport(
 }
 
 export function loadRunCalibration(
-  calibrationId,
+  analysisId,
   signal,
 ) {
   return requestAnalysisResource(
-    `/api/calibrations/${encodeURIComponent(calibrationId)}`,
+    `/api/analysis/${encodeURIComponent(analysisId)}/calibration-reference`,
     {
       signal,
     },

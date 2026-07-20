@@ -20,6 +20,7 @@ from app.models.analysis_models import (
     ReprojectionErrorRecord,
     TrajectoryPoint,
 )
+from app.models.analysis_models import AnalysisCalibrationProfile
 from app.security.auth import Principal, get_request_principal
 
 
@@ -71,6 +72,17 @@ def get_analysis_run(
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
     return context.analysis_service.get_run(analysis_id)
+
+
+@router.get(
+    "/{analysis_id}/calibration-reference",
+    response_model=AnalysisCalibrationProfile,
+)
+def get_analysis_calibration_reference(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> AnalysisCalibrationProfile:
+    return context.analysis_service.get_calibration_reference(analysis_id)
 
 
 @router.delete("/{analysis_id}")

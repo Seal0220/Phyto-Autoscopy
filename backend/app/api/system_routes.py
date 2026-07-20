@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.state import AppContext, get_context
 from app.models.system_models import SystemStatus
+from app.services.system_activity_service import system_is_active
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -12,12 +13,34 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 def system_status(context: AppContext = Depends(get_context)) -> SystemStatus:
     settings = context.settings
     schedule = context.schedule_service.get_status()
+    motor = context.motor_controller.status()
+    analysis_service = getattr(context, "analysis_service", None)
+    analysis_status = (
+        analysis_service.get_progress().status
+        if analysis_service is not None
+        else "idle"
+    )
+    calibration_service = getattr(
+        context,
+        "unified_calibration_service",
+        None,
+    )
+    calibration_locked = bool(
+        calibration_service
+        and calibration_service.status().lock.locked
+    )
     return SystemStatus(
         project_name=settings.project.name,
         project_name_zh=settings.project.name_zh,
         device_name=settings.project.device_name,
         device_version=settings.project.device_version,
         mock_mode=settings.hardware.mock_mode,
+        active=system_is_active(
+            schedule_status=schedule.status,
+            motor_moving=motor.moving,
+            analysis_status=analysis_status,
+            calibration_locked=calibration_locked,
+        ),
         started_at=context.started_at.isoformat(),
         schedule_status=schedule.status,
         active_record_id=context.record_service.active_record_id,

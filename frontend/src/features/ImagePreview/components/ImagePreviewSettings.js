@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import {
+  useEffect,
+  useRef,
+} from "react";
 import {
   FiRefreshCw,
   FiSave,
@@ -50,6 +53,20 @@ export default function ImagePreviewSettings({
     onNotify,
   });
   const mockMode = scanResults.some((result) => result?.mock);
+  const mockNoticeShownRef = useRef(false);
+
+  useEffect(() => {
+    if (!mockMode || mockNoticeShownRef.current) return;
+
+    mockNoticeShownRef.current = true;
+    onNotify?.(
+      "目前使用模擬相機來源。",
+      "info",
+    );
+  }, [
+    mockMode,
+    onNotify,
+  ]);
 
   useEffect(() => {
     if (!payload || scanRevision === 0) return;
@@ -130,11 +147,6 @@ export default function ImagePreviewSettings({
         </>
       )}
     >
-      {mockMode ? (
-        <p className="m-0 border-b border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-bold text-amber-200">
-          目前為模擬模式，不會搜尋實體攝影機；請以正式模式重新啟動服務。
-        </p>
-      ) : null}
       {loading && !payload ? (
         <p className="grid min-h-28 place-items-center rounded-xl border border-dashed border-white/15 text-sm text-neutral-400">
           讀取設定中…

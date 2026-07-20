@@ -19,5 +19,6 @@ class CameraScanResult:
     connected: bool
     error: str | None = None
     camera_name: str | None = None
+    device_name: str | None = None
     in_use: bool = False
     backend: str | None = None

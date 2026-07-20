@@ -38,7 +38,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--mock", action="store_true", help="Use mock cameras and mock motor.")
     parser.add_argument("--reload", action="store_true", help="Enable Uvicorn reload for development.")
     return parser.parse_args()
 
@@ -47,7 +46,9 @@ def main() -> None:
     load_runtime_environment()
     migrated_data = prepare_runtime_paths()
     args = parse_args()
-    os.environ["PHYTO_AUTOSCOPY_MOCK"] = "1" if args.mock else "0"
+    # Development/reload changes the server process only. It must never
+    # silently replace physical cameras or the motor with mock hardware.
+    os.environ["PHYTO_AUTOSCOPY_MOCK"] = "0"
 
     if migrated_data:
         print("已將 backend/data 的既有資料移至專案根目錄 data。")

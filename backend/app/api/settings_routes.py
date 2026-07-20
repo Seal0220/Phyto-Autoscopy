@@ -11,6 +11,7 @@ from app.core.state import AppContext, get_context
 from app.models.settings_models import SettingsGroupUpdate
 from app.repositories.settings_repository import SettingsRepository
 from app.services.runtime_settings_service import apply_runtime_settings, build_candidate_settings
+from app.services.schedule_lock import ensure_manual_changes_allowed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ def update_settings_group(
     update: SettingsGroupUpdate,
     context: AppContext = Depends(get_context),
 ) -> dict:
+    ensure_manual_changes_allowed(context)
     with context._settings_lock:
         if group not in SETTINGS_FILES:
             raise ConfigError(f"找不到設定群組：{group}")

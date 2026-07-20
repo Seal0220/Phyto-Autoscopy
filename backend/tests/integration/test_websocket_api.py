@@ -48,6 +48,21 @@ def test_status_websocket_snapshot_and_command(tmp_path, monkeypatch) -> None:
             snapshot = websocket.receive_json()
             assert snapshot["type"] == "snapshot"
             assert snapshot["payload"]["system"]["mock_mode"] is True
+            calibration = snapshot["payload"]["calibration"]
+            assert calibration["lock"] == {
+                "locked": False,
+                "owner": None,
+                "mode": None,
+                "run_id": None,
+                "profile_id": None,
+                "acquired_at": None,
+                "expires_at": None,
+            }
+            assert {
+                camera["camera_id"]
+                for camera in calibration["cameras"]
+            } == {"top", "side", "rotating"}
+            assert calibration["storage_synchronized"] is True
 
             websocket.send_json(
                 {

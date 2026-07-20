@@ -91,7 +91,7 @@ export function loadAnalysisSetupOptions(signal) {
     requestAnalysisJson("/api/analysis/sources", {
       signal,
     }),
-    requestAnalysisJson("/api/calibrations", {
+    requestAnalysisJson("/api/calibration/active-analysis-profile", {
       signal,
     }),
   ]);

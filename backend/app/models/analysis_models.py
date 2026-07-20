@@ -67,6 +67,80 @@ DetectionType = Literal[
 ]
 
 
+class AnalysisWorldCoordinateSystem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    origin: str = "植物平台中心"
+    x_axis: str = "平台水平方向"
+    y_axis: str = "平台深度方向"
+    z_axis: str = "垂直向上"
+    unit: Literal["mm"] = "mm"
+
+
+class AnalysisCalibrationProfile(BaseModel):
+    """Immutable read model derived from the active unified calibration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    calibration_id: str
+    created_at: str
+    updated_at: str
+    status: str
+    valid: bool
+    output_path: str
+    top_camera_identifier: Literal["top"] = "top"
+    side_camera_identifier: Literal["side"] = "side"
+    rotating_camera_identifier: Literal["rotating"] = "rotating"
+    image_width: int | None = None
+    image_height: int | None = None
+    camera_projection_models: dict[str, str] = Field(default_factory=dict)
+    camera_image_sizes: dict[str, list[int]] = Field(default_factory=dict)
+    top_camera_matrix: list[list[float]] | None = None
+    top_distortion_coefficients: list[float] | None = None
+    side_camera_matrix: list[list[float]] | None = None
+    side_distortion_coefficients: list[float] | None = None
+    rotating_camera_matrix: list[list[float]] | None = None
+    rotating_distortion_coefficients: list[float] | None = None
+    rotation_matrix: list[list[float]] | None = None
+    translation_vector: list[float] | None = None
+    essential_matrix: list[list[float]] | None = None
+    fundamental_matrix: list[list[float]] | None = None
+    top_projection_matrix: list[list[float]] | None = None
+    side_projection_matrix: list[list[float]] | None = None
+    top_rectification_rotation: list[list[float]] | None = None
+    side_rectification_rotation: list[list[float]] | None = None
+    disparity_to_depth_matrix: list[list[float]] | None = None
+    top_valid_pixel_roi: list[int] | None = None
+    side_valid_pixel_roi: list[int] | None = None
+    world_transform_matrix: list[list[float]] | None = None
+    world_coordinate_system: AnalysisWorldCoordinateSystem = Field(
+        default_factory=AnalysisWorldCoordinateSystem
+    )
+    potentially_invalid_reasons: list[str] = Field(default_factory=list)
+    rotating_axis_origin_mm: list[float] | None = None
+    rotating_axis_direction: list[float] | None = None
+    rotating_zero_angle_deg: float | None = None
+    rotating_angle_direction: Literal[-1, 1] | None = None
+    rotating_axis_from_camera_matrix: list[list[float]] | None = None
+    rotating_pose_residual_mean_px: float | None = None
+    rotating_pose_residual_max_px: float | None = None
+    rotating_pose_samples: list[dict] = Field(default_factory=list)
+    notes: str = ""
+    last_error: str | None = None
+
+    @property
+    def supports_rotating(self) -> bool:
+        return all((
+            self.rotating_camera_matrix is not None,
+            self.rotating_distortion_coefficients is not None,
+            self.rotating_axis_origin_mm is not None,
+            self.rotating_axis_direction is not None,
+            self.rotating_zero_angle_deg is not None,
+            self.rotating_angle_direction in {-1, 1},
+            self.rotating_axis_from_camera_matrix is not None,
+        ))
+
+
 class Roi(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

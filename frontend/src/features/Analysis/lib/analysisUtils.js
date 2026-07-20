@@ -186,12 +186,14 @@ export function analysisRunsFromPayload(payload) {
   ).map(normalizeAnalysisRun);
 }
 
-export function calibrationProfilesFromPayload(payload) {
-  return arrayFromPayload(
-    payload,
-    ["calibrations", "profiles", "items"],
-    "相機校正",
-  ).map((profile) => ({
+export function activeCalibrationFromPayload(payload) {
+  if (payload === null || payload === undefined) return null;
+  const profile = payload?.calibration || payload?.profile || payload;
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    throw new Error("目前啟用的相機校正資料格式錯誤，請重新讀取。");
+  }
+
+  return {
     ...profile,
     calibration_id: stringOrEmpty(profile?.calibration_id),
     created_at: stringOrEmpty(profile?.created_at),
@@ -209,7 +211,7 @@ export function calibrationProfilesFromPayload(payload) {
       && Number.isFinite(Number(profile?.rotating_zero_angle_deg))
       && [-1, 1].includes(Number(profile?.rotating_angle_direction)),
     ),
-  }));
+  };
 }
 
 export function mergeAnalysisRuns(
@@ -437,8 +439,7 @@ function validateRoiBounds(
 export function validateAnalysisSetupStep(
   setup,
   step,
-  sources,
-  calibrations,
+  activeCalibration,
 ) {
   if (step === 1) {
     const required = setup.method === "top_side_rotating"
@@ -465,22 +466,22 @@ export function validateAnalysisSetupStep(
     ) {
       throw new Error("請重新掃描並確認至少有一組包含旋臂視角的同步影格。");
     }
-    return true;
-  }
-
-  if (step === 2) {
-    const calibration = calibrations.find(
-      (item) => item.calibration_id === setup.calibrationId,
-    );
-    if (!calibration) throw new Error("請先選擇相機校正。");
-    if (!calibration.valid) throw new Error("所選相機校正目前無效，請改選有效校正。");
-    if (setup.method === "top_side_rotating" && !calibration.supports_rotating) {
-      throw new Error("頂+側+環繞需要包含 rotating 旋轉軸與動態外參的有效校正。");
+    if (!activeCalibration || !setup.calibrationId) {
+      throw new Error("目前沒有已啟用的相機校正，請先前往校正頁面完成並啟用外參校正檔。");
+    }
+    if (!activeCalibration.valid) {
+      throw new Error("目前啟用的相機校正無效，請先前往校正頁面重新驗證。");
+    }
+    if (
+      setup.method === "top_side_rotating"
+      && !activeCalibration.supports_rotating
+    ) {
+      throw new Error("頂+側+環繞需要已啟用且包含旋臂幾何的有效校正。");
     }
     return true;
   }
 
-  if (step === 3) {
+  if (step === 2) {
     const source = setup.sourcePreview;
     const startFrame = parseRequiredNumber(setup.startFrame, "起始影格", {
       integer: true,
@@ -516,7 +517,7 @@ export function validateAnalysisSetupStep(
     return true;
   }
 
-  if (step === 4) {
+  if (step === 3) {
     for (const [key, label] of REQUIRED_PARAMETER_FIELDS) {
       const value = setup.parameters[key];
       const minimum = NON_NEGATIVE_PARAMETER_FIELDS.has(key)
@@ -582,12 +583,11 @@ export function validateAnalysisSetupStep(
     return true;
   }
 
-  for (const prerequisite of [1, 2, 3, 4]) {
+  for (const prerequisite of [1, 2, 3]) {
     validateAnalysisSetupStep(
       setup,
       prerequisite,
-      sources,
-      calibrations,
+      activeCalibration,
     );
   }
   return true;

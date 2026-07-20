@@ -14,7 +14,10 @@ from app.models.camera_models import (
     CaptureResult,
     SnapshotResult,
 )
-from app.services.schedule_lock import ensure_manual_changes_allowed
+from app.services.schedule_lock import (
+    ensure_calibration_unlocked,
+    ensure_manual_changes_allowed,
+)
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
@@ -109,11 +112,13 @@ def capture_all(
 def reconnect_all_cameras(
     context: AppContext = Depends(get_context),
 ) -> list[CameraStatus]:
+    ensure_calibration_unlocked(context)
     return context.camera_manager.reconnect_all()
 
 
 @router.post("/{camera_id}/reconnect", response_model=CameraStatus)
 def reconnect_camera(camera_id: str, context: AppContext = Depends(get_context)) -> CameraStatus:
+    ensure_calibration_unlocked(context)
     return context.camera_manager.reconnect(camera_id)
 
 

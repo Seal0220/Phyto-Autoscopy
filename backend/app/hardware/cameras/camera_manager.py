@@ -7,7 +7,9 @@ from typing import Any, Protocol
 from app.core.config import AppSettings, CameraConfig
 from app.core.exceptions import CameraError
 from app.hardware.cameras.camera_identifier import (
+    enumerate_opencv_device_names,
     load_opencv,
+    opencv_device_name,
     scan_opencv_indices,
 )
 from app.hardware.cameras.camera_registry import CameraRegistry
@@ -92,12 +94,14 @@ class OpenCVCameraManager:
                     )
 
             active_indices = set(workers_by_index)
+            device_names = enumerate_opencv_device_names(cv2_module=cv2)
             probed = {
                 result.device_index: result
                 for result in scan_opencv_indices(
                     self.settings.hardware.camera_scan_max_index,
                     skip_indices=active_indices,
                     cv2_module=cv2,
+                    device_names=device_names,
                 )
             }
 
@@ -113,6 +117,11 @@ class OpenCVCameraManager:
                     CameraScanResult(
                         camera_id=camera_id,
                         camera_name=camera_name,
+                        device_name=opencv_device_name(
+                            device_names,
+                            device_index,
+                            state.backend,
+                        ),
                         device_index=device_index,
                         connected=state.connected,
                         error=state.error,
@@ -127,6 +136,7 @@ class OpenCVCameraManager:
                 CameraScanResult(
                     camera_id=camera_id,
                     camera_name=camera_name,
+                    device_name=result.device_name if result else None,
                     device_index=device_index,
                     connected=bool(result and result.connected),
                     error=result.error if result else "相機掃描失敗。",

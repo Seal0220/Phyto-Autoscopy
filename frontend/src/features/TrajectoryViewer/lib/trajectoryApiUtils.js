@@ -15,7 +15,7 @@ export async function loadTrajectoryResults(
     },
   );
   const calibrationPromise = run?.calibration_id
-    ? loadRunCalibration(run.calibration_id, signal)
+    ? loadRunCalibration(run.analysis_id, signal)
     : Promise.resolve(null);
   const [trajectory, errors, summary, calibration] = await Promise.all([
     requestAnalysisResource(`/api/analysis/${encodedId}/trajectory`, {

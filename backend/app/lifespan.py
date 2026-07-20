@@ -18,7 +18,15 @@ from app.repositories.capture_repository import CaptureRepository
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.calibration_repository import CalibrationRepository
 from app.repositories.record_repository import RecordRepository
-from app.services.calibration_service import CalibrationService
+from app.services.calibration_capture_service import CalibrationCaptureService
+from app.services.calibration_lock_service import CalibrationLockService
+from app.services.calibration_storage_service import CalibrationStorageService
+from app.services.calibration_validation_service import CalibrationValidationService
+from app.services.extrinsic_calibration_service import ExtrinsicCalibrationService
+from app.services.intrinsic_calibration_service import IntrinsicCalibrationService
+from app.services.unified_calibration_service import (
+    CalibrationService as UnifiedCalibrationService,
+)
 from app.services.capture_service import CaptureService
 from app.services.analysis_service import AnalysisService
 from app.services.schedule_service import ScheduleService
@@ -88,17 +96,56 @@ async def lifespan(app: FastAPI):
         storage,
     )
     health_service = HealthService(settings)
-    calibration_service = CalibrationService(
+    calibration_lock_service = CalibrationLockService(schedule_service)
+    calibration_storage_service = CalibrationStorageService(
         settings,
         calibration_repository,
+    )
+    calibration_capture_service = CalibrationCaptureService(
+        settings,
+        camera_manager,
+        storage,
+    )
+    intrinsic_calibration_service = IntrinsicCalibrationService(
+        settings,
+        calibration_repository,
+        calibration_capture_service,
+        calibration_lock_service,
+        calibration_storage_service,
+    )
+    extrinsic_calibration_service = ExtrinsicCalibrationService(
+        settings,
+        calibration_repository,
+        calibration_capture_service,
+        calibration_lock_service,
+        calibration_storage_service,
+    )
+    calibration_validation_service = CalibrationValidationService(
+        settings,
+        calibration_repository,
+    )
+    unified_calibration_service = UnifiedCalibrationService(
+        settings,
+        calibration_repository,
+        camera_manager,
+        motor_controller,
+        snapshot_service,
+        calibration_capture_service,
+        intrinsic_calibration_service,
+        extrinsic_calibration_service,
+        calibration_validation_service,
+        calibration_lock_service,
+        calibration_storage_service,
+    )
+    calibration_lock_service.set_release_callback(
+        unified_calibration_service.on_lock_released
     )
     analysis_service = AnalysisService(
         settings,
         analysis_repository,
         record_repository,
         capture_repository,
-        calibration_repository,
-        calibration_service=calibration_service,
+        unified_calibration_service,
     )
 
     context = AppContext(
@@ -115,7 +162,14 @@ async def lifespan(app: FastAPI):
         snapshot_service=snapshot_service,
         schedule_service=schedule_service,
         health_service=health_service,
-        calibration_service=calibration_service,
+        calibration_service=unified_calibration_service,
+        unified_calibration_service=unified_calibration_service,
+        calibration_lock_service=calibration_lock_service,
+        calibration_capture_service=calibration_capture_service,
+        intrinsic_calibration_service=intrinsic_calibration_service,
+        extrinsic_calibration_service=extrinsic_calibration_service,
+        calibration_validation_service=calibration_validation_service,
+        calibration_storage_service=calibration_storage_service,
         analysis_service=analysis_service,
     )
     app.state.context = context

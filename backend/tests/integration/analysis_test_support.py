@@ -10,11 +10,12 @@ import numpy as np
 from app.core.config import load_settings
 from app.database.connection import Database
 from app.database.schema import initialize_schema
-from app.models.analysis_models import AnalysisCreateRequest
-from app.models.calibration_models import CalibrationProfile
+from app.models.analysis_models import (
+    AnalysisCalibrationProfile,
+    AnalysisCreateRequest,
+)
 from app.models.capture_models import MetadataRecord
 from app.repositories.analysis_repository import AnalysisRepository
-from app.repositories.calibration_repository import CalibrationRepository
 from app.repositories.capture_repository import CaptureRepository
 from app.repositories.record_repository import RecordRepository
 from app.services.analysis_service import AnalysisService
@@ -74,7 +75,7 @@ def analysis_parameters() -> dict:
     }
 
 
-def _calibration_profile(dataset: dict) -> CalibrationProfile:
+def _calibration_profile(dataset: dict) -> AnalysisCalibrationProfile:
     calibration = dataset["manifest"]["calibration_id"]
     assert calibration == BASELINE_CALIBRATION_ID
     output_path = dataset["calibration_path"].parent
@@ -102,7 +103,7 @@ def _calibration_profile(dataset: dict) -> CalibrationProfile:
     ]) @ rotation
     intrinsic = np.asarray(camera_matrix)
     fundamental = np.linalg.inv(intrinsic).T @ essential @ np.linalg.inv(intrinsic)
-    return CalibrationProfile(
+    return AnalysisCalibrationProfile(
         calibration_id=BASELINE_CALIBRATION_ID,
         created_at="2026-07-17T00:00:00+00:00",
         updated_at="2026-07-17T00:00:00+00:00",
@@ -113,17 +114,10 @@ def _calibration_profile(dataset: dict) -> CalibrationProfile:
         side_camera_identifier="side",
         image_width=160,
         image_height=120,
-        chessboard_pattern=[10, 7],
-        stereo_chessboard_pattern=[10, 7],
-        square_size_mm=[10.0, 10.0],
-        stereo_square_size_mm=[10.0, 10.0],
-        individual_board_size_cm=[59.4, 84.1],
-        stereo_board_size_cm=[42.0, 59.4],
-        paper_baseline={"reference": "Ruiz-Melero et al. 2024"},
-        actual_measurement_difference={
-            "fixture": "synthetic values; not paper calibration parameters"
+        camera_image_sizes={
+            "top": [160, 120],
+            "side": [160, 120],
         },
-        selected_images={"top": [], "side": [], "stereo": []},
         top_camera_matrix=camera_matrix,
         side_camera_matrix=camera_matrix,
         top_distortion_coefficients=[0.0] * 5,
@@ -140,6 +134,17 @@ def _calibration_profile(dataset: dict) -> CalibrationProfile:
     )
 
 
+class AnalysisCalibrationStub:
+    def __init__(self, profile: AnalysisCalibrationProfile) -> None:
+        self.profile = profile
+
+    def list_profiles(self) -> list[AnalysisCalibrationProfile]:
+        return [self.profile]
+
+    def get_profile(self, calibration_id: str) -> AnalysisCalibrationProfile | None:
+        return self.profile if calibration_id == self.profile.calibration_id else None
+
+
 def create_analysis_service(tmp_path: Path, monkeypatch) -> tuple[AnalysisService, dict]:
     write_test_config(tmp_path, monkeypatch)
     dataset = create_analysis_baseline(tmp_path / "baseline")
@@ -153,7 +158,6 @@ def create_analysis_service(tmp_path: Path, monkeypatch) -> tuple[AnalysisServic
     initialize_schema(database)
     record_repository = RecordRepository(database)
     capture_repository = CaptureRepository(database)
-    calibration_repository = CalibrationRepository(database)
     analysis_repository = AnalysisRepository(database)
 
     record_repository.upsert(
@@ -176,13 +180,13 @@ def create_analysis_service(tmp_path: Path, monkeypatch) -> tuple[AnalysisServic
                     }
                 )
             )
-    calibration_repository.create(_calibration_profile(dataset))
+    calibration_service = AnalysisCalibrationStub(_calibration_profile(dataset))
     service = AnalysisService(
         settings,
         analysis_repository,
         record_repository,
         capture_repository,
-        calibration_repository,
+        calibration_service,
     )
     dataset["database"] = database
     dataset["raw_hashes"] = {

@@ -70,6 +70,69 @@ def camera_backend_candidates(cv2: Any) -> list[int]:
     return list(dict.fromkeys(candidates)) or [cap_any]
 
 
+def enumerate_opencv_device_names(
+    *,
+    cv2_module: Any | None = None,
+) -> dict[tuple[str, int], str]:
+    """Return OS-reported camera names keyed by OpenCV backend and index."""
+    cv2 = cv2_module or load_opencv()
+    if cv2 is None:
+        return {}
+
+    try:
+        from cv2_enumerate_cameras import enumerate_cameras
+    except ImportError:
+        logger.warning(
+            "尚未安裝 cv2-enumerate-cameras，無法取得作業系統相機名稱。"
+        )
+        return {}
+
+    device_names: dict[tuple[str, int], str] = {}
+    for backend in camera_backend_candidates(cv2):
+        backend_name = _backend_name(cv2, backend)
+        try:
+            camera_infos = enumerate_cameras(backend)
+        except Exception:
+            logger.warning(
+                "無法透過 %s 列舉作業系統相機名稱。",
+                backend_name,
+                exc_info=True,
+            )
+            continue
+
+        for camera_info in camera_infos:
+            try:
+                device_index = int(camera_info.index)
+            except (AttributeError, TypeError, ValueError):
+                continue
+
+            device_name = str(getattr(camera_info, "name", "")).strip()
+            if device_name:
+                device_names[(backend_name, device_index)] = device_name
+
+    return device_names
+
+
+def opencv_device_name(
+    device_names: dict[tuple[str, int], str],
+    device_index: int,
+    backend: str | None,
+) -> str | None:
+    if backend:
+        exact_name = device_names.get((backend, device_index))
+        if exact_name:
+            return exact_name
+
+    matching_names = {
+        name
+        for (candidate_backend, candidate_index), name in device_names.items()
+        if candidate_index == device_index and candidate_backend
+    }
+    if len(matching_names) == 1:
+        return matching_names.pop()
+    return None
+
+
 def open_opencv_capture(
     device_index: int,
     *,
@@ -121,6 +184,7 @@ def scan_opencv_indices(
     *,
     skip_indices: set[int] | None = None,
     cv2_module: Any | None = None,
+    device_names: dict[tuple[str, int], str] | None = None,
 ) -> list[CameraScanResult]:
     cv2 = cv2_module or load_opencv()
     if cv2 is None:
@@ -134,6 +198,9 @@ def scan_opencv_indices(
         ]
 
     skipped = skip_indices or set()
+    resolved_device_names = device_names or enumerate_opencv_device_names(
+        cv2_module=cv2,
+    )
     results: list[CameraScanResult] = []
     for index in range(max_index):
         if index in skipped:
@@ -149,6 +216,11 @@ def scan_opencv_indices(
                 device_index=index,
                 connected=connected,
                 error=error,
+                device_name=opencv_device_name(
+                    resolved_device_names,
+                    index,
+                    backend,
+                ),
                 backend=backend,
             )
         )

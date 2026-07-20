@@ -12,7 +12,6 @@ set "BACKEND_PORT=22222"
 set "FRONTEND_HOST=127.0.0.1"
 set "FRONTEND_PORT=22223"
 set "MODE=production"
-set "MOCK=0"
 set "SETUP=0"
 set "BACKEND_PID="
 set "FRONTEND_PID="
@@ -28,7 +27,6 @@ if /I "%~1"=="--setup" (
   goto parse_arguments
 )
 if /I "%~1"=="--mock" (
-  set "MOCK=1"
   set "MODE=development"
   shift
   goto parse_arguments
@@ -107,7 +105,6 @@ if /I "%MODE%"=="production" (
 
 set "BACKEND_COMMAND=call "%PYTHON%" "%BACKEND_DIR%\run.py" --host %BACKEND_HOST% --port %BACKEND_PORT%"
 if /I "%MODE%"=="development" set "BACKEND_COMMAND=%BACKEND_COMMAND% --reload"
-if "%MOCK%"=="1" set "BACKEND_COMMAND=%BACKEND_COMMAND% --mock"
 
 if /I "%MODE%"=="production" (
   set "FRONTEND_COMMAND=call npm.cmd run start"
@@ -204,7 +201,7 @@ goto finish
 echo Usage: start.bat [--setup] [--mock]
 echo.
 echo   --setup                Create .env and install backend and frontend dependencies.
-echo   --mock                 Run Next dev and FastAPI reload with mock hardware.
+echo   --mock                 Run Next dev and FastAPI reload with full hardware access.
 echo   No option              Build and run the production frontend and backend.
 set "EXIT_CODE=0"
 goto finish

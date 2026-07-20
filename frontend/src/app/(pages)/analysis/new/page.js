@@ -22,12 +22,10 @@ export default async function AnalysisNewPage({
   const initialRecordId = typeof parameters?.record === "string"
     ? parameters.record.slice(0, 160)
     : "";
-  const initialStep = parameters?.step === "calibration" ? 2 : 1;
 
   return (
     <AnalysisNew
       initialRecordId={initialRecordId}
-      initialStep={initialStep}
     />
   );
 }

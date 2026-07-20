@@ -240,24 +240,6 @@ class AnalysisSettings(BaseModel):
     reprojection: ReprojectionSettings = Field(default_factory=ReprojectionSettings)
 
 
-class IndividualCalibrationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    pattern: Literal["chessboard"] = "chessboard"
-    pattern_columns: int = Field(default=10, ge=2)
-    pattern_rows: int = Field(default=7, ge=2)
-    board_width_cm: float = Field(default=59.4, gt=0)
-    board_height_cm: float = Field(default=84.1, gt=0)
-
-
-class StereoCalibrationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    pattern: Literal["chessboard"] = "chessboard"
-    board_width_cm: float = Field(default=42.0, gt=0)
-    board_height_cm: float = Field(default=59.4, gt=0)
-
-
 class CalibrationQualitySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -268,12 +250,6 @@ class CalibrationQualitySettings(BaseModel):
 class CalibrationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    individual_calibration: IndividualCalibrationSettings = Field(
-        default_factory=IndividualCalibrationSettings
-    )
-    stereo_calibration: StereoCalibrationSettings = Field(
-        default_factory=StereoCalibrationSettings
-    )
     quality: CalibrationQualitySettings = Field(default_factory=CalibrationQualitySettings)
 
 

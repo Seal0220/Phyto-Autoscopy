@@ -20,18 +20,14 @@ export const ANALYSIS_SETUP_STEPS = [
   },
   {
     id: 2,
-    label: "校正",
-  },
-  {
-    id: 3,
     label: "分析範圍",
   },
   {
-    id: 4,
+    id: 3,
     label: "方法參數",
   },
   {
-    id: 5,
+    id: 4,
     label: "建立分析",
   },
 ];

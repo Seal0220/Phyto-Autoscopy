@@ -87,7 +87,7 @@ def permission_for_http(method: str, path: str) -> str:
     if normalized_method in {"GET", "HEAD"}:
         if path.startswith("/api/analysis"):
             return "analysis:read"
-        if path.startswith("/api/calibrations"):
+        if path.startswith("/api/calibration"):
             return "calibrations:read"
         if path.startswith("/api/settings"):
             return "settings:read"
@@ -100,7 +100,7 @@ def permission_for_http(method: str, path: str) -> str:
         return "system:manage"
     if path.startswith("/api/analysis"):
         return "analysis:manage"
-    if path.startswith("/api/calibrations"):
+    if path.startswith("/api/calibration"):
         return "calibrations:manage"
     if path.startswith("/api/settings"):
         return "settings:write"

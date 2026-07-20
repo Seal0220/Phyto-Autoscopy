@@ -1,157 +1,277 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
-import { FiRefreshCw } from "react-icons/fi";
 
-import Button from "@/components/buttons/Button";
-import StatusCard from "@/components/cards/StatusCard";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
 } from "@/components/panels/Panel";
-import SettingPanel from "@/components/panels/SettingPanel";
-import SettingsGear from "@/components/panels/SettingsGear";
+import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
-import CalibrationCreateForm from "./components/CalibrationCreateForm";
-import CalibrationProfileList from "./components/CalibrationProfileList";
-import useCalibrationCatalog from "./hooks/useCalibrationCatalog";
+import CalibrationBoardSettings from "./components/CalibrationBoardSettings";
+import CalibrationExtrinsics from "./components/CalibrationExtrinsics";
+import CalibrationExtrinsicStatus from "./components/CalibrationExtrinsicStatus";
+import CalibrationIntrinsics from "./components/CalibrationIntrinsics";
+import CalibrationMotorControls from "./components/CalibrationMotorControls";
+import useUnifiedCalibration from "./hooks/useUnifiedCalibration";
+import { calibrationLockState } from "./lib/calibrationUtils";
 
 export default function Calibration() {
-  const router = useRouter();
   const { showNotification } = useNotificationsContext();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedBoardId, setSelectedBoardId] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
   const {
+    status,
+    boards,
     profiles,
-    sourceImages,
+    runs,
     loading,
-    loadError,
-    createPending,
-    createError,
-    createRequiresRefresh,
-    load,
-    create,
-    clearCreateError,
-  } = useCalibrationCatalog();
-  const validCount = profiles.filter((profile) => profile.valid).length;
-  const staleCount = profiles.filter(
-    (profile) => profile.potentially_invalid_reasons?.length,
-  ).length;
-  const hasCatalog = profiles.length > 0 || sourceImages.length > 0;
+    pendingAction,
+    error,
+    requiresRefresh,
+    ownsLock,
+    systemActive,
+    mutate,
+    acquireLock,
+    releaseLock,
+    rememberRun,
+    clearError,
+    connection,
+    socketError,
+    resetSocketError,
+  } = useUnifiedCalibration({
+    polling: true,
+  });
 
   useEffect(() => {
-    if (loadError) showNotification(loadError, "error");
-  }, [
-    loadError,
-    showNotification,
-  ]);
-
-  useEffect(() => {
-    if (createError) showNotification(createError, "error");
-  }, [
-    createError,
-    showNotification,
-  ]);
-
-  async function handleCreate(payload) {
-    const profile = await create(payload);
-    if (!profile?.calibration_id) return;
-
-    showNotification("已建立相機校正項目。", "success");
-    router.push(
-      `/analysis/calibration/${encodeURIComponent(profile.calibration_id)}`,
+    if (selectedBoardId && boards.some(
+      (board) => board.board_profile_id === selectedBoardId,
+    )) {
+      return;
+    }
+    setSelectedBoardId(
+      boards.at(-1)?.board_profile_id
+        || "",
     );
-  }
+  }, [
+    boards,
+    selectedBoardId,
+  ]);
+
+  useEffect(() => {
+    if (!error) return;
+    showNotification(error, "error");
+    clearError();
+  }, [
+    clearError,
+    error,
+    showNotification,
+  ]);
+
+  useEffect(() => {
+    if (!socketError) return;
+    showNotification(
+      `${socketError.message} 校正狀態仍會定時重新讀取。`,
+      "error",
+    );
+    resetSocketError();
+  }, [
+    resetSocketError,
+    showNotification,
+    socketError,
+  ]);
+
+  const onAction = useCallback(async (
+    action,
+    path,
+    options,
+  ) => {
+    const outcome = await mutate(action, path, options);
+    if (outcome?.successMessage) {
+      showNotification(outcome.successMessage, "success");
+    }
+    return outcome;
+  }, [
+    mutate,
+    showNotification,
+  ]);
+
+  const selectedProfile = useMemo(() => profiles.find(
+    (profile) => profile.profile_id === selectedProfileId,
+  ) || null, [
+    profiles,
+    selectedProfileId,
+  ]);
+  const lockState = calibrationLockState(status, ownsLock);
+  const lockedByAnotherOperator = lockState.lockedByAnotherOperator;
+  const lockMode = status?.lock?.mode;
+  const intrinsicLocked = ownsLock && [
+    "intrinsic",
+    "unified",
+  ].includes(lockMode);
+  const extrinsicLocked = ownsLock && [
+    "extrinsic",
+    "relocation",
+    "unified",
+  ].includes(lockMode);
+  const hasWorkspace = Boolean(status) || boards.length > 0 || profiles.length > 0;
+
+  const beginCalibration = useCallback(async (
+    mode,
+    details = {},
+  ) => {
+    if (systemActive) {
+      showNotification(
+        "目前系統運行中無法校正",
+        "warning",
+      );
+      return null;
+    }
+
+    if (ownsLock) {
+      return {
+        acquired: false,
+      };
+    }
+
+    const outcome = await acquireLock(mode, details);
+    if (outcome?.successMessage) {
+      showNotification(outcome.successMessage, "success");
+    }
+
+    return outcome
+      ? {
+        acquired: true,
+      }
+      : null;
+  }, [
+    acquireLock,
+    ownsLock,
+    showNotification,
+    systemActive,
+  ]);
+
+  const endCalibration = useCallback(async (
+    releaseAcquiredLock = false,
+  ) => {
+    if (!ownsLock && !releaseAcquiredLock) return true;
+    const outcome = await releaseLock();
+    if (outcome?.successMessage) {
+      showNotification(outcome.successMessage, "success");
+    }
+    return Boolean(outcome);
+  }, [
+    ownsLock,
+    releaseLock,
+    showNotification,
+  ]);
 
   return (
-    <Panel
-      id="camera-calibration"
-      aria-label="相機校正"
-    >
-      <PanelHeader
-        title="相機校正"
-        action={(
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              disabled={loading || createPending}
-              onClick={() => void load()}
-            >
-              <FiRefreshCw
-                className="size-4 shrink-0"
-                aria-hidden="true"
+    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
+      <MainNavigation isConnected={connection === "connected"} />
+
+      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
+        <Panel aria-label="校正板">
+          <PanelHeader title="校正板" />
+
+          <div className="grid gap-4 p-5 max-sm:p-4">
+            {loading && !hasWorkspace ? (
+              <div
+                className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
+                role="status"
+              >
+                讀取校正板設定中…
+              </div>
+            ) : null}
+
+            {hasWorkspace ? (
+              <CalibrationBoardSettings
+                boards={boards}
+                selectedBoardId={selectedBoardId}
+                pendingAction={pendingAction}
+                onBoardChange={setSelectedBoardId}
+                onAction={onAction}
               />
-              {loading ? "讀取中…" : "重新讀取"}
-            </Button>
-            <SettingsGear
-              label="相機校正"
-              open={settingsOpen}
-              onClick={() => setSettingsOpen((current) => !current)}
-            />
+            ) : null}
           </div>
-        )}
-      />
+        </Panel>
 
-      <div className="grid gap-4 p-5 max-sm:p-4">
-        {loadError ? (
-          <RetryMessage
-            message={loadError}
-            onRetry={() => void load()}
-            retrying={loading}
-          />
-        ) : null}
+        <Panel aria-label="內部參數">
+          <PanelHeader title="內部參數" />
 
-        {loading && !hasCatalog ? (
-          <div
-            className="grid min-h-32 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
-            role="status"
-          >
-            讀取校正結果與項目中…
+          <div className="p-5 max-sm:p-4">
+            {hasWorkspace ? (
+              <CalibrationIntrinsics
+                status={status}
+                runs={runs}
+                boardProfileId={selectedBoardId}
+                locked={intrinsicLocked}
+                pendingAction={pendingAction}
+                systemActive={systemActive}
+                lockedByAnotherOperator={lockedByAnotherOperator}
+                startDisabled={requiresRefresh}
+                onAction={onAction}
+                onBeginCalibration={beginCalibration}
+                onEndCalibration={endCalibration}
+                onNotify={showNotification}
+                onRememberRun={rememberRun}
+              />
+            ) : null}
           </div>
-        ) : null}
+        </Panel>
 
-        {(!loadError || hasCatalog) && (!loading || hasCatalog) ? (
-          <>
-            <div className="grid gap-3 min-[520px]:grid-cols-3">
-              <StatusCard
-                title="校正項目"
-                content={profiles.length}
-                note="組"
-              />
-              <StatusCard
-                title="有效校正"
-                content={validCount}
-                note="組"
-              />
-              <StatusCard
-                title="可能失效"
-                content={staleCount}
-                note="組"
-              />
-            </div>
-            <CalibrationProfileList profiles={profiles} />
-          </>
-        ) : null}
+        <Panel aria-label="外部參數">
+          <PanelHeader title="外部參數" />
+
+          <div className="grid gap-6 p-5 max-sm:p-4">
+            {hasWorkspace ? (
+              <>
+                <CalibrationExtrinsicStatus
+                  status={status}
+                  locked={extrinsicLocked}
+                  pendingAction={pendingAction}
+                  onAction={onAction}
+                />
+
+                <hr />
+
+                <CalibrationMotorControls
+                  status={status}
+                  profile={selectedProfile}
+                  locked={extrinsicLocked}
+                  pendingAction={pendingAction}
+                  onAction={onAction}
+                />
+
+                <hr />
+
+                <CalibrationExtrinsics
+                  selectedBoardId={selectedBoardId}
+                  profiles={profiles}
+                  status={status}
+                  locked={extrinsicLocked}
+                  pendingAction={pendingAction}
+                  systemActive={systemActive}
+                  lockedByAnotherOperator={lockedByAnotherOperator}
+                  startDisabled={requiresRefresh}
+                  selectedProfileId={selectedProfileId}
+                  onSelectedProfileChange={setSelectedProfileId}
+                  onAction={onAction}
+                  onBeginCalibration={beginCalibration}
+                  onEndCalibration={endCalibration}
+                  onNotify={showNotification}
+                />
+              </>
+            ) : null}
+          </div>
+        </Panel>
       </div>
-
-      <SettingPanel
-        label="相機校正"
-        open={settingsOpen}
-      >
-        <CalibrationCreateForm
-          sourceImages={sourceImages}
-          pending={createPending}
-          error={createError}
-          requiresRefresh={createRequiresRefresh}
-          onCreate={handleCreate}
-          onClearError={clearCreateError}
-          onRefresh={() => void load()}
-        />
-      </SettingPanel>
-    </Panel>
+    </main>
   );
 }

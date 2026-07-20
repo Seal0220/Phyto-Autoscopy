@@ -17,6 +17,7 @@ class SystemStatus(BaseModel):
     device_name: str
     device_version: str
     mock_mode: bool
+    active: bool
     started_at: str
     schedule_status: str
     active_record_id: str | None = None

@@ -1,100 +1,94 @@
-export const CALIBRATION_PAPER_BASELINE = Object.freeze({
-  reference: "Ruiz-Melero et al. 2024",
-  individualPattern: Object.freeze([10, 7]),
-  individualBoardSizeCm: Object.freeze([59.4, 84.1]),
-  stereoBoardSizeCm: Object.freeze([42.0, 59.4]),
-});
-
-export const CALIBRATION_CREATE_DEFAULTS = Object.freeze({
-  patternColumns: "10",
-  patternRows: "7",
-  squareSizeMmX: "",
-  squareSizeMmY: "",
-  stereoPatternColumns: "",
-  stereoPatternRows: "",
-  stereoSquareSizeMmX: "",
-  stereoSquareSizeMmY: "",
-  individualBoardWidthCm: "",
-  individualBoardHeightCm: "",
-  stereoBoardWidthCm: "",
-  stereoBoardHeightCm: "",
-  worldOrigin: "花盆或植物基部中心",
-  worldXAxis: "水平方向",
-  worldYAxis: "水平深度方向",
-  worldZAxis: "垂直向上",
-  worldTransformMatrix: Object.freeze([
-    Object.freeze(["1", "0", "0", "0"]),
-    Object.freeze(["0", "1", "0", "0"]),
-    Object.freeze(["0", "0", "1", "0"]),
-    Object.freeze(["0", "0", "0", "1"]),
-  ]),
-  worldTransformConfirmed: false,
-  notes: "",
-});
-
-export const CALIBRATION_STATUS = Object.freeze({
-  draft: {
-    label: "待偵測角點",
-    tone: "neutral",
-  },
-  corners_detected: {
-    label: "角點已偵測",
-    tone: "warning",
-  },
-  intrinsics_solved: {
-    label: "單鏡頭校正完成",
-    tone: "warning",
-  },
-  stereo_solved: {
-    label: "雙鏡頭校正完成",
-    tone: "warning",
-  },
-  rotating_solved: {
-    label: "環繞幾何校正完成",
-    tone: "warning",
-  },
-  valid: {
-    label: "有效",
-    tone: "success",
-  },
-  potentially_invalid: {
-    label: "可能失效",
-    tone: "warning",
-  },
-  invalid: {
-    label: "無效",
-    tone: "offline",
-  },
-  failed: {
-    label: "失敗",
-    tone: "offline",
-  },
-});
-
-export const CALIBRATION_WORKFLOW_STEPS = Object.freeze([
-  {
-    key: "corners",
-    label: "偵測棋盤角點",
-    pendingLabel: "偵測角點中…",
-  },
-  {
-    key: "intrinsics",
-    label: "計算單鏡頭校正",
-    pendingLabel: "計算單鏡頭校正中…",
-  },
-  {
-    key: "stereo",
-    label: "計算雙鏡頭校正",
-    pendingLabel: "計算雙鏡頭校正中…",
-  },
-  {
-    key: "rotating",
-    label: "計算環繞幾何",
-    pendingLabel: "計算環繞幾何中…",
-  },
-  {
-    key: "validate",
-    label: "驗證校正資料",
-    pendingLabel: "驗證校正中…",
-  },
+export const CALIBRATION_CAMERAS = Object.freeze([
+  Object.freeze({
+    id: "top",
+    label: "俯視角",
+    device: "CHLOROCULUS EYE-TOP",
+  }),
+  Object.freeze({
+    id: "side",
+    label: "側視角",
+    device: "CHLOROCULUS EYE-SIDE",
+  }),
+  Object.freeze({
+    id: "rotating",
+    label: "旋臂視角",
+    device: "CHLOROCULUS EYE-ARM",
+  }),
 ]);
+
+export const CALIBRATION_CAMERA_MODEL_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: "auto",
+    label: "自動比較模型",
+  }),
+  Object.freeze({
+    value: "opencv",
+    label: "OpenCV 標準模型",
+  }),
+  Object.freeze({
+    value: "opencv_rational",
+    label: "OpenCV Rational 模型",
+  }),
+  Object.freeze({
+    value: "opencv_fisheye",
+    label: "OpenCV Fisheye 模型",
+  }),
+]);
+
+export const CALIBRATION_SUGGESTED_ANGLES = Object.freeze([
+  0,
+  45,
+  90,
+  135,
+  180,
+  225,
+  270,
+  315,
+]);
+
+export const CALIBRATION_PAPER_SIZE_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: "a3",
+    label: "A3（297 × 420 mm）",
+    widthMm: 297,
+    heightMm: 420,
+  }),
+  Object.freeze({
+    value: "a4",
+    label: "A4（210 × 297 mm）",
+    widthMm: 210,
+    heightMm: 297,
+  }),
+  Object.freeze({
+    value: "a5",
+    label: "A5（148 × 210 mm）",
+    widthMm: 148,
+    heightMm: 210,
+  }),
+  Object.freeze({
+    value: "letter",
+    label: "Letter（215.9 × 279.4 mm）",
+    widthMm: 215.9,
+    heightMm: 279.4,
+  }),
+]);
+
+export const CALIBRATION_PAPER_ORIENTATION_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: "landscape",
+    label: "橫向",
+  }),
+  Object.freeze({
+    value: "portrait",
+    label: "直向",
+  }),
+]);
+
+export const CALIBRATION_BOARD_DEFAULTS = Object.freeze({
+  paperSize: "a4",
+  paperOrientation: "landscape",
+  squaresX: "8",
+  squaresY: "6",
+  printMarginMm: 10,
+  markerToSquareRatio: 11 / 15,
+});

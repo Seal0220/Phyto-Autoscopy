@@ -26,11 +26,19 @@ class AppContext:
     schedule_service: Any
     health_service: Any
     calibration_service: Any = None
+    unified_calibration_service: Any = None
+    calibration_lock_service: Any = None
+    calibration_capture_service: Any = None
+    intrinsic_calibration_service: Any = None
+    extrinsic_calibration_service: Any = None
+    calibration_validation_service: Any = None
+    calibration_storage_service: Any = None
     analysis_service: Any = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     recent_errors: list[str] = field(default_factory=list)
     _error_lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _settings_lock: RLock = field(default_factory=RLock, init=False, repr=False)
+    _operation_lock: RLock = field(default_factory=RLock, init=False, repr=False)
 
     def add_error(self, message: str) -> None:
         with self._error_lock:

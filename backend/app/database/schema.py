@@ -95,19 +95,26 @@ def _migrate_manual_correction_history(connection: sqlite3.Connection) -> None:
     )
 
 
-def _analysis_runs_record_is_required(connection: sqlite3.Connection) -> bool:
+def _analysis_runs_require_rebuild(connection: sqlite3.Connection) -> bool:
     if not _table_exists(connection, "analysis_runs"):
         return False
-    return any(
+    record_is_required = any(
         row["name"] == "record_id" and bool(row["notnull"])
         for row in connection.execute("PRAGMA table_info(analysis_runs)").fetchall()
     )
+    calibration_is_foreign_key = any(
+        row["from"] == "calibration_id"
+        for row in connection.execute(
+            "PRAGMA foreign_key_list(analysis_runs)"
+        ).fetchall()
+    )
+    return record_is_required or calibration_is_foreign_key
 
 
 def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> None:
-    """Allow analyses built from explicit camera directories without a Record."""
+    """Decouple immutable analysis snapshots from mutable calibration rows."""
 
-    if not _analysis_runs_record_is_required(connection):
+    if not _analysis_runs_require_rebuild(connection):
         return
     connection.execute("DROP TABLE IF EXISTS analysis_runs_source_new")
     connection.execute(
@@ -132,8 +139,7 @@ def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> No
             manual_review_completed INTEGER NOT NULL DEFAULT 0,
             average_reprojection_error_px REAL,
             last_error TEXT,
-            FOREIGN KEY(record_id) REFERENCES records(record_id),
-            FOREIGN KEY(calibration_id) REFERENCES calibration_profiles(calibration_id)
+            FOREIGN KEY(record_id) REFERENCES records(record_id)
         )
         """
     )
@@ -198,16 +204,128 @@ def initialize_schema(database: Database) -> None:
             )
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS calibration_profiles (
-                    calibration_id TEXT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS calibration_boards (
+                    board_profile_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    board_type TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    valid INTEGER NOT NULL DEFAULT 0,
-                    output_path TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    last_error TEXT
+                    payload_json TEXT NOT NULL
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS camera_intrinsics (
+                    camera_id TEXT PRIMARY KEY,
+                    camera_model TEXT NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    board_profile_id TEXT NOT NULL,
+                    source_run_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(board_profile_id)
+                        REFERENCES calibration_boards(board_profile_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS camera_intrinsics_history (
+                    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    camera_id TEXT NOT NULL,
+                    replaced_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS calibration_runs (
+                    run_id TEXT PRIMARY KEY,
+                    run_type TEXT NOT NULL,
+                    camera_id TEXT,
+                    profile_id TEXT,
+                    board_profile_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    last_error TEXT,
+                    FOREIGN KEY(board_profile_id)
+                        REFERENCES calibration_boards(board_profile_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS extrinsic_profiles (
+                    profile_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    board_profile_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    last_error TEXT,
+                    FOREIGN KEY(board_profile_id)
+                        REFERENCES calibration_boards(board_profile_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS extrinsic_profile_cameras (
+                    profile_id TEXT NOT NULL,
+                    camera_id TEXT NOT NULL,
+                    height_mm REAL NOT NULL,
+                    position_json TEXT NOT NULL,
+                    transform_json TEXT,
+                    mount_description TEXT NOT NULL,
+                    PRIMARY KEY(profile_id, camera_id),
+                    FOREIGN KEY(profile_id)
+                        REFERENCES extrinsic_profiles(profile_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS calibration_observations (
+                    observation_id TEXT PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    motor_angle_deg REAL,
+                    arm_height_mm REAL,
+                    accepted INTEGER NOT NULL DEFAULT 0,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(profile_id)
+                        REFERENCES extrinsic_profiles(profile_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_extrinsic_active_singleton
+                ON extrinsic_profiles(is_active)
+                WHERE is_active = 1
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_calibration_runs_status
+                ON calibration_runs(status, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_calibration_observations_profile
+                ON calibration_observations(profile_id, captured_at)
                 """
             )
             connection.execute(
@@ -232,8 +350,7 @@ def initialize_schema(database: Database) -> None:
                     manual_review_completed INTEGER NOT NULL DEFAULT 0,
                     average_reprojection_error_px REAL,
                     last_error TEXT,
-                    FOREIGN KEY(record_id) REFERENCES records(record_id),
-                    FOREIGN KEY(calibration_id) REFERENCES calibration_profiles(calibration_id)
+                    FOREIGN KEY(record_id) REFERENCES records(record_id)
                 )
                 """
             )
@@ -245,6 +362,7 @@ def initialize_schema(database: Database) -> None:
                     "ALTER TABLE analysis_runs ADD COLUMN average_reprojection_error_px REAL"
                 )
             _migrate_analysis_runs_nullable_record(connection)
+            connection.execute("DROP TABLE IF EXISTS calibration_profiles")
 
             connection.execute(
                 """

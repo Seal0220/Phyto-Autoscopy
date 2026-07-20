@@ -9,13 +9,11 @@ import {
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
 } from "@/components/panels/Panel";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
-import Calibration from "@/features/Calibration/Calibration";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisDashboardRuns from "./components/AnalysisDashboardRuns";
@@ -38,7 +36,6 @@ export default function Analysis() {
     resetSocketError,
     clearExportFailure,
   } = useAnalysisDashboard();
-  const readySourceCount = sources.filter((source) => source.ready).length;
   const activeRunCount = runs.filter((run) => [
     "validating",
     "processing",
@@ -119,24 +116,11 @@ export default function Analysis() {
           />
 
           <div className="grid gap-4 p-5 max-sm:p-4">
-            {loadError ? (
-              <RetryMessage
-                message={loadError}
-                onRetry={() => void load()}
-                retrying={loading}
-              />
-            ) : null}
-
             {!loadError || hasData ? (
-              <div className="grid gap-3 min-[520px]:grid-cols-3">
+              <div className="grid gap-3 min-[520px]:grid-cols-2">
                 <StatusCard
                   title="捕捉紀錄"
                   content={sources.length}
-                  note="筆"
-                />
-                <StatusCard
-                  title="可分析紀錄"
-                  content={readySourceCount}
                   note="筆"
                 />
                 <StatusCard
@@ -148,8 +132,6 @@ export default function Analysis() {
             ) : null}
           </div>
         </Panel>
-
-        <Calibration />
 
         {(!loadError || hasData) ? (
           <AnalysisDashboardRuns

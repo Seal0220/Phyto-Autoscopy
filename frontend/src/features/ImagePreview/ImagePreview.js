@@ -4,6 +4,7 @@ import {
 } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
+import CameraStream from "@/components/media/CameraStream";
 import {
   Panel,
   PanelHeader,
@@ -12,7 +13,6 @@ import {
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 
-import ImagePreviewFeed from "./components/ImagePreviewFeed";
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
 export default function ImagePreview({
@@ -93,8 +93,8 @@ export default function ImagePreview({
               `}
               key={imagePreviewId}
             >
-              <ImagePreviewFeed
-                imagePreviewId={imagePreviewId}
+              <CameraStream
+                cameraId={imagePreviewId}
                 label={meta.label}
                 device={meta.device}
                 enabled={enabled}

@@ -1,17 +1,5 @@
 {
   "calibration": {
-    "individual_calibration": {
-      "pattern": "chessboard",
-      "pattern_columns": 10,
-      "pattern_rows": 7,
-      "board_width_cm": 59.4,
-      "board_height_cm": 84.1
-    },
-    "stereo_calibration": {
-      "pattern": "chessboard",
-      "board_width_cm": 42.0,
-      "board_height_cm": 59.4
-    },
     "quality": {
       "store_error_per_image": true,
       "store_point_coverage": true

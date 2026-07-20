@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -120,6 +121,14 @@ class AnalysisArtifacts:
 
     def write_calibration_reference(self, payload: dict) -> None:
         write_json_atomic(self.root / "calibration_reference.json", payload)
+
+    def read_calibration_reference(self) -> dict:
+        path = self.root / "calibration_reference.json"
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise ValueError("calibration reference must be an object")
+        return payload
 
     def write_frame_pairs(self, pairs: Iterable[AnalysisFramePair]) -> None:
         rows = [pair.model_dump(mode="json") for pair in pairs]

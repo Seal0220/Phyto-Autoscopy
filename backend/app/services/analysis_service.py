@@ -22,9 +22,9 @@ from pydantic import ValidationError
 from app.analysis import analysis_method
 from app.analysis.analysis_runner import AnalysisJobManager
 from app.analysis.artifacts import AnalysisArtifacts
-from app.analysis.calibration.resolution_adaptation import (
-    StereoResolutionAdaptation,
-    adapt_stereo_resolution,
+from app.calibration.resolution_adaptation import (
+    CameraPairResolutionAdaptation,
+    adapt_camera_pair_resolution,
 )
 from app.analysis.detection.epipolar_constraint import epipolar_line_from_top_point
 from app.analysis.detection.side_tip_detection import side_tip_candidates
@@ -89,9 +89,8 @@ from app.models.analysis_models import (
     StoredDetection,
     TrajectoryPoint,
 )
-from app.models.calibration_models import CalibrationProfile
+from app.models.analysis_models import AnalysisCalibrationProfile
 from app.repositories.analysis_repository import AnalysisRepository
-from app.repositories.calibration_repository import CalibrationRepository
 from app.repositories.capture_repository import CaptureRepository
 from app.repositories.record_repository import RecordRepository
 
@@ -243,10 +242,9 @@ class AnalysisService:
         repository: AnalysisRepository,
         record_repository: RecordRepository,
         capture_repository: CaptureRepository,
-        calibration_repository: CalibrationRepository,
+        calibration_service: Any,
         progress_callback: Callable[[AnalysisProgress], None] | None = None,
         error_reporter: Callable[[str], None] | None = None,
-        calibration_service: Any | None = None,
         *,
         maximum_workers: int = 1,
     ) -> None:
@@ -254,7 +252,6 @@ class AnalysisService:
         self.repository = repository
         self.record_repository = record_repository
         self.capture_repository = capture_repository
-        self.calibration_repository = calibration_repository
         self.progress_callback = progress_callback
         self.error_reporter = error_reporter
         self.calibration_service = calibration_service
@@ -283,15 +280,14 @@ class AnalysisService:
             raise AnalysisError(f"找不到紀錄：{record_id}")
         return record
 
-    def _require_calibration(self, calibration_id: str | None) -> CalibrationProfile:
+    def _require_active_calibration(
+        self,
+        calibration_id: str | None,
+    ) -> AnalysisCalibrationProfile:
         if not calibration_id:
             raise AnalysisError("分析尚未選擇相機校正設定檔。")
         try:
-            profile = (
-                self.calibration_service.get_profile(calibration_id)
-                if self.calibration_service is not None
-                else self.calibration_repository.get(calibration_id)
-            )
+            profile = self.calibration_service.get_profile(calibration_id)
         except Exception as error:
             raise AnalysisError(
                 f"相機校正設定檔無法使用：{error}"
@@ -299,6 +295,27 @@ class AnalysisService:
         if profile is None:
             raise AnalysisError(f"找不到相機校正設定檔：{calibration_id}")
         return profile
+
+    def _calibration_for_run(
+        self,
+        run: AnalysisRun,
+    ) -> AnalysisCalibrationProfile:
+        try:
+            payload = self._artifacts(run).read_calibration_reference()
+            profile = AnalysisCalibrationProfile.model_validate(payload)
+        except (OSError, ValueError, ValidationError) as error:
+            raise AnalysisError(
+                "分析建立時固化的相機校正快照遺失或格式無效。"
+            ) from error
+        if profile.calibration_id != run.calibration_id:
+            raise AnalysisError("分析的相機校正快照識別碼不一致。")
+        return profile
+
+    def get_calibration_reference(
+        self,
+        analysis_id: str,
+    ) -> AnalysisCalibrationProfile:
+        return self._calibration_for_run(self._require_run(analysis_id))
 
     def _output_dir(self, run: AnalysisRun) -> Path:
         path = Path(run.output_path).resolve()
@@ -494,15 +511,19 @@ class AnalysisService:
 
     @staticmethod
     def _adapted_calibration(
-        profile: CalibrationProfile,
+        profile: AnalysisCalibrationProfile,
         camera_resolutions: Mapping[str, tuple[int, int]],
-    ) -> StereoResolutionAdaptation:
+    ) -> CameraPairResolutionAdaptation:
         try:
-            return adapt_stereo_resolution(
-                calibration_resolution=(
+            return adapt_camera_pair_resolution(
+                projection_resolution=(
                     int(profile.image_width or 0),
                     int(profile.image_height or 0),
                 ),
+                calibration_resolutions={
+                    camera_id: tuple(profile.camera_image_sizes.get(camera_id, []))
+                    for camera_id in ("top", "side")
+                },
                 camera_resolutions=camera_resolutions,
                 top_camera_matrix=np.asarray(profile.top_camera_matrix),
                 side_camera_matrix=np.asarray(profile.side_camera_matrix),
@@ -515,9 +536,9 @@ class AnalysisService:
 
     @staticmethod
     def _adapted_rotating_profile(
-        profile: CalibrationProfile,
+        profile: AnalysisCalibrationProfile,
         resolution: tuple[int, int],
-    ) -> CalibrationProfile:
+    ) -> AnalysisCalibrationProfile:
         if profile.rotating_camera_matrix is None:
             raise AnalysisError("相機校正缺少 rotating 內參矩陣。")
         stored_size = profile.camera_image_sizes.get("rotating", [])
@@ -588,11 +609,7 @@ class AnalysisService:
 
     def list_sources(self) -> list[AnalysisSourceSummary]:
         try:
-            profiles = (
-                self.calibration_service.list_profiles()
-                if self.calibration_service is not None
-                else self.calibration_repository.list()
-            )
+            profiles = self.calibration_service.list_profiles()
         except Exception:
             logger.exception("Failed to inspect Calibration Profiles")
             profiles = []
@@ -823,7 +840,7 @@ class AnalysisService:
                     "影像目錄不可分析："
                     + "；".join(validation.not_ready_reasons)
                 )
-            profile = self._require_calibration(request.calibration_id)
+            profile = self._require_active_calibration(request.calibration_id)
             self._validate_calibration(
                 profile,
                 validation,
@@ -947,12 +964,12 @@ class AnalysisService:
 
     def _validate_calibration(
         self,
-        profile: CalibrationProfile,
+        profile: AnalysisCalibrationProfile,
         validation: CaptureRecordValidation,
         *,
         method: str = "top_side",
     ) -> None:
-        if not profile.valid or profile.status != "valid":
+        if not profile.valid or profile.status not in {"valid", "active"}:
             raise AnalysisError("相機校正設定檔尚未通過驗證或可能已失效。")
         if profile.potentially_invalid_reasons:
             raise AnalysisError("相機校正設定檔可能已失效，請重新校正。")
@@ -1023,7 +1040,7 @@ class AnalysisService:
                 if not validation.ready:
                     raise AnalysisError("紀錄不可分析：" + "；".join(validation.not_ready_reasons))
                 self._verify_frozen_manifest(run, validation)
-                profile = self._require_calibration(run.calibration_id)
+                profile = self._calibration_for_run(run)
                 self._validate_calibration(
                     profile,
                     validation,
@@ -1978,8 +1995,8 @@ class AnalysisService:
 
     @staticmethod
     def _rectification_maps(
-        profile: CalibrationProfile,
-        adaptation: StereoResolutionAdaptation,
+        profile: AnalysisCalibrationProfile,
+        adaptation: CameraPairResolutionAdaptation,
     ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         values = {
             "top": (
@@ -2213,7 +2230,7 @@ class AnalysisService:
 
     def _run_detection(self, run: AnalysisRun, cancel_event: Event) -> None:
         analysis = self._analysis_settings(run)
-        profile = self._require_calibration(run.calibration_id)
+        profile = self._calibration_for_run(run)
         pairs = self.repository.list_frame_pairs(run.analysis_id)
         if not pairs:
             raise AnalysisError("分析執行沒有已驗證的影格配對。")
@@ -2703,7 +2720,7 @@ class AnalysisService:
 
     def _run_reconstruction(self, run: AnalysisRun, cancel_event: Event) -> None:
         self._check_cancel(cancel_event)
-        profile = self._require_calibration(run.calibration_id)
+        profile = self._calibration_for_run(run)
         for camera_id in ("top", "side"):
             self._interpolate_camera(run, camera_id)
         self._resolve_all(run)

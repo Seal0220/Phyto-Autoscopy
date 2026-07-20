@@ -155,13 +155,15 @@ def test_analysis_accepts_and_adapts_different_fixed_camera_resolutions(
             "pytest-operator",
         )
         metadata = run.parameters["calibration_resolution_adaptation"]
-        assert metadata["calibration_resolution"] == [160, 120]
+        assert metadata["projection_resolution"] == [160, 120]
         assert metadata["cameras"]["top"] == {
+            "calibration_resolution": [160, 120],
             "analysis_resolution": [320, 240],
             "scale_x": 2.0,
             "scale_y": 2.0,
         }
         assert metadata["cameras"]["side"] == {
+            "calibration_resolution": [160, 120],
             "analysis_resolution": [240, 180],
             "scale_x": 1.5,
             "scale_y": 1.5,
@@ -169,8 +171,7 @@ def test_analysis_accepts_and_adapts_different_fixed_camera_resolutions(
 
         validated = service.validate(run.analysis_id)
         assert validated.status == "ready"
-        profile = service.calibration_repository.get(BASELINE_CALIBRATION_ID)
-        assert profile is not None
+        profile = service.calibration_service.get_profile(BASELINE_CALIBRATION_ID)
         adaptation = service._adapted_calibration(
             profile,
             service._camera_resolutions(run),
@@ -242,7 +243,7 @@ def test_frozen_sha256_detects_same_size_same_mtime_tampering(
         dataset["database"].close()
 
 
-def test_analysis_rejects_calibration_projected_as_stale(
+def test_analysis_uses_frozen_calibration_after_active_profile_changes(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -256,7 +257,7 @@ def test_analysis_rejects_calibration_projected_as_stale(
             ),
             "pytest-operator",
         )
-        profile = service.calibration_repository.get(BASELINE_CALIBRATION_ID)
+        profile = service.calibration_service.get_profile(BASELINE_CALIBRATION_ID)
         stale = profile.model_copy(
             update={
                 "status": "potentially_invalid",
@@ -274,8 +275,13 @@ def test_analysis_rejects_calibration_projected_as_stale(
                 return [stale]
 
         service.calibration_service = StaleCalibrationService()
-        with pytest.raises(AnalysisError, match="尚未通過驗證|可能已失效"):
-            service.validate(run.analysis_id)
+        validated = service.validate(run.analysis_id)
+        frozen = service.get_calibration_reference(run.analysis_id)
+
+        assert validated.status == "ready"
+        assert frozen.calibration_id == BASELINE_CALIBRATION_ID
+        assert frozen.valid is True
+        assert frozen.potentially_invalid_reasons == []
         source = service.list_sources()[0]
         assert source.calibration_status == "missing_or_invalid"
         assert source.ready is True

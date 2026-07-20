@@ -73,15 +73,15 @@ export default function AnalysisSetupSummaryStep({
             </dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-xs font-black text-neutral-500">相機校正</dt>
+            <dt className="text-xs font-black text-neutral-500">啟用校正</dt>
             <dd className="mt-1 m-0 break-all font-bold text-neutral-100">
               {calibration?.calibration_id || setup.calibrationId || "—"}
             </dd>
           </div>
           <div>
-            <dt className="text-xs font-black text-neutral-500">校正建立時間</dt>
+            <dt className="text-xs font-black text-neutral-500">校正更新時間</dt>
             <dd className="mt-1 m-0 font-bold text-neutral-100">
-              {formatDateTime(calibration?.created_at)}
+              {formatDateTime(calibration?.updated_at || calibration?.created_at)}
             </dd>
           </div>
           <div className="min-w-0">

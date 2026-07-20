@@ -131,8 +131,8 @@ export function imagePreviewDeviceOptions(
       assignedCameraId: typeof result?.camera_id === "string"
         ? result.camera_id
         : null,
-      cameraName: typeof result?.camera_name === "string"
-        ? result.camera_name.trim()
+      deviceName: typeof result?.device_name === "string"
+        ? result.device_name.trim()
         : "",
     });
   }
@@ -148,13 +148,11 @@ export function imagePreviewDeviceOptions(
 
       if (usedByAnotherCamera) return [];
 
-      const cameraName = state.cameraName
-        || IMAGE_PREVIEW_META[state.assignedCameraId]?.device
-        || "";
+      const deviceName = state.deviceName || "未知裝置";
 
       return [{
         value: String(deviceIndex),
-        label: `裝置 ${deviceIndex}${cameraName ? ` ${cameraName}` : ""}`,
+        label: `索引 ${deviceIndex} · ${deviceName}`,
       }];
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import NotificationsHistory from "@/features/Notifications/components/NotificationsHistory";
 import NotificationsToast from "@/features/Notifications/components/NotificationsToast";
@@ -15,9 +16,14 @@ export default function Notifications({
   onClear,
   onClose,
 }) {
+  const [mounted, setMounted] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [renderedToast, setRenderedToast] = useState(toast);
   const [toastOpen, setToastOpen] = useState(Boolean(toast));
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     let frame;
@@ -47,8 +53,10 @@ export default function Notifications({
     return () => window.clearTimeout(timer);
   }, [toast, onClose]);
 
-  return (
-    <div className="fixed right-5 bottom-5 z-60 flex w-[min(25rem,calc(100vw-2.5rem))] flex-col items-end gap-2 max-sm:right-3 max-sm:bottom-3 max-sm:w-[calc(100vw-1.5rem)]">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed right-5 bottom-5 z-400 flex w-[min(25rem,calc(100vw-2.5rem))] flex-col items-end gap-2 max-sm:right-3 max-sm:bottom-3 max-sm:w-[calc(100vw-1.5rem)]">
       <NotificationsToast
         toast={renderedToast}
         open={toastOpen}
@@ -83,6 +91,7 @@ export default function Notifications({
           onClick={() => setHistoryOpen((current) => !current)}
         />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

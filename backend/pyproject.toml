@@ -9,6 +9,7 @@ dependencies = [
   "uvicorn",
   "websockets",
   "opencv-python",
+  "cv2-enumerate-cameras>=1.3.3,<2",
   "numpy",
   "scipy",
   "pandas",

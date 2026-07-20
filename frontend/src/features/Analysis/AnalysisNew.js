@@ -14,7 +14,6 @@ import {
 
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
@@ -22,7 +21,6 @@ import {
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
-import AnalysisSetupCalibrationStep from "./components/AnalysisSetupCalibrationStep";
 import AnalysisSetupParametersStep from "./components/AnalysisSetupParametersStep";
 import AnalysisSetupProgress from "./components/AnalysisSetupProgress";
 import AnalysisSetupRangeStep from "./components/AnalysisSetupRangeStep";
@@ -32,13 +30,12 @@ import useAnalysisSetup from "./hooks/useAnalysisSetup";
 
 export default function AnalysisNew({
   initialRecordId = "",
-  initialStep = 1,
 }) {
   const router = useRouter();
   const { showNotification } = useNotificationsContext();
   const {
     sources,
-    calibrations,
+    activeCalibration,
     setup,
     currentStep,
     highestStep,
@@ -57,7 +54,6 @@ export default function AnalysisNew({
     scanSources,
     updateRoi,
     updateParameter,
-    upsertCalibration,
     goToStep,
     nextStep,
     previousStep,
@@ -66,15 +62,11 @@ export default function AnalysisNew({
     startRun,
   } = useAnalysisSetup({
     initialRecordId,
-    initialStep,
   });
   const selectedSource = sources.find(
     (source) => source.record_id === setup.recordId,
   );
-  const selectedCalibration = calibrations.find(
-    (calibration) => calibration.calibration_id === setup.calibrationId,
-  );
-  const hasOptions = sources.length > 0 || calibrations.length > 0;
+  const hasOptions = sources.length > 0 || Boolean(activeCalibration);
   const mutationLocked = Boolean(mutationPending) || mutationRequiresRefresh;
 
   useEffect(() => {
@@ -99,11 +91,18 @@ export default function AnalysisNew({
   ]);
 
   useEffect(() => {
-    const errors = setup.sourcePreview?.errors;
-    if (!Array.isArray(errors)) return;
+    const errors = Array.isArray(setup.sourcePreview?.errors)
+      ? setup.sourcePreview.errors
+      : [];
+    const warnings = Array.isArray(setup.sourcePreview?.warnings)
+      ? setup.sourcePreview.warnings
+      : [];
 
-    for (const error of errors) {
-      showNotification(error, "warning");
+    for (const message of [
+      ...errors,
+      ...warnings,
+    ]) {
+      showNotification(message, "warning");
     }
   }, [
     setup.sourcePreview,
@@ -125,21 +124,6 @@ export default function AnalysisNew({
     }
     if (currentStep === 2) {
       return (
-        <AnalysisSetupCalibrationStep
-          calibrations={calibrations}
-          source={setup.sourcePreview || selectedSource}
-          method={setup.method}
-          selectedCalibrationId={setup.calibrationId}
-          onSelect={(calibrationId) => updateSetup(
-            "calibrationId",
-            calibrationId,
-          )}
-          onProfileChange={upsertCalibration}
-        />
-      );
-    }
-    if (currentStep === 3) {
-      return (
         <AnalysisSetupRangeStep
           setup={setup}
           onChange={updateSetup}
@@ -147,7 +131,7 @@ export default function AnalysisNew({
         />
       );
     }
-    if (currentStep === 4) {
+    if (currentStep === 3) {
       return (
         <AnalysisSetupParametersStep
           method={setup.method}
@@ -165,7 +149,7 @@ export default function AnalysisNew({
       <AnalysisSetupSummaryStep
         setup={setup}
         source={selectedSource}
-        calibration={selectedCalibration}
+        calibration={activeCalibration}
         createdRun={createdRun}
       />
     );
@@ -247,25 +231,31 @@ export default function AnalysisNew({
           <PanelHeader
             title="新增分析"
             action={(
-              <Button onClick={() => router.push("/analysis")}>
-                <FiArrowLeft
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                返回分析首頁
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {loadError ? (
+                  <Button
+                    disabled={loading}
+                    onClick={() => void loadOptions()}
+                  >
+                    <FiRefreshCw
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    {loading ? "重新讀取中…" : "重新讀取"}
+                  </Button>
+                ) : null}
+                <Button onClick={() => router.push("/analysis")}>
+                  <FiArrowLeft
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  返回分析首頁
+                </Button>
+              </div>
             )}
           />
 
           <div className="grid gap-5 p-5 max-sm:p-4">
-            {loadError ? (
-              <RetryMessage
-                message={loadError}
-                onRetry={() => void loadOptions()}
-                retrying={loading}
-              />
-            ) : null}
-
             {loading && !hasOptions ? (
               <div
                 className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
@@ -314,7 +304,7 @@ export default function AnalysisNew({
                         </Button>
                       ) : null}
 
-                      {currentStep < 5 ? (
+                      {currentStep < 4 ? (
                         <Button
                           className="ml-auto"
                           variant="primary"

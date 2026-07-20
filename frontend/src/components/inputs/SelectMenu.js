@@ -1,11 +1,17 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { FiChevronDown } from "react-icons/fi";
+
+const MENU_GAP = 6;
+const VIEWPORT_MARGIN = 16;
+const MENU_MAX_HEIGHT = 256;
 
 export default function SelectMenu({
   id,
@@ -14,8 +20,16 @@ export default function SelectMenu({
   onValueChange,
   className,
 }) {
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({
+    left: VIEWPORT_MARGIN,
+    top: VIEWPORT_MARGIN,
+    width: 0,
+    maxHeight: MENU_MAX_HEIGHT,
+  });
   const rootRef = useRef(null);
+  const menuRef = useRef(null);
   const menuId = `${id}-options`;
   const normalizedValue = String(value ?? "");
   const normalizedOptions = options.map((option) => {
@@ -39,13 +53,59 @@ export default function SelectMenu({
     (option) => option.value === normalizedValue,
   );
 
+  const updateMenuPosition = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const rect = root.getBoundingClientRect();
+    const estimatedHeight = Math.min(
+      MENU_MAX_HEIGHT,
+      normalizedOptions.length * 40 + 8,
+    );
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
+    const spaceAbove = rect.top - MENU_GAP - VIEWPORT_MARGIN;
+    const placeAbove = spaceBelow < Math.min(estimatedHeight, 128)
+      && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(
+      80,
+      Math.min(
+        MENU_MAX_HEIGHT,
+        placeAbove ? spaceAbove : spaceBelow,
+      ),
+    );
+    const top = placeAbove
+      ? Math.max(
+        VIEWPORT_MARGIN,
+        rect.top - MENU_GAP - Math.min(estimatedHeight, availableHeight),
+      )
+      : rect.bottom + MENU_GAP;
+
+    setMenuPosition({
+      left: Math.min(
+        Math.max(VIEWPORT_MARGIN, rect.left),
+        Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.width - VIEWPORT_MARGIN),
+      ),
+      top,
+      width: rect.width,
+      maxHeight: availableHeight,
+    });
+  }, [normalizedOptions.length]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     function closeWhenOutside(event) {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      const insideTrigger = rootRef.current?.contains(event.target);
+      const insideMenu = menuRef.current?.contains(event.target);
+      if (!insideTrigger && !insideMenu) setOpen(false);
     }
+
     function closeOnEscape(event) {
       if (event.key === "Escape") setOpen(false);
     }
+
     document.addEventListener("pointerdown", closeWhenOutside);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
@@ -53,6 +113,22 @@ export default function SelectMenu({
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [
+    open,
+    updateMenuPosition,
+  ]);
 
   return (
     <div
@@ -74,7 +150,10 @@ export default function SelectMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={menuId}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) updateMenuPosition();
+          setOpen((current) => !current);
+        }}
       >
         <span className="min-w-0 truncate">
           {selectedOption?.label || normalizedValue}
@@ -87,38 +166,45 @@ export default function SelectMenu({
           aria-hidden="true"
         />
       </button>
-      <div
-        id={menuId}
-        role="listbox"
-        className={`
-          absolute top-[calc(100%+0.4rem)] left-0 z-[120] grid max-h-64 w-full overflow-x-hidden overflow-y-auto rounded-xl border border-white/15 bg-[#07130f]/95 p-1 shadow-2xl backdrop-blur-xl transition-opacity duration-150
-          ${open ? "opacity-100" : "pointer-events-none opacity-0"}
-        `}
-        aria-hidden={!open}
-        inert={!open}
-      >
-        {normalizedOptions.map((option) => (
-          <button
-            className={`
-              cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors duration-150 hover:bg-emerald-400/15 hover:text-emerald-100 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-transparent
-              ${option.value === normalizedValue ? "bg-white/10 text-white" : "text-neutral-300"}
-            `}
-            type="button"
-            role="option"
-            aria-selected={option.value === normalizedValue}
-            aria-disabled={option.disabled}
-            disabled={option.disabled}
-            tabIndex={open ? 0 : -1}
-            key={option.value}
-            onClick={() => {
-              onValueChange(option.rawValue);
-              setOpen(false);
-            }}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+
+      {mounted && createPortal(
+        <div
+          id={menuId}
+          role="listbox"
+          className={`fixed z-320 grid overflow-x-hidden overflow-y-auto rounded-xl border border-white/15 bg-[#07130f]/95 p-1 shadow-2xl backdrop-blur-xl transition-opacity duration-150 ${
+            open
+              ? "opacity-100"
+              : "pointer-events-none opacity-0"
+          }`}
+          style={menuPosition}
+          aria-hidden={!open}
+          inert={!open}
+          ref={menuRef}
+        >
+          {normalizedOptions.map((option) => (
+            <button
+              className={`
+                cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors duration-150 hover:bg-emerald-400/15 hover:text-emerald-100 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-transparent
+                ${option.value === normalizedValue ? "bg-white/10 text-white" : "text-neutral-300"}
+              `}
+              type="button"
+              role="option"
+              aria-selected={option.value === normalizedValue}
+              aria-disabled={option.disabled}
+              disabled={option.disabled}
+              tabIndex={open ? 0 : -1}
+              key={option.value}
+              onClick={() => {
+                onValueChange(option.rawValue);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

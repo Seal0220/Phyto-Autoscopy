@@ -34,7 +34,7 @@ test("all App Router page entries live below the pages route group", () => {
   assert.equal(existsSync(path.join(appRoot, "(page)")), false);
 });
 
-test("the pages route group owns root, capture, analysis, and models entries", () => {
+test("the pages route group owns root, capture, analysis, calibration, and models entries", () => {
   const expected = [
     path.join(pagesRoot, "page.js"),
     path.join(pagesRoot, "capture", "page.js"),
@@ -43,6 +43,7 @@ test("the pages route group owns root, capture, analysis, and models entries", (
     path.join(pagesRoot, "analysis", "[analysisId]", "page.js"),
     path.join(pagesRoot, "analysis", "[analysisId]", "review", "page.js"),
     path.join(pagesRoot, "analysis", "[analysisId]", "results", "page.js"),
+    path.join(pagesRoot, "calibration", "page.js"),
     path.join(pagesRoot, "models", "page.js"),
   ];
 

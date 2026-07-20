@@ -6,21 +6,16 @@ import {
 
 import Button from "@/components/buttons/Button";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
-import InnerPanel from "@/components/panels/InnerPanel";
 import { StatusPill } from "@/components/panels/Panel";
 import { formatDateTime } from "@/lib/formatUtils";
-
-function calibrationLabel(status) {
-  if (["valid", "ready"].includes(status)) return "校正有效";
-  if (!status || status === "missing") return "缺少有效校正";
-  return "校正未就緒";
-}
 
 export default function AnalysisAvailableRecords({
   selectedRecordId,
   sources,
   onSelect,
 }) {
+  const availableSources = sources.filter((source) => source.ready);
+
   return (
     <section
       className="grid gap-3"
@@ -44,18 +39,17 @@ export default function AnalysisAvailableRecords({
       </SubsectionHeader>
 
       <div
-        className="grid max-h-80 gap-3 overflow-y-auto overscroll-contain pr-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        className="max-h-80 min-h-0 overflow-y-auto overscroll-contain rounded-[22px] border border-white/10 bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
         aria-label="可分析紀錄清單"
         role="list"
         tabIndex={0}
       >
-        {sources.length ? sources.map((source) => {
+        {availableSources.length ? availableSources.map((source) => {
           const selected = source.record_id === selectedRecordId;
 
           return (
-            <InnerPanel
-              as="article"
-              className="grid-cols-[minmax(0,1fr)_auto] items-start max-[720px]:grid-cols-1"
+            <article
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-white/10 p-4 last:border-b-0 max-[720px]:grid-cols-1"
               key={source.record_id}
               role="listitem"
             >
@@ -64,20 +58,7 @@ export default function AnalysisAvailableRecords({
                   <h3 className="m-0 min-w-0 break-all text-sm font-black tracking-widest text-white">
                     {source.record_id || "未命名紀錄"}
                   </h3>
-                  <StatusPill tone={source.ready ? "success" : "warning"}>
-                    {source.ready ? "可分析" : "尚未就緒"}
-                  </StatusPill>
-                  <StatusPill
-                    tone={[
-                      "valid",
-                      "ready",
-                    ].includes(source.calibration_status)
-                      ? "success"
-                      : "neutral"
-                    }
-                  >
-                    {calibrationLabel(source.calibration_status)}
-                  </StatusPill>
+                  <StatusPill tone="success">可分析</StatusPill>
                   {selected ? (
                     <StatusPill tone="success">已帶入</StatusPill>
                   ) : null}
@@ -122,7 +103,7 @@ export default function AnalysisAvailableRecords({
               <Button
                 className="max-[720px]:w-full"
                 variant={selected ? "default" : "primary"}
-                disabled={!source.ready || selected}
+                disabled={selected}
                 onClick={() => void onSelect(source.record_id)}
               >
                 {selected ? (
@@ -138,14 +119,15 @@ export default function AnalysisAvailableRecords({
                 )}
                 {selected ? "已帶入" : "帶入目錄"}
               </Button>
-            </InnerPanel>
+            </article>
           );
         }) : (
-          <InnerPanel role="listitem">
-            <p className="m-0 py-4 text-center text-sm font-semibold text-neutral-400">
-              尚無捕捉紀錄，可直接手動填寫影像目錄。
-            </p>
-          </InnerPanel>
+          <p
+            className="m-0 p-4 text-center text-sm font-semibold text-neutral-400"
+            role="listitem"
+          >
+            尚無可分析紀錄，可直接手動填寫影像目錄。
+          </p>
         )}
       </div>
     </section>

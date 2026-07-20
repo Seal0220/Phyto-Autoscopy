@@ -8,6 +8,10 @@ export const MAIN_NAVIGATION_ITEMS = [
     label: "分析",
   },
   {
+    href: "/calibration",
+    label: "校正",
+  },
+  {
     href: "/models",
     label: "模型",
   },

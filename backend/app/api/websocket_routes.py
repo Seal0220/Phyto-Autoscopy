@@ -24,7 +24,13 @@ from app.security.auth import (
     rate_limit_websocket,
     websocket_tickets,
 )
-from app.services.schedule_lock import ensure_manual_changes_allowed
+from app.services.schedule_lock import (
+    ensure_calibration_unlocked,
+    ensure_manual_changes_allowed,
+    ensure_schedule_start_allowed,
+    schedule_calibration_guard,
+)
+from app.services.system_activity_service import system_is_active
 
 router = APIRouter(tags=["websocket"])
 logger = logging.getLogger(__name__)
@@ -36,7 +42,10 @@ SCHEDULE_ALLOWED_MANUAL_ACTIONS = frozenset({
 })
 
 
-def build_snapshot(context: AppContext) -> dict[str, Any]:
+def build_snapshot(
+    context: AppContext,
+    owner: str | None = None,
+) -> dict[str, Any]:
     settings = context.settings
     schedule = context.schedule_service.get_status()
     disk = context.health_service.disk_status()
@@ -54,6 +63,29 @@ def build_snapshot(context: AppContext) -> dict[str, Any]:
             "last_error": None,
         }
     )
+    motor = context.motor_controller.status()
+    calibration_service = getattr(
+        context,
+        "unified_calibration_service",
+        None,
+    )
+    calibration = (
+        calibration_service.status(owner).model_dump(mode="json")
+        if calibration_service is not None
+        else {
+            "lock": {"locked": False},
+            "cameras": [],
+            "intrinsics": [],
+            "active_extrinsic": None,
+            "detections": {},
+        }
+    )
+    active = system_is_active(
+        schedule_status=schedule.status,
+        motor_moving=motor.moving,
+        analysis_status=analysis.get("status"),
+        calibration_locked=bool(calibration.get("lock", {}).get("locked")),
+    )
     return {
         "system": {
             "project_name": settings.project.name,
@@ -61,6 +93,7 @@ def build_snapshot(context: AppContext) -> dict[str, Any]:
             "device_name": settings.project.device_name,
             "device_version": settings.project.device_version,
             "mock_mode": settings.hardware.mock_mode,
+            "active": active,
             "started_at": context.started_at.isoformat(),
             "schedule_status": schedule.status,
             "active_record_id": context.record_service.active_record_id,
@@ -70,15 +103,21 @@ def build_snapshot(context: AppContext) -> dict[str, Any]:
         "cameras": [
             item.model_dump(mode="json") for item in context.camera_manager.get_statuses()
         ],
-        "motor": context.motor_controller.status().model_dump(mode="json"),
+        "motor": motor.model_dump(mode="json"),
         "schedule": schedule.model_dump(mode="json"),
         "analysis": analysis,
+        "calibration": calibration,
     }
 
 
-def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> Any:
+def run_command(
+    context: AppContext,
+    action: str,
+    payload: dict[str, Any],
+    owner: str | None = None,
+) -> Any:
     if action == "system.snapshot":
-        return build_snapshot(context)
+        return build_snapshot(context, owner)
     if action == "system.errors.reset":
         context.clear_errors()
         return {"cleared": True}
@@ -88,6 +127,9 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
         and action not in SCHEDULE_ALLOWED_MANUAL_ACTIONS
     ):
         ensure_manual_changes_allowed(context)
+
+    if action in {"camera.reconnect", "camera.reconnect_all"}:
+        ensure_calibration_unlocked(context)
 
     if action == "motor.engage":
         return context.motor_controller.engage().model_dump(mode="json")
@@ -141,8 +183,10 @@ def run_command(context: AppContext, action: str, payload: dict[str, Any]) -> An
         ]
 
     if action == "schedule.start":
-        request = ScheduleStartRequest.model_validate(payload)
-        return context.schedule_service.start(request).model_dump(mode="json")
+        with schedule_calibration_guard(context):
+            ensure_schedule_start_allowed(context)
+            request = ScheduleStartRequest.model_validate(payload)
+            return context.schedule_service.start(request).model_dump(mode="json")
     if action == "schedule.pause":
         return context.schedule_service.pause().model_dump(mode="json")
     if action == "schedule.resume":
@@ -224,7 +268,10 @@ async def status_websocket(websocket: WebSocket) -> None:
             await websocket.send_json(message)
 
     async def send_snapshot() -> None:
-        await send({"type": "snapshot", "payload": build_snapshot(context)})
+        await send({
+            "type": "snapshot",
+            "payload": build_snapshot(context, principal.actor),
+        })
 
     async def execute_command(
         command_id: Any,
@@ -237,7 +284,13 @@ async def status_websocket(websocket: WebSocket) -> None:
             ensure_permission(principal, permission_for_websocket_action(action))
             rate_limit_websocket(principal, "command")
             if action in interrupt_actions:
-                result = await asyncio.to_thread(run_command, context, action, payload)
+                result = await asyncio.to_thread(
+                    run_command,
+                    context,
+                    action,
+                    payload,
+                    principal.actor,
+                )
             else:
                 async with command_lock:
                     result = await asyncio.to_thread(
@@ -245,6 +298,7 @@ async def status_websocket(websocket: WebSocket) -> None:
                         context,
                         action,
                         payload,
+                        principal.actor,
                     )
             write_audit_event(
                 actor=principal.actor,

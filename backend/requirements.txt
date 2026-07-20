@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 websockets
-opencv-python
+opencv-contrib-python
+cv2-enumerate-cameras>=1.3.3,<2
 numpy
 scipy
 pandas

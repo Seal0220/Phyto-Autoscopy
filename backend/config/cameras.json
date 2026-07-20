@@ -8,7 +8,7 @@
       "preview_fps": 15,
       "capture_fps": 15,
       "jpeg_quality": 100,
-      "enabled": false
+      "enabled": true
     },
     "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
