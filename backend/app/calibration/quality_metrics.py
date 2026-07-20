@@ -7,6 +7,10 @@ import numpy as np
 
 
 MINIMUM_INTRINSIC_SAMPLES = 8
+MINIMUM_INTRINSIC_GRID_CELLS = 5
+MINIMUM_INTRINSIC_EDGE_SAMPLES = 2
+MINIMUM_INTRINSIC_SCALE_SPAN = 0.08
+MINIMUM_INTRINSIC_POSE_DIVERSITY = 0.12
 MINIMUM_CHARUCO_CORNERS = 8
 MINIMUM_CHESSBOARD_CORNERS = 12
 MINIMUM_SHARPNESS = 35.0
@@ -94,7 +98,7 @@ def is_duplicate_pose(
     return False
 
 
-def sample_coverage(samples: Sequence[object]) -> dict[str, float | int | bool]:
+def sample_coverage(samples: Sequence[object]) -> dict[str, object]:
     accepted = [sample for sample in samples if bool(getattr(sample, "accepted", False))]
     centers = [
         getattr(sample, "board_center", None)
@@ -131,17 +135,26 @@ def sample_coverage(samples: Sequence[object]) -> dict[str, float | int | bool]:
     scale_span = max(scales) - min(scales) if len(scales) >= 2 else 0.0
     ready = (
         len(accepted) >= MINIMUM_INTRINSIC_SAMPLES
-        and len(occupied) >= 5
-        and edge_hits >= 2
-        and scale_span >= 0.08
-        and diversity >= 0.12
+        and len(occupied) >= MINIMUM_INTRINSIC_GRID_CELLS
+        and edge_hits >= MINIMUM_INTRINSIC_EDGE_SAMPLES
+        and scale_span >= MINIMUM_INTRINSIC_SCALE_SPAN
+        and diversity >= MINIMUM_INTRINSIC_POSE_DIVERSITY
     )
     return {
         "accepted_sample_count": len(accepted),
+        "required_sample_count": MINIMUM_INTRINSIC_SAMPLES,
         "grid_coverage": len(occupied) / 9.0,
+        "occupied_grid_cells": [
+            [column, row]
+            for column, row in sorted(occupied)
+        ],
+        "required_grid_cell_count": MINIMUM_INTRINSIC_GRID_CELLS,
         "edge_sample_count": edge_hits,
+        "required_edge_sample_count": MINIMUM_INTRINSIC_EDGE_SAMPLES,
         "scale_span": scale_span,
+        "required_scale_span": MINIMUM_INTRINSIC_SCALE_SPAN,
         "pose_diversity": diversity,
+        "required_pose_diversity": MINIMUM_INTRINSIC_POSE_DIVERSITY,
         "ready": ready,
     }
 

@@ -196,7 +196,15 @@ rate_limiter = SlidingWindowRateLimiter()
 
 
 def rate_limit_http(principal: Principal, method: str, path: str) -> None:
-    is_write = method.upper() not in {"GET", "HEAD", "OPTIONS"}
+    normalized_method = method.upper()
+    if (
+        normalized_method == "DELETE"
+        and path.startswith("/api/calibration/intrinsics/")
+        and "/runs/" in path
+    ):
+        return
+
+    is_write = normalized_method not in {"GET", "HEAD", "OPTIONS"}
     scope = "write" if is_write else "read"
     rate_limiter.check(
         f"http:{principal.actor}:{scope}:{path}",

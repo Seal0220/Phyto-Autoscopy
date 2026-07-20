@@ -24,7 +24,6 @@ from app.models.calibration_models import (
     UnifiedCalibrationStatus,
 )
 CAMERA_IDS = ("top", "side", "rotating")
-CALIBRATION_DETECTION_FPS = 10
 
 
 class CalibrationService:
@@ -107,9 +106,7 @@ class CalibrationService:
     def create_board(
         self,
         request: CalibrationBoardCreateRequest,
-        owner: str,
     ) -> CalibrationBoardProfile:
-        self.lock_service.ensure_owner(owner)
         existing = {item.board_profile_id for item in self.repository.list_boards()}
         prefix = "board"
         index = 1
@@ -340,7 +337,6 @@ class CalibrationService:
                         continue
                 else:
                     consecutive_errors = 0
-                await asyncio.sleep(1.0 / CALIBRATION_DETECTION_FPS)
         finally:
             if end_preview is not None:
                 end_preview(camera_id)

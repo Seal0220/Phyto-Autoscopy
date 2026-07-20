@@ -177,6 +177,11 @@ if not exist "%ROOT%.venv\Scripts\python.exe" (
 )
 
 echo Installing backend dependencies...
+call "%ROOT%.venv\Scripts\python.exe" -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python-headless
+if errorlevel 1 (
+  echo Conflicting OpenCV package cleanup failed.
+  goto finish
+)
 call "%ROOT%.venv\Scripts\python.exe" -m pip install -r "%BACKEND_DIR%\requirements.txt"
 if errorlevel 1 (
   echo Backend dependency installation failed.

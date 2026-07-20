@@ -9,6 +9,29 @@ import cv2
 import numpy as np
 
 
+_FISHEYE_CALIBRATION_FLAG_FALLBACKS = {
+    "CALIB_RECOMPUTE_EXTRINSIC": 1 << 1,
+    "CALIB_CHECK_COND": 1 << 2,
+    "CALIB_FIX_SKEW": 1 << 3,
+}
+
+
+class OpenCVCompatibilityError(RuntimeError):
+    pass
+
+
+def _fisheye_calibration_flags() -> int:
+    fisheye = getattr(cv2, "fisheye", None)
+    if fisheye is None or not callable(getattr(fisheye, "calibrate", None)):
+        raise OpenCVCompatibilityError(
+            "目前 OpenCV 缺少 fisheye 相機校正功能。"
+        )
+    return sum(
+        int(getattr(fisheye, name, fallback))
+        for name, fallback in _FISHEYE_CALIBRATION_FLAG_FALLBACKS.items()
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CameraModelResult:
     camera_model: str
@@ -93,11 +116,7 @@ def _calibrate_fisheye(
         image_size,
         matrix,
         distortion,
-        flags=(
-            cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
-            | cv2.fisheye.CALIB_CHECK_COND
-            | cv2.fisheye.CALIB_FIX_SKEW
-        ),
+        flags=_fisheye_calibration_flags(),
         criteria=(
             cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
             120,

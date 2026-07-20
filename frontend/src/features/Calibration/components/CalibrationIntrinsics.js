@@ -21,6 +21,7 @@ import { StatusPill } from "@/components/panels/Panel";
 
 import { CALIBRATION_CAMERAS } from "../calibrationConfig";
 import { intrinsicCaptureNotice } from "../lib/calibrationUtils";
+import CalibrationCoverageMap from "./CalibrationCoverageMap";
 import CalibrationStartButton from "./CalibrationStartButton";
 
 const CAPTURE_MODE_OPTIONS = [
@@ -92,18 +93,24 @@ function CalibrationIntrinsicCard({
   onAction,
   onBeginCalibration,
   onEndCalibration,
+  onStopCalibration,
   onNotify,
   onRememberRun,
 }) {
   const [captureMode, setCaptureMode] = useState("automatic");
   const lastCaptureNoticeRef = useRef("");
-  const acceptedCount = (run?.samples || []).filter(
-    (sample) => sample.accepted,
-  ).length;
   const coverageReady = Boolean(run?.coverage?.ready);
+  const selectedResult = run?.selected_result;
   const enabled = cameraStatus?.enabled ?? true;
   const connected = Boolean(cameraStatus?.connected);
   const currentIntrinsicStatus = intrinsicStatus(intrinsics);
+  const solveAction = `intrinsic.solve.${camera.id}`;
+  const calculating = pendingAction === solveAction;
+  const resumedActionDisabled = Boolean(
+    lockedByAnotherOperator
+    || startDisabled
+    || pendingAction,
+  );
 
   async function runAction(
     action,
@@ -117,8 +124,22 @@ function CalibrationIntrinsicCard({
     return outcome;
   }
 
-  async function captureSample() {
+  async function ensureCalibrationLock() {
+    if (locked) return true;
+    const outcome = await onBeginCalibration(
+      "intrinsic",
+      {
+        run_id: run?.run_id,
+      },
+    );
+    return Boolean(outcome);
+  }
+
+  async function captureSample({
+    acquireLock = false,
+  } = {}) {
     if (!run?.run_id) return null;
+    if (acquireLock && !(await ensureCalibrationLock())) return null;
     const outcome = await runAction(
       `intrinsic.capture.${camera.id}`,
       `/api/calibration/intrinsics/${camera.id}/capture`,
@@ -133,6 +154,41 @@ function CalibrationIntrinsicCard({
     if (notice && notice.message !== lastCaptureNoticeRef.current) {
       lastCaptureNoticeRef.current = notice.message;
       onNotify(notice.message, notice.tone);
+    }
+    return outcome;
+  }
+
+  async function solveCalibration() {
+    if (!(await ensureCalibrationLock())) return null;
+    return runAction(
+      solveAction,
+      `/api/calibration/intrinsics/${camera.id}/solve`,
+      {
+        body: {
+          run_id: run.run_id,
+        },
+        timeoutMs: 180_000,
+        successMessage: `${camera.label}內參計算完成。`,
+      },
+    );
+  }
+
+  async function applyCalibration() {
+    if (!(await ensureCalibrationLock())) return null;
+    const outcome = await onAction(
+      `intrinsic.apply.${camera.id}`,
+      `/api/calibration/intrinsics/${camera.id}/apply`,
+      {
+        body: {
+          run_id: run.run_id,
+        },
+        timeoutMs: 180_000,
+        successMessage: `${camera.label}內參已更新。`,
+      },
+    );
+    if (outcome) {
+      onRememberRun(camera.id, null);
+      await onEndCalibration();
     }
     return outcome;
   }
@@ -165,7 +221,6 @@ function CalibrationIntrinsicCard({
       !locked
       || run?.capture_mode !== "automatic"
       || !["capturing", "ready"].includes(run?.status)
-      || coverageReady
     ) {
       return undefined;
     }
@@ -181,7 +236,6 @@ function CalibrationIntrinsicCard({
     }, AUTOMATIC_CAPTURE_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
   }, [
-    coverageReady,
     detection?.capture_ready,
     locked,
     pendingAction,
@@ -220,162 +274,146 @@ function CalibrationIntrinsicCard({
           <StatusPill tone={currentIntrinsicStatus.tone}>
             {currentIntrinsicStatus.label}
           </StatusPill>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+            {run ? (
+              <StatusPill tone={coverageReady ? "success" : "warning"}>
+                {coverageReady ? "樣本已足夠" : "收集樣本中"}
+              </StatusPill>
+            ) : null}
+            {selectedResult ? (
+              <span className="font-bold text-neutral-300">
+                驗證誤差 {displayError(selectedResult.validation_error_px)}
+              </span>
+            ) : null}
+          </div>
         </div>
 
-        {intrinsics ? (
-          <dl className="grid grid-cols-3 gap-3 text-xs">
-            <div className="min-w-0">
-              <dt className="font-black text-neutral-500">模型</dt>
-              <dd className="mt-1 m-0 truncate font-bold text-neutral-200">
-                {intrinsics.camera_model}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="font-black text-neutral-500">解析度</dt>
-              <dd className="mt-1 m-0 font-bold text-neutral-200">
-                {intrinsics.width} × {intrinsics.height}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="font-black text-neutral-500">誤差</dt>
-              <dd className="mt-1 m-0 font-bold text-neutral-200">
-                {displayError(intrinsics.reprojection_error_px)}
-              </dd>
-            </div>
-          </dl>
-        ) : null}
+
+        <dl className="relative grid grid-cols-3 gap-x-2 border-white/10 px-2 before:pointer-events-none before:absolute before:top-3 before:bottom-0 before:left-[33.333%] before:w-px before:bg-white/10 before:content-[''] after:pointer-events-none after:absolute after:top-3 after:bottom-0 after:left-[66.666%] after:w-px after:bg-white/10 after:content-['']">
+          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 pr-3">
+            <dt className="shrink-0 text-xs font-bold text-neutral-200">
+              模型
+            </dt>
+            <dd
+              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
+                }`}
+            >
+              {intrinsics?.camera_model || "尚無資料"}
+            </dd>
+          </div>
+          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 px-3">
+            <dt className="shrink-0 text-xs font-bold text-neutral-200">
+              解析度
+            </dt>
+            <dd
+              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
+                }`}
+            >
+              {intrinsics?.width && intrinsics?.height
+                ? `${intrinsics.width} × ${intrinsics.height}`
+                : "尚無資料"
+              }
+            </dd>
+          </div>
+          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 pl-3">
+            <dt className="shrink-0 text-xs font-bold text-neutral-200">
+              誤差
+            </dt>
+            <dd
+              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
+                }`}
+            >
+              {intrinsics
+                ? displayError(intrinsics.reprojection_error_px)
+                : "尚無資料"
+              }
+            </dd>
+          </div>
+        </dl>
 
         {!run ? (
-          <>
-            <div className="grid gap-3">
-              <SelectInput
-                id={`calibration-${camera.id}-capture-mode`}
-                label="擷取方式"
-                value={captureMode}
-                options={CAPTURE_MODE_OPTIONS}
-                onValueChange={setCaptureMode}
-              />
-            </div>
+          <div className="flex flex-col gap-3">
+            <ActionRow
+              className="flex flex-row gap-3 items-center justify-center"
+              dividerClassName="my-0!"
+            >
+              <div className="min-w-32">
+                <SelectInput
+                  id={`calibration-${camera.id}-capture-mode`}
+                  label="擷取方式"
+                  value={captureMode}
+                  options={CAPTURE_MODE_OPTIONS}
+                  onValueChange={setCaptureMode}
+                />
+              </div>
 
-            <ActionRow>
               <CalibrationStartButton
-                disabled={
-                  lockedByAnotherOperator
-                  || startDisabled
-                  || !connected
-                  || !boardProfileId
-                  || Boolean(pendingAction)
-                }
+                disabled={lockedByAnotherOperator || startDisabled || !connected || !boardProfileId || Boolean(pendingAction)}
                 systemActive={systemActive}
                 onClick={() => void startCalibration()}
               />
             </ActionRow>
-          </>
+          </div>
         ) : (
           <>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/10 p-3 text-xs">
-              <StatusPill tone={coverageReady ? "success" : "warning"}>
-                {coverageReady ? "樣本已足夠" : "收集樣本中"}
-              </StatusPill>
-              <span className="font-bold text-neutral-300">
-                已接受 {acceptedCount} 張
-              </span>
-              <span className="font-bold text-neutral-400">
-                覆蓋 {Math.round(Number(run.coverage?.grid_coverage || 0) * 100)}%
-              </span>
-              {run.selected_result ? (
-                <span className="font-bold text-neutral-300">
-                  驗證誤差 {displayError(run.selected_result.validation_error_px)}
-                </span>
-              ) : null}
-            </div>
+            <CalibrationCoverageMap run={run} />
 
-            <ActionRow>
-              <Button
-                disabled={!locked || !connected}
-                onClick={() => void captureSample()}
+            <div className="flex flex-col gap-3">
+              <ActionRow
+                className="flex flex-row gap-3 items-center justify-center"
+                dividerClassName="my-0!"
               >
-                <FiCamera
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                擷取樣本
-              </Button>
-              <Button
-                disabled={!locked || !coverageReady}
-                onClick={() => void runAction(
-                  `intrinsic.solve.${camera.id}`,
-                  `/api/calibration/intrinsics/${camera.id}/solve`,
-                  {
-                    body: {
-                      run_id: run.run_id,
-                    },
-                    timeoutMs: 180_000,
-                    successMessage: `${camera.label}內參計算完成。`,
-                  },
-                )}
-              >
-                <FiCheck
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                計算
-              </Button>
-              <Button
-                variant="primary"
-                disabled={
-                  !locked
-                  || run.status !== "solved"
-                }
-                onClick={async () => {
-                  const outcome = await onAction(
-                    `intrinsic.apply.${camera.id}`,
-                    `/api/calibration/intrinsics/${camera.id}/apply`,
-                    {
-                      body: {
-                        run_id: run.run_id,
-                      },
-                      timeoutMs: 180_000,
-                      successMessage: `${camera.label}內參已更新。`,
-                    },
-                  );
-                  if (outcome) {
-                    onRememberRun(camera.id, null);
-                    await onEndCalibration();
+                <Button
+                  disabled={!connected || resumedActionDisabled}
+                  onClick={() => void captureSample({
+                    acquireLock: true,
+                  })}
+                >
+                  <FiCamera
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  擷取樣本
+                </Button>
+                <Button
+                  disabled={!coverageReady || resumedActionDisabled}
+                  onClick={() => void solveCalibration()}
+                >
+                  <FiCheck
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {calculating ? "計算中…" : "計算"}
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={
+                    run.status !== "solved"
+                    || resumedActionDisabled
                   }
-                }}
-              >
-                <FiSave
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                套用
-              </Button>
-              <Button
-                variant="danger"
-                disabled={!locked}
-                onClick={async () => {
-                  const outcome = await onAction(
-                    `intrinsic.delete.${camera.id}`,
-                    `/api/calibration/intrinsics/${camera.id}/runs/${encodeURIComponent(run.run_id)}`,
-                    {
-                      method: "DELETE",
-                      successMessage: `${camera.label}此次內參校正已取消。`,
-                    },
-                  );
-                  if (outcome) {
-                    onRememberRun(camera.id, null);
-                    await onEndCalibration();
-                  }
-                }}
-              >
-                <FiStopCircle
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                停止校正
-              </Button>
-            </ActionRow>
+                  onClick={() => void applyCalibration()}
+                >
+                  <FiSave
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  套用
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => void onStopCalibration(
+                    camera.id,
+                    run.run_id,
+                  )}
+                >
+                  <FiStopCircle
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  停止校正
+                </Button>
+              </ActionRow>
+            </div>
           </>
         )}
       </div>
@@ -395,6 +433,7 @@ export default function CalibrationIntrinsics({
   onAction,
   onBeginCalibration,
   onEndCalibration,
+  onStopCalibration,
   onNotify,
   onRememberRun,
 }) {
@@ -423,6 +462,7 @@ export default function CalibrationIntrinsics({
           onAction={onAction}
           onBeginCalibration={onBeginCalibration}
           onEndCalibration={onEndCalibration}
+          onStopCalibration={onStopCalibration}
           onNotify={onNotify}
           onRememberRun={onRememberRun}
           key={camera.id}

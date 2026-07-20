@@ -120,10 +120,9 @@ def list_calibration_boards(
 @router.post("/boards", response_model=CalibrationBoardProfile)
 def create_calibration_board(
     payload: CalibrationBoardCreateRequest,
-    request: Request,
     context: AppContext = Depends(get_context),
 ) -> CalibrationBoardProfile:
-    return _service(context).create_board(payload, _owner(request))
+    return _service(context).create_board(payload)
 
 
 @router.get("/boards/{board_profile_id}/image")
@@ -239,18 +238,18 @@ def apply_intrinsic_run(
 
 
 @router.delete("/intrinsics/{camera_id}/runs/{run_id}")
-def delete_intrinsic_run(
+def cancel_intrinsic_run(
     camera_id: str,
     run_id: str,
     request: Request,
     context: AppContext = Depends(get_context),
 ) -> dict[str, str]:
-    context.intrinsic_calibration_service.delete_run(
+    context.intrinsic_calibration_service.cancel_run(
         camera_id,
         run_id,
         _owner(request),
     )
-    return {"deleted": run_id}
+    return {"cancelled": run_id}
 
 
 @router.get("/intrinsics/{camera_id}/preview")

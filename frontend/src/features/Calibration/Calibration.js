@@ -40,6 +40,7 @@ export default function Calibration() {
     mutate,
     acquireLock,
     releaseLock,
+    stopIntrinsicCalibration,
     rememberRun,
     clearError,
     connection,
@@ -172,6 +173,20 @@ export default function Calibration() {
     showNotification,
   ]);
 
+  const stopCalibration = useCallback(async (
+    cameraId,
+    runId,
+  ) => {
+    const outcome = await stopIntrinsicCalibration(cameraId, runId);
+    if (outcome?.successMessage) {
+      showNotification(outcome.successMessage, "success");
+    }
+    return outcome;
+  }, [
+    showNotification,
+    stopIntrinsicCalibration,
+  ]);
+
   return (
     <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
       <MainNavigation isConnected={connection === "connected"} />
@@ -219,6 +234,7 @@ export default function Calibration() {
                 onAction={onAction}
                 onBeginCalibration={beginCalibration}
                 onEndCalibration={endCalibration}
+                onStopCalibration={stopCalibration}
                 onNotify={showNotification}
                 onRememberRun={rememberRun}
               />

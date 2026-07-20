@@ -1633,3 +1633,1029 @@
 {"timestamp": "2026-07-20T06:57:55.813256+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
 {"timestamp": "2026-07-20T06:57:56.017628+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
 {"timestamp": "2026-07-20T06:57:56.295777+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:06:42.500188+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.500188+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.501191+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.502696+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.504203+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.507215+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.576116+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.587171+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.595311+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.602344+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:42.609390+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:06:45.055775+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:06:46.323942+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:06:51.584442+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:06:52.050406+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:06:53.422276+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:07:08.339118+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:07:08.348616+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:07:24.307666+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/motor/emergency-stop", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:12:33.845709+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:12:33.850238+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:12:44.250896+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:12:44.267978+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:21:21.259604+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:21:21.261620+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:22:04.924600+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:22:04.943774+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:22:09.253891+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_001", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:22:15.748763+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:22:16.371664+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:22:22.179898+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T07:23:08.092835+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:23:08.094540+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:23:22.325923+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:23:22.326933+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.569727+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.569727+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.575761+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.568221+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.713434+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.722994+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:24:23.733713+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.261514+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.265532+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.266036+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.269652+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.288784+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.305440+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:25.323481+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:33.981954+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:36.138727+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:38.315824+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:41.756203+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:42.526849+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:27:43.296416+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:06.538295+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:06.685219+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:17.343752+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:20.410453+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:26.379491+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:27.707428+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:28.542485+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:29.422860+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:30.674939+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:31.594680+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:32.418041+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:33.681239+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:34.470463+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:37.187137+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:38.141248+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:39.381666+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:40.266227+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:44.975770+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:45.793429+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:46.730813+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:47.697507+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:48.770152+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:49.738576+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:50.989966+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:51.788111+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:52.746457+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:53.837306+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:54.909639+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:55.840364+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:56.762619+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:57.799926+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:58.822845+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:28:59.614576+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:00.667105+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:01.588821+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:02.739497+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:03.595779+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:04.600385+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:05.606151+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:21.263205+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:22.284970+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:23.099010+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:24.141921+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:25.089800+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:26.151358+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:27.297587+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:28.489243+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:29.450114+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:30.255859+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:31.514863+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:32.439305+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:33.244418+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:34.596223+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:35.326173+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:36.092239+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:37.556925+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:38.325021+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:39.301452+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:40.477485+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:41.135621+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:42.101378+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:43.221919+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:44.120354+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:29:45.276166+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:46.579178+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:47.427157+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:48.243326+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:49.443738+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:50.269058+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:51.263153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:52.369085+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:53.394626+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:54.365120+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:55.577384+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:56.388490+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:57.357866+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:58.286193+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:29:59.369708+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:00.093262+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:01.103780+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:02.082243+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:03.094265+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:04.322153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:05.084852+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:06.077213+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:07.137494+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:08.091392+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:09.083161+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:10.126929+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:11.088728+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:12.095224+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:13.142803+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:14.089281+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:15.317218+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:16.105953+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:17.089077+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:18.162982+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:19.244058+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:20.091637+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:30:22.919829+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:24.248960+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:27.724612+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:30.906336+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:31.908981+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:33.113080+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:33.935609+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:38.731632+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:39.754070+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:40.687318+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:43.381498+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:46.518986+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:47.421676+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:48.380911+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:49.387281+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:50.622951+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:51.480585+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:56.057032+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:56.746640+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:57.763320+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:58.826704+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:30:59.805614+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:00.841761+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:01.799894+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:04.933704+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:05.955604+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:07.055118+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:11.152137+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:12.426225+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:13.180363+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:13.875144+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:14.932464+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:15.851233+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:20.562658+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:21.200697+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:22.211495+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:23.871922+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:24.417611+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:25.183629+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:26.212962+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:27.264587+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:28.613540+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:29.215698+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:30.203945+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:31.787270+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:32.578077+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:33.460584+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:34.572808+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:35.258596+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:36.252756+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:37.201351+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:38.185890+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:39.501738+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:40.863634+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:44.169015+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:44.848937+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:45.577614+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:46.984687+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:47.828920+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:49.031222+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:49.915716+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:50.833936+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:52.046493+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:52.622045+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:53.556972+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:31:56.497375+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:57.764091+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:31:58.561816+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:02.700251+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:27.213373+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:28.332858+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:29.297094+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:30.564192+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:31.283186+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:32.580402+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:33.366206+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:34.280099+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:35.231287+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:36.359564+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:37.407101+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:38.269510+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:39.446392+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:40.412844+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:41.466712+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:42.629179+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:43.395456+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:44.298799+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:45.408164+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:46.344364+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:47.251742+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:48.471744+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:51.201659+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:51.779482+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:52.738741+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:54.320534+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:54.474961+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:32:55.434573+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:32:56.833404+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:57.900189+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:58.957934+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:32:59.473024+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:00.433590+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:01.433011+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:06.507302+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:07.354646+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:08.135241+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:09.176339+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:10.578765+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:11.219554+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:16.980419+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:17.978991+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:19.042423+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:24.688615+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:33:31.204608+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:34.383312+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:35.574177+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:36.408665+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:40.971941+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:41.586128+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:42.664752+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:43.876524+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:44.832029+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:45.777381+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:46.806161+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:47.587640+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:48.785941+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:49.593689+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:50.653331+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:51.903068+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:52.742070+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:56.981189+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:58.144672+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:59.229751+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:33:59.937510+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:01.116187+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:02.008885+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:06.870003+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:11.584578+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:12.403193+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:13.519865+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:22.361890+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:23.495611+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:24.523204+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:24.965025+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:34:33.324185+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:36.376639+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:34:39.677084+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:03.028992+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:04.081953+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:05.017025+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:13.903667+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:18.571751+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:27.969950+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:29.564921+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:30.838699+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:35.717575+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:39.126936+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:40.065730+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:41.040122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:41.801487+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:48.724231+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:49.405914+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:50.730953+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:52.575403+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:55.180869+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:56.295247+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:57.185773+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:58.181954+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:35:59.258567+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:00.275631+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:09.208349+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:10.551606+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:11.366712+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:12.297212+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:15.884324+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:19.114081+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:19.868663+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:21.188093+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:24.347920+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:24.980945+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:26.092761+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:28.970212+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:30.383609+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:31.037829+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:32.298119+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:32.560304+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:33.569274+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:34.560163+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:36.077775+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:36.574982+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:37.816267+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:39.016820+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:40.068675+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:41.251987+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:41.984183+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:42.568590+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:47.391066+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:49.143338+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:50.050292+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:50.845935+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:51.402635+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:53.105250+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:36:53.448975+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:36:54.422345+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T07:37:10.293076+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:11.481789+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:12.358063+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:13.148224+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:18.220024+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:19.335896+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:20.211003+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:23.309349+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:24.851306+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:28.071551+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:28.969790+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:30.271653+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:34.609673+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:35.609515+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:36.609968+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:39.442695+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:40.249853+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:37:41.496906+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T07:38:06.704099+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock/refresh", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.450150+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.452650+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.454295+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.457826+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.458329+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.459351+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.463579+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.463579+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.462367+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.462367+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.464083+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.467631+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.467631+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.466603+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.467631+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.469185+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.470692+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.470692+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.470188+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:44.473203+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:45.363108+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:45.943391+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.109314+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.156198+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.292906+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.339087+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.372767+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.703845+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.732927+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.764386+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:46.935119+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.131139+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.179509+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.315097+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.323097+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.330631+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.339015+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.346561+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.354481+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.362007+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.394656+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.451248+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:47.463839+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:58.758305+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:35:58.768857+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:51:33.358635+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:51:33.463431+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:57:59.171988+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:57:59.212906+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:59:48.821294+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T08:59:48.878459+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:06.969178+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_002", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:12.704988+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:12.936318+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:24.322628+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:25.358847+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:26.243304+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:27.274543+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:28.524198+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:29.330160+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:30.328457+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:32.231092+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:33.305647+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:34.523587+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:37.295555+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:38.193281+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:39.176624+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:44.664122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:45.932786+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:46.704117+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:51.468590+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:52.252840+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:54.594241+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:55.310900+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:56.343647+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:57.507153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:58.364037+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:08:59.338524+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:00.590802+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:01.335999+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:02.267399+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:04.618665+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:05.433544+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:06.362797+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:07.137194+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:08.133827+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:09.199247+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:10.136122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:11.124766+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:12.230055+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:15.359518+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:16.303536+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:17.359770+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:18.288649+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:19.298765+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:20.338937+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:21.290070+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:22.522142+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:24.559171+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:25.593847+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:26.619366+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:27.508104+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:28.390794+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:29.475670+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:30.445869+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:31.691542+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:34.103317+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:34.667197+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:35.470744+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:36.306501+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:39.406512+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:40.172734+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:41.213996+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:44.801600+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:46.124472+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:46.878384+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:47.662690+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:48.663050+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:49.657725+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:50.658272+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:09:51.969416+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:52.905527+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:54.943969+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:55.916458+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:09:57.260074+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:01.494245+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:02.694142+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:03.712122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:05.904086+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:06.875292+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:07.838453+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:08.868707+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:09.626386+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:10.601521+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:10:11.337601+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:12.240324+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:15.046047+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:15.232517+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:16.231516+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:17.300273+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:18.214938+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:19.478954+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:10:20.236158+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:11:50.641651+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:11:57.374409+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:11:58.079127+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:11:59.164509+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:01.817609+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:05.647638+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:08.098502+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:14.835447+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:19.108900+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:27.191460+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:30.698640+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:33.570511+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:36.642261+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:40.775140+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:42.001247+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:42.880956+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:46.263760+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:47.227853+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:48.696584+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:57.354430+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:58.381241+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:12:59.822873+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:02.638184+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:49.239126+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:50.530112+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:51.211583+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:52.314866+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:53.258109+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:55.783094+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:56.936202+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_003", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:57.265294+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:13:59.786071+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:01.534394+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:04.306216+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:05.035497+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:08.698515+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:09.749193+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/boards", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:17.281858+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:19.715899+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:23.979619+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:24.930657+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:26.225185+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:26.957341+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:27.943978+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:29.222947+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:30.007387+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:31.984394+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:32.928188+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:33.960007+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:55.385993+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:56.358531+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:14:57.250982+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:02.368381+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:03.375686+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:04.440450+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:05.413625+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:07.946525+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:12.100651+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:13.307387+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:14.255162+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:15.050079+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:16.320082+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:17.070926+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:20.009813+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:21.097282+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:22.176996+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:23.075073+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:24.066813+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:25.172059+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:26.076811+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:27.204667+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:28.145358+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:33.091956+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:34.005871+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:35.142194+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:36.297909+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:37.151455+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:38.091472+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:39.278887+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:39.930894+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:40.924639+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:43.199984+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:44.311589+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:44.935823+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:45.905778+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:49.024891+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:50.028225+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:51.032115+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:52.029418+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:53.104517+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:15:55.624570+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:56.395974+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:15:57.045706+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:00.844783+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:01.396276+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:02.593207+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:03.509551+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:05.954916+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:07.171998+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:10.341457+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:13.591924+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:14.620393+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:15.752104+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:18.135041+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:19.309849+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:20.445277+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:21.330966+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:22.239093+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:24.905514+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:31.380989+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:32.407589+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:33.487398+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:34.701988+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:35.397977+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:36.481574+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:37.769725+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:38.451997+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:40.954743+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:41.711470+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:42.417270+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:43.671724+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:44.583093+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:45.236560+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:46.475642+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:47.250135+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:48.245012+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:49.271453+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:51.263572+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:52.315259+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:53.253033+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:54.238484+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:55.281551+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:56.425154+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:57.392687+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:16:58.278178+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:16:59.243425+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:01.572532+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:02.275005+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:03.868356+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:04.743452+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:05.718495+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:06.613206+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:07.522605+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:08.231216+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:09.581927+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:10.395642+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:13.124935+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:15.045917+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:16.028346+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:17.162797+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:18.186090+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:18.879588+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:20.440477+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:21.094132+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:22.174212+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:24.443854+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:25.360059+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:25.895119+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:27.052245+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:27.903864+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:29.284550+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:29.912804+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:30.900115+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:32.336033+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:33.203148+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:35.713839+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:36.809179+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:38.078014+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:39.167451+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:40.187653+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:41.387947+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:42.112289+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:43.307153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:44.145127+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:46.582646+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:47.217697+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:48.230965+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:49.164060+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:49.896916+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:50.886523+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:52.070337+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:52.893635+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:53.891469+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:17:56.901624+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:58.181079+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:17:58.895866+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:18:04.210077+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:19:38.990232+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/solve", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T09:19:44.870275+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/solve", "outcome": "failed", "detail": "HTTP 400"}
+{"timestamp": "2026-07-20T09:24:18.030280+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock/refresh", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:36:33.939855+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:36:33.941865+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:36:38.838897+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:38:49.761000+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:38:49.865627+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:41:59.804200+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_004", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:01.611305+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:01.943632+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:17.057910+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:18.012956+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:19.179963+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:20.143636+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:21.049354+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:22.422892+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:23.054062+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:24.040467+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:25.425493+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:26.090983+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:27.164743+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:28.237805+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:29.186793+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:30.056058+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:31.176339+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:32.271709+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:33.112818+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:36.556201+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:37.426771+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:38.492208+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:39.615977+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:40.473096+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:41.589468+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:42.806211+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:43.662210+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:44.573186+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:48.401630+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:49.126358+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:42:49.897532+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:45:48.668238+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:45:50.182885+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:45:50.546274+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:11.986401+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_005", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:13.544229+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:13.894597+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:15.478632+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:16.553080+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:17.474932+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:18.507636+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:19.686109+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:22.436500+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:23.484631+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:24.433322+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:25.583537+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:26.447122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:27.605377+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:28.525656+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:29.543302+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:30.747699+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:31.673453+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:32.499926+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:33.434307+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:34.613746+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:35.400838+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:36.671677+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:37.573995+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:38.615125+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:39.503341+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:40.731857+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:41.438292+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:42.556467+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:44.018255+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:44.551770+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:46.039127+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:46.834687+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:46:47.625640+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:46:48.725376+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:46:49.721300+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:46:53.241253+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:46:54.252071+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:46:55.246994+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:01.294076+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:02.367606+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:03.290884+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:04.293007+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:05.460157+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:06.291010+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:12.493534+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:13.550816+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:14.465962+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:15.856970+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:16.195187+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:16.661212+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:17.675914+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:18.645486+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:21.060120+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:21.849198+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:47:22.994940+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:23.942773+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:44.955855+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_006", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:45.230001+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:46.563893+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:47.166222+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:51.151903+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:52.103843+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:55.184907+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:56.347281+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:57.272476+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:58.182983+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:47:59.248389+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:00.217784+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:03.383831+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:04.398767+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:05.547403+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:06.503252+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:09.849041+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:13.166520+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:14.508406+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:15.378122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:16.198490+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:24.476818+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:25.691193+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:26.569287+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:34.238938+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:39.397950+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:40.286868+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:41.255675+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:42.523362+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:45.694262+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:46.670724+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:47.835894+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:50.769706+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:51.911861+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:53.091211+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:54.011461+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:54.848976+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:48:58.487508+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:48:59.521809+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:00.427057+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:01.763299+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:02.447005+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:03.675966+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:04.747651+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:05.556695+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:13.081005+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:14.105109+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:15.512177+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:17.944335+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:18.946637+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:20.131326+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:21.183800+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:21.909401+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:22.769984+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:26.068878+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:29.491000+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:30.741630+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:31.475303+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:32.348385+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:33.143402+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:34.250849+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:35.467562+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:36.140981+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:38.817693+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:49:43.902019+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:44.778333+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:45.944062+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:52.061743+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:52.989139+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:54.016036+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:56.661194+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:57.902869+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:49:58.616726+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:08.646290+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:09.202774+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:10.078227+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:14.586407+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:15.593240+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:16.940918+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:17.796395+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:21.141044+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:22.550261+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:23.322326+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:26.045435+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:27.040133+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:28.397518+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:29.013789+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:30.155447+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:31.480020+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:32.137993+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:33.220329+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:34.053702+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:35.256298+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:39.438047+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:40.337975+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:50:41.277154+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:50:44.433955+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:45.724743+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:46.602121+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:55.879192+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:56.983711+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:57.998318+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:58.860074+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:50:59.812241+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:01.062274+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:01.715002+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:02.695223+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:03.738747+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:04.704270+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:05.979947+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:06.704834+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:07.736107+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:09.022864+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:09.893606+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:10.935413+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:11.725829+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:12.700981+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:13.715524+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:51:17.275429+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:18.182397+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:19.122696+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:20.879471+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:22.113315+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:23.426122+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:24.187251+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:26.802839+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:49.856929+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:51.164191+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:52.108562+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:52.763694+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:54.098249+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:54.715402+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:55.649533+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:57.051812+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:57.944715+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:51:58.794944+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:00.132416+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:01.036016+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:02.002415+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:02.892153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:03.896825+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:04.754348+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:06.002060+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:06.787781+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:07.730891+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:08.733479+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:09.674778+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:10.734425+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:12.153101+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:12.453434+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:13.478067+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:14.544623+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:15.464585+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:16.474265+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:17.737722+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:18.804277+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:20.213993+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:20.808734+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:21.468664+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:22.883422+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:23.848696+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:24.641377+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:25.824682+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:26.465814+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:27.625966+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:28.711133+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:29.483944+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:30.464189+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:31.722580+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:32.469875+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:33.507154+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:34.618194+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:35.478400+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:36.478133+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:37.499231+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:38.480833+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:39.459094+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:40.500906+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:41.556684+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:42.471619+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:43.486661+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:44.470239+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:45.705760+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:46.456309+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:47.464568+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:48.697558+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:49.461175+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "denied", "detail": "操作過於頻繁，請稍後再試。"}
+{"timestamp": "2026-07-20T09:52:50.616938+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:52.155865+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:52.896655+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:53.729819+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:55.157153+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:56.026304+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:56.794295+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:58.001450+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:58.883897+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:52:59.899594+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/capture", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:54:36.694313+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/solve", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:57:47.196014+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock/refresh", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:57:58.905535+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/solve", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:59:32.863046+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/apply", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:59:33.615805+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T09:59:34.692279+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:06:30.317272+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:06:30.321044+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:07:58.356407+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:07:58.416967+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:12:38.699993+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:12:39.456074+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:12:44.468428+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_008", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:12:44.818208+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:18:55.125349+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:18:55.554433+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:01.922406+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_009", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:02.859158+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:29.667693+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/lock", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:30.229723+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/calibration/intrinsics/top/runs", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:34.922466+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/intrinsics/top/runs/intrinsic_top_2026-07-20_010", "outcome": "ok"}
+{"timestamp": "2026-07-20T10:19:35.288482+00:00", "actor": "operator", "role": "operator", "action": "http:DELETE:/api/calibration/lock", "outcome": "ok"}

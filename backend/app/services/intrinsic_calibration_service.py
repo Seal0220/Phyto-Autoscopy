@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
-from uuid import uuid4
+from threading import RLock
 
 import cv2
 import numpy as np
 
 from app.analysis.run_metadata import next_dated_identifier, utc_now_iso
+from app.calibration.camera_models import OpenCVCompatibilityError
 from app.calibration.intrinsic_solver import solve_intrinsic_run
 from app.calibration.quality_metrics import is_duplicate_pose, sample_coverage
 from app.core.exceptions import CalibrationError
@@ -34,6 +35,7 @@ class IntrinsicCalibrationService:
         self.capture_service = capture_service
         self.lock_service = lock_service
         self.storage_service = storage_service
+        self._run_state_lock = RLock()
 
     @property
     def root(self) -> Path:
@@ -212,7 +214,12 @@ class IntrinsicCalibrationService:
             deep=True,
         )
         try:
-            self._persist_run(run, updated)
+            with self._run_state_lock:
+                self.lock_service.ensure_owner(owner)
+                current = self.get_run(run_id)
+                if current.status == "cancelled":
+                    raise CalibrationError("內參校正已停止。")
+                self._persist_run(current, updated)
         except Exception:
             if accepted:
                 self._delete_sample_files(run_id, sample_id)
@@ -251,6 +258,11 @@ class IntrinsicCalibrationService:
                 deep=True,
             )
             self._persist_run(solving, failed)
+            if isinstance(error, (OpenCVCompatibilityError, AttributeError)):
+                raise CalibrationError(
+                    f"相機 {camera_id} 內參計算失敗：OpenCV 校正模組不相容。"
+                    "請重新執行 start.bat --setup 後再試。"
+                ) from error
             raise CalibrationError(
                 f"相機 {camera_id} 內參計算失敗：{detail} "
                 "請補拍不同位置的清晰樣本後重試。"
@@ -397,24 +409,39 @@ class IntrinsicCalibrationService:
             raise
         return intrinsics
 
-    def delete_run(
+    def cancel_run(
         self,
         camera_id: str,
         run_id: str,
         owner: str,
-    ) -> None:
-        self.lock_service.ensure_owner(owner)
-        run = self.get_run(run_id)
-        if run.camera_id != camera_id:
-            raise CalibrationError(f"內參工作 {run_id} 不屬於相機 {camera_id}。")
-        directory = self.root / "runs" / run_id
-        tombstone = directory.with_name(f".{run_id}.{uuid4().hex}.deleted")
-        if directory.exists():
-            directory.replace(tombstone)
-        try:
-            self.repository.delete_intrinsic_run(run_id)
-        except Exception:
-            if tombstone.exists():
-                tombstone.replace(directory)
-            raise
-        shutil.rmtree(tombstone, ignore_errors=True)
+    ) -> IntrinsicRun | None:
+        with self._run_state_lock:
+            run = self.repository.get_intrinsic_run(run_id)
+            if run is None:
+                return None
+            if run.camera_id != camera_id:
+                raise CalibrationError(
+                    f"內參工作 {run_id} 不屬於相機 {camera_id}。"
+                )
+
+            if run.status == "cancelled":
+                lock_status = self.lock_service.status()
+                if lock_status.locked and lock_status.owner == owner:
+                    self.lock_service.release(owner)
+                return run
+
+            lock_status = self.lock_service.status()
+            if lock_status.locked and lock_status.owner != owner:
+                raise CalibrationError("目前校正操作鎖屬於其他操作人員。")
+            cancelled = run.model_copy(
+                update={
+                    "status": "cancelled",
+                    "updated_at": utc_now_iso(),
+                    "last_error": None,
+                },
+                deep=True,
+            )
+            self._persist_run(run, cancelled)
+            if lock_status.locked:
+                self.lock_service.release(owner)
+            return cancelled

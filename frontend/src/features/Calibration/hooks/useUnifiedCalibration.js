@@ -52,6 +52,7 @@ export default function useUnifiedCalibration({
   const mountedRef = useRef(false);
   const loadControllerRef = useRef(null);
   const actionControllersRef = useRef(new Map());
+  const stopControllersRef = useRef(new Map());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -62,6 +63,10 @@ export default function useUnifiedCalibration({
         abortRequest(controller);
       }
       actionControllersRef.current.clear();
+      for (const controller of stopControllersRef.current.values()) {
+        abortRequest(controller);
+      }
+      stopControllersRef.current.clear();
     };
   }, []);
 
@@ -305,6 +310,81 @@ export default function useUnifiedCalibration({
     return outcome;
   }, [mutate]);
 
+  const stopIntrinsicCalibration = useCallback(async (
+    cameraId,
+    runId,
+  ) => {
+    const action = `intrinsic.stop.${cameraId}`;
+
+    for (const [pending, controller] of actionControllersRef.current.entries()) {
+      if (!pending.startsWith("intrinsic.")) continue;
+      abortRequest(controller, "停止校正命令已優先執行。");
+      actionControllersRef.current.delete(pending);
+    }
+
+    const previousStopController = stopControllersRef.current.get(action);
+    if (previousStopController) {
+      abortRequest(previousStopController, "已重新送出停止校正命令。");
+    }
+
+    const controller = new AbortController();
+    stopControllersRef.current.set(action, controller);
+    setPendingAction(action);
+    setError("");
+
+    try {
+      const result = await requestUnifiedCalibration(
+        `/api/calibration/intrinsics/${cameraId}/runs/${encodeURIComponent(runId)}`,
+        {
+          method: "DELETE",
+          signal: controller.signal,
+          timeoutMs: 10_000,
+        },
+      );
+      if (!mountedRef.current || controller.signal.aborted) return null;
+
+      setRuns((current) => {
+        const next = {
+          ...current,
+        };
+        delete next[cameraId];
+        return next;
+      });
+      setOwnsLock(false);
+      setRequiresRefresh(false);
+      void load({ quiet: true });
+
+      return {
+        result,
+        successMessage: "內參校正已停止。",
+      };
+    } catch (stopError) {
+      if (stopError?.name === "AbortError") return null;
+      if (mountedRef.current) {
+        setError(messageFromError(
+          stopError,
+          "停止相機校正失敗，請再次按下停止校正。",
+        ));
+      }
+      return null;
+    } finally {
+      if (stopControllersRef.current.get(action) === controller) {
+        stopControllersRef.current.delete(action);
+        if (mountedRef.current) {
+          const nextStopAction = stopControllersRef.current
+            .keys()
+            .next()
+            .value;
+          const nextRegularAction = actionControllersRef.current
+            .keys()
+            .next()
+            .value;
+          setPendingAction(nextStopAction || nextRegularAction || "");
+        }
+      }
+    }
+  }, [load]);
+
   const rememberRun = useCallback((cameraId, run) => {
     setRuns((current) => {
       if (!run?.run_id) {
@@ -340,6 +420,7 @@ export default function useUnifiedCalibration({
     mutate,
     acquireLock,
     releaseLock,
+    stopIntrinsicCalibration,
     rememberRun,
     clearError,
     connection,
