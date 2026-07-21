@@ -104,6 +104,7 @@ class AnalysisArtifacts:
             "masks/top",
             "masks/side",
             "masks/rotating",
+            "pose_debug",
             "logs",
         ):
             (resolved / relative).mkdir(parents=True, exist_ok=True)
@@ -119,16 +120,74 @@ class AnalysisArtifacts:
     def write_parameters(self, parameters: dict) -> None:
         write_json_atomic(self.root / "parameters.json", parameters)
 
-    def write_calibration_reference(self, payload: dict) -> None:
-        write_json_atomic(self.root / "calibration_reference.json", payload)
+    def write_intrinsics_snapshot(self, payload: dict) -> None:
+        write_json_atomic(self.root / "intrinsics_snapshot.json", payload)
 
-    def read_calibration_reference(self) -> dict:
-        path = self.root / "calibration_reference.json"
+    def read_intrinsics_snapshot(self) -> dict:
+        path = self.root / "intrinsics_snapshot.json"
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if not isinstance(payload, dict):
-            raise ValueError("calibration reference must be an object")
+            raise ValueError("intrinsics snapshot must be an object")
         return payload
+
+    def write_aruco_layout_snapshot(self, payload: dict) -> None:
+        write_json_atomic(self.root / "aruco_layout_snapshot.json", payload)
+
+    def read_aruco_layout_snapshot(self) -> dict:
+        path = self.root / "aruco_layout_snapshot.json"
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise ValueError("ArUco layout snapshot must be an object")
+        return payload
+
+    def write_pose_alignment(self, result: object) -> None:
+        payload = (
+            result.model_dump(mode="json")
+            if hasattr(result, "model_dump")
+            else dict(result)
+        )
+        write_json_atomic(
+            self.root / "camera_poses.json",
+            payload.get("camera_poses", []),
+        )
+        write_json_atomic(
+            self.root / "aruco_alignment.json",
+            {
+                "pose_estimation_version": payload.get(
+                    "pose_estimation_version"
+                ),
+                "status": payload.get("aruco_alignment_status"),
+                "fixed_camera_poses": payload.get("fixed_camera_poses", {}),
+                "detections": payload.get("aruco_detections", []),
+            },
+        )
+        write_json_atomic(
+            self.root / "pose_quality.json",
+            payload.get("quality", {}),
+        )
+
+    def clear_pose_alignment(self) -> None:
+        for file_name in (
+            "camera_poses.json",
+            "aruco_alignment.json",
+            "pose_quality.json",
+        ):
+            (self.root / file_name).unlink(missing_ok=True)
+        debug_directory = self.root / "pose_debug"
+        if debug_directory.is_dir():
+            for path in debug_directory.iterdir():
+                if path.is_file():
+                    path.unlink()
+
+    def read_camera_poses(self) -> list[dict]:
+        path = self.root / "camera_poses.json"
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, list):
+            raise ValueError("camera poses must be an array")
+        return [item for item in payload if isinstance(item, dict)]
 
     def write_frame_pairs(self, pairs: Iterable[AnalysisFramePair]) -> None:
         rows = [pair.model_dump(mode="json") for pair in pairs]

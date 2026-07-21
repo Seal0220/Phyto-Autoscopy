@@ -30,7 +30,6 @@ class AppContext:
     calibration_lock_service: Any = None
     calibration_capture_service: Any = None
     intrinsic_calibration_service: Any = None
-    extrinsic_calibration_service: Any = None
     calibration_validation_service: Any = None
     calibration_storage_service: Any = None
     analysis_service: Any = None

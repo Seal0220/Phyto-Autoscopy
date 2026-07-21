@@ -42,7 +42,6 @@ export default function useUnifiedCalibration({
   } = usePhytoSocket();
   const [status, setStatus] = useState(null);
   const [boards, setBoards] = useState([]);
-  const [profiles, setProfiles] = useState([]);
   const [runs, setRuns] = useState({});
   const [loading, setLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState("");
@@ -81,7 +80,6 @@ export default function useUnifiedCalibration({
       const [
         nextStatus,
         nextBoards,
-        nextProfiles,
         topRuns,
         sideRuns,
         rotatingRuns,
@@ -90,7 +88,6 @@ export default function useUnifiedCalibration({
       setStatus(nextStatus);
       setOwnsLock(Boolean(nextStatus?.lock_owned_by_requester));
       setBoards(Array.isArray(nextBoards) ? nextBoards : []);
-      setProfiles(Array.isArray(nextProfiles) ? nextProfiles : []);
       setRuns({
         top: currentIntrinsicRun(topRuns),
         side: currentIntrinsicRun(sideRuns),
@@ -408,7 +405,6 @@ export default function useUnifiedCalibration({
   return {
     status,
     boards,
-    profiles,
     runs,
     loading,
     pendingAction,

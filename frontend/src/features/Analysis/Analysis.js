@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   FiPlus,
@@ -13,15 +16,18 @@ import {
   Panel,
   PanelHeader,
 } from "@/components/panels/Panel";
+import SettingsGear from "@/components/panels/SettingsGear";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisDashboardRuns from "./components/AnalysisDashboardRuns";
+import ArucoWorldSettings from "./components/ArucoWorldSettings";
 import useAnalysisDashboard from "./hooks/useAnalysisDashboard";
 
 export default function Analysis() {
   const router = useRouter();
   const { showNotification } = useNotificationsContext();
+  const [poseSettingsOpen, setPoseSettingsOpen] = useState(false);
   const {
     sources,
     runs,
@@ -131,6 +137,23 @@ export default function Analysis() {
               </div>
             ) : null}
           </div>
+        </Panel>
+
+        <Panel aria-label="ArUco 世界基準">
+          <PanelHeader
+            title="ArUco 世界基準"
+            action={(
+              <SettingsGear
+                label="ArUco 世界基準"
+                open={poseSettingsOpen}
+                onClick={() => setPoseSettingsOpen((current) => !current)}
+              />
+            )}
+          />
+          <ArucoWorldSettings
+            open={poseSettingsOpen}
+            onNotify={showNotification}
+          />
         </Panel>
 
         {(!loadError || hasData) ? (

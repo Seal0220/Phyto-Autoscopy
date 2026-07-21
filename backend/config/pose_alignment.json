@@ -1,0 +1,40 @@
+{
+  "pose_alignment": {
+    "aruco_world": {
+      "dictionary": "DICT_5X5_100",
+      "left_rear_id": 0,
+      "right_rear_id": 1,
+      "left_front_id": 2,
+      "right_front_id": 3,
+      "marker_size_mm": 50.0,
+      "left_right_center_distance_mm": 300.0,
+      "rear_front_center_distance_mm": 300.0,
+      "marker_orientation_deg": 0.0,
+      "world_origin": "layout_center",
+      "x_axis_direction": "right",
+      "y_axis_direction": "front",
+      "z_axis_direction": "up",
+      "advanced_mode": false,
+      "marker_centers_world_mm": {}
+    },
+    "camera_priors": {
+      "top": {
+        "height_mm": null,
+        "horizontal_distance_to_center_mm": null,
+        "facing_center_angle_deg": null
+      },
+      "side": {
+        "height_mm": null,
+        "horizontal_distance_to_center_mm": null,
+        "facing_center_angle_deg": null
+      },
+      "rotating": {
+        "arm_height_mm": null
+      }
+    },
+    "minimum_pnp_inliers": 4,
+    "maximum_aruco_reprojection_error_px": 5.0,
+    "minimum_sfm_matches": 16,
+    "pose_estimation_version": "aruco_world_v2"
+  }
+}

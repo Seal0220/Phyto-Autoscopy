@@ -87,14 +87,9 @@ export function loadAnalysisDashboard(signal) {
 }
 
 export function loadAnalysisSetupOptions(signal) {
-  return Promise.all([
-    requestAnalysisJson("/api/analysis/sources", {
-      signal,
-    }),
-    requestAnalysisJson("/api/calibration/active-analysis-profile", {
-      signal,
-    }),
-  ]);
+  return requestAnalysisJson("/api/analysis/sources", {
+    signal,
+  });
 }
 
 export function createAnalysisRun(

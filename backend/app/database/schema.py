@@ -102,13 +102,11 @@ def _analysis_runs_require_rebuild(connection: sqlite3.Connection) -> bool:
         row["name"] == "record_id" and bool(row["notnull"])
         for row in connection.execute("PRAGMA table_info(analysis_runs)").fetchall()
     )
-    calibration_is_foreign_key = any(
-        row["from"] == "calibration_id"
-        for row in connection.execute(
-            "PRAGMA foreign_key_list(analysis_runs)"
-        ).fetchall()
+    has_legacy_calibration_id = "calibration_id" in _columns(
+        connection,
+        "analysis_runs",
     )
-    return record_is_required or calibration_is_foreign_key
+    return record_is_required or has_legacy_calibration_id
 
 
 def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> None:
@@ -122,7 +120,6 @@ def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> No
         CREATE TABLE analysis_runs_source_new (
             analysis_id TEXT PRIMARY KEY,
             record_id TEXT,
-            calibration_id TEXT,
             method_name TEXT NOT NULL,
             method_version TEXT NOT NULL,
             git_commit TEXT NOT NULL,
@@ -139,19 +136,87 @@ def _migrate_analysis_runs_nullable_record(connection: sqlite3.Connection) -> No
             manual_review_completed INTEGER NOT NULL DEFAULT 0,
             average_reprojection_error_px REAL,
             last_error TEXT,
+            intrinsics_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            aruco_layout_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            camera_pose_results_json TEXT NOT NULL DEFAULT '[]',
+            pose_estimation_version TEXT,
+            pose_quality_json TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(record_id) REFERENCES records(record_id)
         )
         """
     )
     connection.execute(
         """
-        INSERT INTO analysis_runs_source_new
-        SELECT * FROM analysis_runs
+        INSERT INTO analysis_runs_source_new(
+            analysis_id, record_id, method_name, method_version,
+            git_commit, parameters_json, created_at, updated_at,
+            created_by, output_path, status, stage, current_frame,
+            total_frames, progress, manual_review_completed,
+            average_reprojection_error_px, last_error,
+            intrinsics_snapshot_json, aruco_layout_snapshot_json,
+            camera_pose_results_json, pose_estimation_version,
+            pose_quality_json
+        )
+        SELECT
+            analysis_id, record_id, method_name, method_version,
+            git_commit, parameters_json, created_at, updated_at,
+            created_by, output_path, status, stage, current_frame,
+            total_frames, progress, manual_review_completed,
+            average_reprojection_error_px, last_error,
+            intrinsics_snapshot_json, aruco_layout_snapshot_json,
+            camera_pose_results_json, pose_estimation_version,
+            pose_quality_json
+        FROM analysis_runs
         """
     )
     connection.execute("DROP TABLE analysis_runs")
     connection.execute(
         "ALTER TABLE analysis_runs_source_new RENAME TO analysis_runs"
+    )
+
+
+def _migrate_calibration_runs_intrinsic_only(
+    connection: sqlite3.Connection,
+) -> None:
+    if not _table_exists(connection, "calibration_runs"):
+        return
+    if "profile_id" not in _columns(connection, "calibration_runs"):
+        return
+
+    connection.execute("DROP TABLE IF EXISTS calibration_runs_intrinsic_new")
+    connection.execute(
+        """
+        CREATE TABLE calibration_runs_intrinsic_new (
+            run_id TEXT PRIMARY KEY,
+            run_type TEXT NOT NULL,
+            camera_id TEXT,
+            board_profile_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            last_error TEXT,
+            FOREIGN KEY(board_profile_id)
+                REFERENCES calibration_boards(board_profile_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO calibration_runs_intrinsic_new(
+            run_id, run_type, camera_id, board_profile_id, status,
+            created_at, updated_at, payload_json, last_error
+        )
+        SELECT
+            run_id, 'intrinsic', camera_id, board_profile_id, status,
+            created_at, updated_at, payload_json, last_error
+        FROM calibration_runs
+        WHERE run_type='intrinsic'
+        """
+    )
+    connection.execute("DROP TABLE calibration_runs")
+    connection.execute(
+        "ALTER TABLE calibration_runs_intrinsic_new RENAME TO calibration_runs"
     )
 
 
@@ -248,7 +313,6 @@ def initialize_schema(database: Database) -> None:
                     run_id TEXT PRIMARY KEY,
                     run_type TEXT NOT NULL,
                     camera_id TEXT,
-                    profile_id TEXT,
                     board_profile_id TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -260,62 +324,7 @@ def initialize_schema(database: Database) -> None:
                 )
                 """
             )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS extrinsic_profiles (
-                    profile_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    is_active INTEGER NOT NULL DEFAULT 0,
-                    board_profile_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    last_error TEXT,
-                    FOREIGN KEY(board_profile_id)
-                        REFERENCES calibration_boards(board_profile_id)
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS extrinsic_profile_cameras (
-                    profile_id TEXT NOT NULL,
-                    camera_id TEXT NOT NULL,
-                    height_mm REAL NOT NULL,
-                    position_json TEXT NOT NULL,
-                    transform_json TEXT,
-                    mount_description TEXT NOT NULL,
-                    PRIMARY KEY(profile_id, camera_id),
-                    FOREIGN KEY(profile_id)
-                        REFERENCES extrinsic_profiles(profile_id)
-                        ON DELETE CASCADE
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS calibration_observations (
-                    observation_id TEXT PRIMARY KEY,
-                    profile_id TEXT NOT NULL,
-                    captured_at TEXT NOT NULL,
-                    motor_angle_deg REAL,
-                    arm_height_mm REAL,
-                    accepted INTEGER NOT NULL DEFAULT 0,
-                    payload_json TEXT NOT NULL,
-                    FOREIGN KEY(profile_id)
-                        REFERENCES extrinsic_profiles(profile_id)
-                        ON DELETE CASCADE
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_extrinsic_active_singleton
-                ON extrinsic_profiles(is_active)
-                WHERE is_active = 1
-                """
-            )
+            _migrate_calibration_runs_intrinsic_only(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_calibration_runs_status
@@ -324,16 +333,9 @@ def initialize_schema(database: Database) -> None:
             )
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_calibration_observations_profile
-                ON calibration_observations(profile_id, captured_at)
-                """
-            )
-            connection.execute(
-                """
                 CREATE TABLE IF NOT EXISTS analysis_runs (
                     analysis_id TEXT PRIMARY KEY,
                     record_id TEXT,
-                    calibration_id TEXT,
                     method_name TEXT NOT NULL,
                     method_version TEXT NOT NULL,
                     git_commit TEXT NOT NULL,
@@ -350,6 +352,11 @@ def initialize_schema(database: Database) -> None:
                     manual_review_completed INTEGER NOT NULL DEFAULT 0,
                     average_reprojection_error_px REAL,
                     last_error TEXT,
+                    intrinsics_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    aruco_layout_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    camera_pose_results_json TEXT NOT NULL DEFAULT '[]',
+                    pose_estimation_version TEXT,
+                    pose_quality_json TEXT NOT NULL DEFAULT '{}',
                     FOREIGN KEY(record_id) REFERENCES records(record_id)
                 )
                 """
@@ -361,8 +368,23 @@ def initialize_schema(database: Database) -> None:
                 connection.execute(
                     "ALTER TABLE analysis_runs ADD COLUMN average_reprojection_error_px REAL"
                 )
+            analysis_run_columns = _columns(connection, "analysis_runs")
+            for name, definition in (
+                ("intrinsics_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("aruco_layout_snapshot_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("camera_pose_results_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("pose_estimation_version", "TEXT"),
+                ("pose_quality_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if name not in analysis_run_columns:
+                    connection.execute(
+                        f"ALTER TABLE analysis_runs ADD COLUMN {name} {definition}"
+                    )
             _migrate_analysis_runs_nullable_record(connection)
             connection.execute("DROP TABLE IF EXISTS calibration_profiles")
+            connection.execute("DROP TABLE IF EXISTS calibration_observations")
+            connection.execute("DROP TABLE IF EXISTS extrinsic_profile_cameras")
+            connection.execute("DROP TABLE IF EXISTS extrinsic_profiles")
 
             connection.execute(
                 """

@@ -33,9 +33,14 @@ from app.analysis.detection.rotating_tip import (
     detect_rotating_tip_near_projection,
 )
 from app.analysis.frame_pairing import pair_capture_frames
+from app.analysis.pose_alignment import align_dataset_camera_poses
+from app.analysis.pose_alignment.aruco_world import aruco_layout_snapshot
+from app.analysis.pose_alignment.runtime_geometry import (
+    RuntimeAnalysisGeometry,
+    build_runtime_analysis_geometry,
+)
 from app.analysis.reconstruction.coordinate_system import (
     apply_world_transform,
-    validate_rigid_transform,
 )
 from app.analysis.reconstruction.reprojection import (
     reprojection_errors,
@@ -43,10 +48,7 @@ from app.analysis.reconstruction.reprojection import (
 )
 from app.analysis.reconstruction.triangulation import triangulate_point
 from app.analysis.reconstruction.multiview import (
-    project_rotating_point,
     robust_multiview_triangulate,
-    rotating_projection_matrix,
-    undistort_rotating_point,
 )
 from app.analysis.run_metadata import (
     next_dated_identifier,
@@ -65,7 +67,12 @@ from app.analysis.tracking.linear_interpolation import (
     interpolate_missing_track,
 )
 from app.analysis.tracking.temporal_selection import select_temporal_candidate
-from app.core.config import AnalysisSettings, AppSettings, BACKEND_ROOT
+from app.core.config import (
+    AnalysisSettings,
+    AppSettings,
+    BACKEND_ROOT,
+    PoseAlignmentSettings,
+)
 from app.core.exceptions import (
     AnalysisError,
     OperationCancelledError,
@@ -89,7 +96,7 @@ from app.models.analysis_models import (
     StoredDetection,
     TrajectoryPoint,
 )
-from app.models.analysis_models import AnalysisCalibrationProfile
+from app.models.calibration_models import CameraIntrinsics
 from app.repositories.analysis_repository import AnalysisRepository
 from app.repositories.capture_repository import CaptureRepository
 from app.repositories.record_repository import RecordRepository
@@ -242,7 +249,7 @@ class AnalysisService:
         repository: AnalysisRepository,
         record_repository: RecordRepository,
         capture_repository: CaptureRepository,
-        calibration_service: Any,
+        intrinsic_calibration_service: Any,
         progress_callback: Callable[[AnalysisProgress], None] | None = None,
         error_reporter: Callable[[str], None] | None = None,
         *,
@@ -254,7 +261,7 @@ class AnalysisService:
         self.capture_repository = capture_repository
         self.progress_callback = progress_callback
         self.error_reporter = error_reporter
-        self.calibration_service = calibration_service
+        self.intrinsic_calibration_service = intrinsic_calibration_service
         self._lock = RLock()
         self._validator = CaptureRecordValidator()
         self._runner = AnalysisJobManager(
@@ -280,42 +287,105 @@ class AnalysisService:
             raise AnalysisError(f"找不到紀錄：{record_id}")
         return record
 
-    def _require_active_calibration(
-        self,
-        calibration_id: str | None,
-    ) -> AnalysisCalibrationProfile:
-        if not calibration_id:
-            raise AnalysisError("分析尚未選擇相機校正設定檔。")
-        try:
-            profile = self.calibration_service.get_profile(calibration_id)
-        except Exception as error:
-            raise AnalysisError(
-                f"相機校正設定檔無法使用：{error}"
-            ) from error
-        if profile is None:
-            raise AnalysisError(f"找不到相機校正設定檔：{calibration_id}")
-        return profile
+    @staticmethod
+    def _required_camera_ids(method: str) -> tuple[str, ...]:
+        return (
+            ("top", "side", "rotating")
+            if method == "top_side_rotating"
+            else ("top", "side")
+        )
 
-    def _calibration_for_run(
+    def _snapshot_intrinsics(
+        self,
+        method: str,
+    ) -> dict[str, dict[str, Any]]:
+        try:
+            available = {
+                intrinsics.camera_id: intrinsics
+                for intrinsics in self.intrinsic_calibration_service.list_intrinsics()
+            }
+        except Exception as error:
+            raise AnalysisError(f"無法讀取相機內參：{error}") from error
+        required = self._required_camera_ids(method)
+        missing = [camera_id for camera_id in required if camera_id not in available]
+        if missing:
+            raise AnalysisError("分析缺少相機內參：" + ", ".join(missing))
+        invalid = [
+            camera_id
+            for camera_id in required
+            if available[camera_id].status != "valid"
+            or available[camera_id].invalidation_reasons
+        ]
+        if invalid:
+            raise AnalysisError(
+                "下列相機內參已失效，請先重新校正：" + ", ".join(invalid)
+            )
+        return {
+            camera_id: available[camera_id].model_dump(mode="json")
+            for camera_id in required
+        }
+
+    def _intrinsics_for_run(
         self,
         run: AnalysisRun,
-    ) -> AnalysisCalibrationProfile:
+    ) -> dict[str, CameraIntrinsics]:
+        payload = run.intrinsics_snapshot
+        if not payload:
+            try:
+                payload = self._artifacts(run).read_intrinsics_snapshot()
+            except (OSError, ValueError) as error:
+                raise AnalysisError("分析建立時固化的內參快照遺失。") from error
         try:
-            payload = self._artifacts(run).read_calibration_reference()
-            profile = AnalysisCalibrationProfile.model_validate(payload)
-        except (OSError, ValueError, ValidationError) as error:
-            raise AnalysisError(
-                "分析建立時固化的相機校正快照遺失或格式無效。"
-            ) from error
-        if profile.calibration_id != run.calibration_id:
-            raise AnalysisError("分析的相機校正快照識別碼不一致。")
-        return profile
+            intrinsics = {
+                camera_id: CameraIntrinsics.model_validate(value)
+                for camera_id, value in payload.items()
+            }
+        except (TypeError, ValidationError) as error:
+            raise AnalysisError(f"分析內參快照格式無效：{error}") from error
+        missing = [
+            camera_id
+            for camera_id in self._required_camera_ids(run.method_name)
+            if camera_id not in intrinsics
+        ]
+        if missing:
+            raise AnalysisError("分析內參快照缺少：" + ", ".join(missing))
+        return intrinsics
 
-    def get_calibration_reference(
+    @staticmethod
+    def _pose_settings_for_run(run: AnalysisRun) -> PoseAlignmentSettings:
+        try:
+            return PoseAlignmentSettings.model_validate(
+                run.parameters["pose_alignment"]
+            )
+        except (KeyError, ValidationError) as error:
+            raise AnalysisError(f"分析姿態對齊設定無效：{error}") from error
+
+    def _geometry_for_run(
         self,
-        analysis_id: str,
-    ) -> AnalysisCalibrationProfile:
-        return self._calibration_for_run(self._require_run(analysis_id))
+        run: AnalysisRun,
+    ) -> RuntimeAnalysisGeometry:
+        intrinsics = self._intrinsics_for_run(run)
+        fixed_poses: dict[str, list[list[float]]] = {}
+        for camera_id in ("top", "side"):
+            pose = next(
+                (
+                    value
+                    for value in run.camera_pose_results
+                    if value.get("camera_id") == camera_id
+                    and value.get("resolved")
+                    and value.get("world_to_camera_matrix") is not None
+                ),
+                None,
+            )
+            if pose is not None:
+                fixed_poses[camera_id] = pose["world_to_camera_matrix"]
+        try:
+            return build_runtime_analysis_geometry(
+                intrinsics,
+                fixed_poses,
+            )
+        except (TypeError, ValueError, cv2.error) as error:
+            raise AnalysisError(f"本次分析的相機幾何無法建立：{error}") from error
 
     def _output_dir(self, run: AnalysisRun) -> Path:
         path = Path(run.output_path).resolve()
@@ -510,66 +580,128 @@ class AnalysisService:
         return resolutions
 
     @staticmethod
-    def _adapted_calibration(
-        profile: AnalysisCalibrationProfile,
+    def _adapted_geometry(
+        geometry: RuntimeAnalysisGeometry,
         camera_resolutions: Mapping[str, tuple[int, int]],
     ) -> CameraPairResolutionAdaptation:
         try:
             return adapt_camera_pair_resolution(
                 projection_resolution=(
-                    int(profile.image_width or 0),
-                    int(profile.image_height or 0),
+                    geometry.image_width,
+                    geometry.image_height,
                 ),
                 calibration_resolutions={
-                    camera_id: tuple(profile.camera_image_sizes.get(camera_id, []))
+                    camera_id: tuple(geometry.camera_image_sizes.get(camera_id, []))
                     for camera_id in ("top", "side")
                 },
                 camera_resolutions=camera_resolutions,
-                top_camera_matrix=np.asarray(profile.top_camera_matrix),
-                side_camera_matrix=np.asarray(profile.side_camera_matrix),
-                top_projection_matrix=np.asarray(profile.top_projection_matrix),
-                side_projection_matrix=np.asarray(profile.side_projection_matrix),
-                fundamental_matrix=np.asarray(profile.fundamental_matrix),
+                top_camera_matrix=np.asarray(geometry.top_camera_matrix),
+                side_camera_matrix=np.asarray(geometry.side_camera_matrix),
+                top_projection_matrix=np.asarray(geometry.top_projection_matrix),
+                side_projection_matrix=np.asarray(geometry.side_projection_matrix),
+                fundamental_matrix=np.asarray(geometry.fundamental_matrix),
             )
         except (TypeError, ValueError) as error:
             raise AnalysisError(f"相機校正解析度換算失敗：{error}") from error
 
     @staticmethod
-    def _adapted_rotating_profile(
-        profile: AnalysisCalibrationProfile,
-        resolution: tuple[int, int],
-    ) -> AnalysisCalibrationProfile:
-        if profile.rotating_camera_matrix is None:
-            raise AnalysisError("相機校正缺少 rotating 內參矩陣。")
-        stored_size = profile.camera_image_sizes.get("rotating", [])
-        calibration_size = (
+    def _camera_pose_for_input(
+        run: AnalysisRun,
+        camera_id: str,
+        input_id: int,
+    ) -> np.ndarray | None:
+        payload = next(
             (
-                int(stored_size[0])
-                if len(stored_size) == 2
-                else int(profile.image_width or 0)
+                pose
+                for pose in run.camera_pose_results
+                if pose.get("camera_id") == camera_id
+                and int(pose.get("input_id", -1)) == int(input_id)
+                and pose.get("resolved")
             ),
-            (
-                int(stored_size[1])
-                if len(stored_size) == 2
-                else int(profile.image_height or 0)
-            ),
+            None,
         )
-        if min(calibration_size) <= 0 or min(resolution) <= 0:
-            raise AnalysisError("rotating 校正或分析解析度無效。")
-        scale_x = resolution[0] / calibration_size[0]
-        scale_y = resolution[1] / calibration_size[1]
-        intrinsic = np.asarray(
-            profile.rotating_camera_matrix,
+        if payload is None or payload.get("world_to_camera_matrix") is None:
+            return None
+        matrix = np.asarray(
+            payload["world_to_camera_matrix"],
+            dtype=np.float64,
+        )
+        if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+            return None
+        return matrix
+
+    @staticmethod
+    def _scaled_intrinsic_matrix(
+        intrinsics: CameraIntrinsics,
+        resolution: tuple[int, int],
+    ) -> np.ndarray:
+        matrix = np.asarray(
+            intrinsics.camera_matrix,
             dtype=np.float64,
         ).copy()
-        intrinsic[0] *= scale_x
-        intrinsic[1] *= scale_y
-        return profile.model_copy(
-            update={
-                "rotating_camera_matrix": intrinsic.tolist(),
-            },
-            deep=True,
+        matrix[0, :3] *= resolution[0] / float(intrinsics.width)
+        matrix[1, :3] *= resolution[1] / float(intrinsics.height)
+        return matrix
+
+    @staticmethod
+    def _project_world_point(
+        world_point: np.ndarray,
+        world_to_camera: np.ndarray,
+        intrinsics: CameraIntrinsics,
+        camera_matrix: np.ndarray,
+    ) -> tuple[float, float]:
+        rotation_vector, _ = cv2.Rodrigues(world_to_camera[:3, :3])
+        translation_vector = world_to_camera[:3, 3].reshape(3, 1)
+        distortion = np.asarray(
+            intrinsics.distortion_coefficients,
+            dtype=np.float64,
         )
+        if intrinsics.camera_model == "opencv_fisheye":
+            projected, _ = cv2.fisheye.projectPoints(
+                np.asarray(world_point, dtype=np.float64).reshape(-1, 1, 3),
+                rotation_vector,
+                translation_vector,
+                camera_matrix,
+                distortion.reshape(4, 1),
+            )
+        else:
+            projected, _ = cv2.projectPoints(
+                np.asarray(world_point, dtype=np.float64).reshape(-1, 3),
+                rotation_vector,
+                translation_vector,
+                camera_matrix,
+                distortion,
+            )
+        x_value, y_value = projected.reshape(-1, 2)[0]
+        return float(x_value), float(y_value)
+
+    @staticmethod
+    def _undistort_camera_point(
+        point: tuple[float, float],
+        intrinsics: CameraIntrinsics,
+        camera_matrix: np.ndarray,
+    ) -> tuple[float, float]:
+        pixels = np.asarray(point, dtype=np.float64).reshape(1, 1, 2)
+        distortion = np.asarray(
+            intrinsics.distortion_coefficients,
+            dtype=np.float64,
+        )
+        if intrinsics.camera_model == "opencv_fisheye":
+            undistorted = cv2.fisheye.undistortPoints(
+                pixels,
+                camera_matrix,
+                distortion.reshape(4, 1),
+                P=camera_matrix,
+            )
+        else:
+            undistorted = cv2.undistortPoints(
+                pixels,
+                camera_matrix,
+                distortion,
+                P=camera_matrix,
+            )
+        x_value, y_value = undistorted.reshape(-1, 2)[0]
+        return float(x_value), float(y_value)
 
     @staticmethod
     def _implementation_choices() -> dict[str, Any]:
@@ -593,9 +725,9 @@ class AnalysisService:
                 "P_top/P_side."
             ),
             "resolution_adaptation": (
-                "Calibration pixel-coordinate camera and projection matrices are scaled "
-                "independently to each fixed input resolution; the source Calibration "
-                "Profile remains immutable."
+                "The Analysis Run intrinsics snapshot and dataset-specific camera poses "
+                "remain immutable. Pixel-coordinate matrices are adapted only in ephemeral "
+                "runtime geometry for the selected image resolution."
             ),
             "optional_morphology": (
                 "A null morphology kernel explicitly disables that optional cleanup "
@@ -608,11 +740,6 @@ class AnalysisService:
         }
 
     def list_sources(self) -> list[AnalysisSourceSummary]:
-        try:
-            profiles = self.calibration_service.list_profiles()
-        except Exception:
-            logger.exception("Failed to inspect Calibration Profiles")
-            profiles = []
         results = []
         synchronization = self.settings.analysis.synchronization
         for record in self.record_repository.list():
@@ -628,19 +755,7 @@ class AnalysisService:
                     manual_frame_offset=synchronization.manual_frame_offset,
                     method="top_side_rotating",
                 )
-                available_calibrations = []
-                for profile in profiles:
-                    try:
-                        self._validate_calibration(profile, validation)
-                    except AnalysisError:
-                        continue
-                    available_calibrations.append(profile)
                 reasons = list(validation.not_ready_reasons)
-                calibration_status = (
-                    "valid"
-                    if available_calibrations
-                    else "missing_or_invalid"
-                )
                 ready = validation.ready
                 top_count = validation.top_frame_count
                 side_count = validation.side_frame_count
@@ -652,7 +767,6 @@ class AnalysisService:
             except Exception as error:
                 logger.exception("Failed to inspect analysis source %s", record.record_id)
                 reasons = [f"無法檢查紀錄：{error}"]
-                calibration_status = "unknown"
                 ready = False
                 top_count = 0
                 side_count = 0
@@ -674,7 +788,6 @@ class AnalysisService:
                     total_frame_count=total_frame_count,
                     camera_resolutions=camera_resolutions,
                     camera_directories=camera_directories,
-                    calibration_status=calibration_status,
                     ready=ready,
                     not_ready_reasons=list(dict.fromkeys(reasons)),
                     analysis_runs=self.repository.list(record.record_id),
@@ -840,15 +953,10 @@ class AnalysisService:
                     "影像目錄不可分析："
                     + "；".join(validation.not_ready_reasons)
                 )
-            profile = self._require_active_calibration(request.calibration_id)
-            self._validate_calibration(
-                profile,
-                validation,
-                method=request.method,
-            )
-            adaptation = self._adapted_calibration(
-                profile,
-                validation.camera_resolutions,
+            intrinsics_snapshot = self._snapshot_intrinsics(request.method)
+            pose_settings = self.settings.pose_alignment.model_dump(mode="json")
+            layout_snapshot = aruco_layout_snapshot(
+                self.settings.pose_alignment.aruco_world
             )
 
             try:
@@ -887,14 +995,15 @@ class AnalysisService:
                         in validation.camera_resolutions.items()
                     },
                 },
-                "calibration_resolution_adaptation": adaptation.metadata(),
+                "pose_alignment": pose_settings,
                 "runtime_versions": runtime_versions(),
                 "implementation_choices": self._implementation_choices(),
             }
             run = AnalysisRun(
                 analysis_id=analysis_id,
                 record_id=request.record_id,
-                calibration_id=request.calibration_id,
+                intrinsics_snapshot=intrinsics_snapshot,
+                aruco_layout_snapshot=layout_snapshot,
                 method_name=analysis_method(request.method)["name"],
                 method_version=analysis_method(request.method)["version"],
                 git_commit=repository_commit(BACKEND_ROOT.parent),
@@ -910,9 +1019,8 @@ class AnalysisService:
                 artifacts.write_parameters(parameters)
                 artifacts.write_corrections([])
                 artifacts.write_run(run)
-                artifacts.write_calibration_reference(
-                    profile.model_dump(mode="json")
-                )
+                artifacts.write_intrinsics_snapshot(intrinsics_snapshot)
+                artifacts.write_aruco_layout_snapshot(layout_snapshot)
                 self.repository.create(run)
             except Exception:
                 shutil.rmtree(output_dir, ignore_errors=True)
@@ -962,47 +1070,6 @@ class AnalysisService:
             if not (0 <= base_x < width and 0 <= base_y < height):
                 raise AnalysisError(f"{label}植物基部超出影像範圍。")
 
-    def _validate_calibration(
-        self,
-        profile: AnalysisCalibrationProfile,
-        validation: CaptureRecordValidation,
-        *,
-        method: str = "top_side",
-    ) -> None:
-        if not profile.valid or profile.status not in {"valid", "active"}:
-            raise AnalysisError("相機校正設定檔尚未通過驗證或可能已失效。")
-        if profile.potentially_invalid_reasons:
-            raise AnalysisError("相機校正設定檔可能已失效，請重新校正。")
-        if profile.top_camera_identifier != "top" or profile.side_camera_identifier != "side":
-            raise AnalysisError("相機校正設定檔的相機角色不是 top/side。")
-        required = {
-            "俯視 Camera Matrix": profile.top_camera_matrix,
-            "側視 Camera Matrix": profile.side_camera_matrix,
-            "俯視畸變係數": profile.top_distortion_coefficients,
-            "側視畸變係數": profile.side_distortion_coefficients,
-            "俯視 Rectification Rotation": profile.top_rectification_rotation,
-            "側視 Rectification Rotation": profile.side_rectification_rotation,
-            "R": profile.rotation_matrix,
-            "t": profile.translation_vector,
-            "E": profile.essential_matrix,
-            "F": profile.fundamental_matrix,
-            "P_top": profile.top_projection_matrix,
-            "P_side": profile.side_projection_matrix,
-            "T_world_from_stereo": profile.world_transform_matrix,
-        }
-        missing = [name for name, value in required.items() if value is None]
-        if missing:
-            raise AnalysisError("相機校正設定檔缺少：" + ", ".join(missing))
-        if method == "top_side_rotating" and not profile.supports_rotating:
-            raise AnalysisError(
-                "頂+側+環繞方法需要包含 rotating 內參與旋臂運動模型的校正。"
-            )
-        try:
-            validate_rigid_transform(np.asarray(profile.world_transform_matrix))
-        except ValueError as error:
-            raise AnalysisError(str(error)) from error
-        self._adapted_calibration(profile, validation.camera_resolutions)
-
     @staticmethod
     def _verify_frozen_manifest(
         run: AnalysisRun,
@@ -1040,12 +1107,20 @@ class AnalysisService:
                 if not validation.ready:
                     raise AnalysisError("紀錄不可分析：" + "；".join(validation.not_ready_reasons))
                 self._verify_frozen_manifest(run, validation)
-                profile = self._calibration_for_run(run)
-                self._validate_calibration(
-                    profile,
-                    validation,
-                    method=run.method_name,
-                )
+                self._intrinsics_for_run(run)
+                self._pose_settings_for_run(run)
+                try:
+                    stored_layout = self._artifacts(
+                        run
+                    ).read_aruco_layout_snapshot()
+                except (OSError, ValueError) as error:
+                    raise AnalysisError(
+                        "分析建立時固化的 ArUco 世界基準快照遺失。"
+                    ) from error
+                if stored_layout != run.aruco_layout_snapshot:
+                    raise AnalysisError(
+                        "分析的 ArUco 世界基準快照與資料庫紀錄不一致。"
+                    )
                 self._validate_required_parameters(
                     analysis,
                     validation.camera_resolutions,
@@ -1230,11 +1305,17 @@ class AnalysisService:
                 raise AnalysisError("只有狀態為「就緒」的分析執行可以開始。")
             if self._runner.is_active(analysis_id):
                 raise AnalysisError("分析工作已在執行。")
-            self.repository.clear_results(analysis_id)
+            try:
+                self.repository.clear_results(analysis_id)
+                self._artifacts(run).clear_pose_alignment()
+            except OSError as error:
+                raise AnalysisError(
+                    f"無法清除前次相機姿態輸出：{error}"
+                ) from error
             run = self._set_state(
                 run,
                 status="processing",
-                stage="initializing_background",
+                stage="detecting_aruco",
                 current_frame=0,
                 progress=0.0,
                 clear_error=True,
@@ -1337,6 +1418,7 @@ class AnalysisService:
                 "summaries",
                 "overlays",
                 "masks",
+                "pose_debug",
             ):
                 shutil.rmtree(artifacts.root / relative, ignore_errors=True)
             for file_name in (
@@ -1349,6 +1431,9 @@ class AnalysisService:
                 "trajectory_3d.csv",
                 "reprojection_errors.csv",
                 "detection_summary.json",
+                "camera_poses.json",
+                "aruco_alignment.json",
+                "pose_quality.json",
             ):
                 (artifacts.root / file_name).unlink(missing_ok=True)
             AnalysisArtifacts.create(artifacts.root).write_corrections([])
@@ -1920,6 +2005,8 @@ class AnalysisService:
         try:
             self._check_cancel(cancel_event)
             if run.status == "processing":
+                self._run_pose_alignment(run, cancel_event)
+                run = self._require_run(analysis_id)
                 self._run_detection(run, cancel_event)
                 run = self._require_run(analysis_id)
                 if bool(run.parameters.get("manual_review_required", True)):
@@ -1969,6 +2056,66 @@ class AnalysisService:
                 report_error=True,
             )
 
+    def _run_pose_alignment(
+        self,
+        run: AnalysisRun,
+        cancel_event: Event,
+    ) -> AnalysisRun:
+        self._check_cancel(cancel_event)
+        validation = self._validation_for_run(run)
+        self._verify_frozen_manifest(run, validation)
+        intrinsics = self._intrinsics_for_run(run)
+        pose_settings = self._pose_settings_for_run(run)
+        self._log(run, "INFO", "開始偵測本次資料集的 ArUco 世界基準。")
+
+        def update_pose_stage(stage: str, progress: float) -> None:
+            self._check_cancel(cancel_event)
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                stage=stage,
+                current_frame=0,
+                progress=progress,
+            )
+
+        result = align_dataset_camera_poses(
+            validation.frames,
+            intrinsics,
+            pose_settings,
+            required_camera_ids=self._required_camera_ids(run.method_name),
+            debug_directory=self._artifacts(run).root / "pose_debug",
+            stage_callback=update_pose_stage,
+            cancel_check=lambda: self._check_cancel(cancel_event),
+        )
+        self._check_cancel(cancel_event)
+        payload = result.model_dump(mode="json")
+        self._artifacts(run).write_pose_alignment(result)
+        self.repository.update_pose_alignment(
+            run.analysis_id,
+            camera_pose_results=payload["camera_poses"],
+            pose_estimation_version=result.pose_estimation_version,
+            pose_quality=payload["quality"],
+            updated_at=utc_now_iso(),
+        )
+        updated = self._require_run(run.analysis_id)
+        self._artifacts(updated).write_run(updated)
+        failures = result.quality.required_camera_failures
+        if failures:
+            raise AnalysisError(
+                "必要相機無法由本次資料集建立姿態："
+                + ", ".join(failures)
+            )
+        if result.quality.resolved_image_count <= 0:
+            raise AnalysisError("本次資料集沒有可用的相機姿態。")
+        self._log(
+            updated,
+            "INFO",
+            "相機姿態估算完成："
+            f"{result.quality.resolved_image_count}/"
+            f"{result.quality.total_image_count} 張已解析。",
+        )
+        return updated
+
     @staticmethod
     def _decode_image(path: Path) -> np.ndarray:
         try:
@@ -1995,21 +2142,21 @@ class AnalysisService:
 
     @staticmethod
     def _rectification_maps(
-        profile: AnalysisCalibrationProfile,
+        geometry: RuntimeAnalysisGeometry,
         adaptation: CameraPairResolutionAdaptation,
     ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         values = {
             "top": (
                 adaptation.top.camera_matrix,
-                profile.top_distortion_coefficients,
-                profile.top_rectification_rotation,
+                geometry.top_distortion_coefficients,
+                geometry.top_rectification_rotation,
                 adaptation.top.projection_matrix,
                 adaptation.top.resolution,
             ),
             "side": (
                 adaptation.side.camera_matrix,
-                profile.side_distortion_coefficients,
-                profile.side_rectification_rotation,
+                geometry.side_distortion_coefficients,
+                geometry.side_rectification_rotation,
                 adaptation.side.projection_matrix,
                 adaptation.side.resolution,
             ),
@@ -2025,7 +2172,7 @@ class AnalysisService:
                 size,
                 cv2.CV_32FC1,
             )
-            if profile.camera_projection_models.get(camera_id) == "fisheye":
+            if geometry.camera_projection_models.get(camera_id) == "fisheye":
                 map_x, map_y = cv2.fisheye.initUndistortRectifyMap(*arguments)
             else:
                 map_x, map_y = cv2.initUndistortRectifyMap(*arguments)
@@ -2230,16 +2377,16 @@ class AnalysisService:
 
     def _run_detection(self, run: AnalysisRun, cancel_event: Event) -> None:
         analysis = self._analysis_settings(run)
-        profile = self._calibration_for_run(run)
+        geometry = self._geometry_for_run(run)
         pairs = self.repository.list_frame_pairs(run.analysis_id)
         if not pairs:
             raise AnalysisError("分析執行沒有已驗證的影格配對。")
         camera_resolutions = self._camera_resolutions(run)
-        adaptation = self._adapted_calibration(
-            profile,
+        adaptation = self._adapted_geometry(
+            geometry,
             camera_resolutions,
         )
-        maps = self._rectification_maps(profile, adaptation)
+        maps = self._rectification_maps(geometry, adaptation)
         rectified_fundamental = _fundamental_from_projections(
             adaptation.top.projection_matrix,
             adaptation.side.projection_matrix,
@@ -2720,7 +2867,7 @@ class AnalysisService:
 
     def _run_reconstruction(self, run: AnalysisRun, cancel_event: Event) -> None:
         self._check_cancel(cancel_event)
-        profile = self._calibration_for_run(run)
+        geometry = self._geometry_for_run(run)
         for camera_id in ("top", "side"):
             self._interpolate_camera(run, camera_id)
         self._resolve_all(run)
@@ -2729,24 +2876,33 @@ class AnalysisService:
             self.repository.list_corrections(run.analysis_id)
         )
         camera_resolutions = self._camera_resolutions(run)
-        adaptation = self._adapted_calibration(
-            profile,
+        adaptation = self._adapted_geometry(
+            geometry,
             camera_resolutions,
         )
         top_projection = adaptation.top.projection_matrix
         side_projection = adaptation.side.projection_matrix
-        world_transform = np.asarray(profile.world_transform_matrix, dtype=np.float64)
+        world_transform = np.asarray(
+            geometry.world_transform_matrix,
+            dtype=np.float64,
+        )
         stereo_from_world = np.linalg.inv(world_transform)
         top_world_projection = top_projection @ stereo_from_world
         side_world_projection = side_projection @ stereo_from_world
         uses_rotating = run.method_name == "top_side_rotating"
-        rotating_profile = (
-            self._adapted_rotating_profile(
-                profile,
+        intrinsics_by_camera = self._intrinsics_for_run(run)
+        rotating_intrinsics = (
+            intrinsics_by_camera.get("rotating")
+            if uses_rotating
+            else None
+        )
+        rotating_camera_matrix = (
+            self._scaled_intrinsic_matrix(
+                rotating_intrinsics,
                 camera_resolutions["rotating"],
             )
-            if uses_rotating
-            else profile
+            if rotating_intrinsics is not None
+            else None
         )
         analysis = self._analysis_settings(run)
         threshold = analysis.reprojection.high_error_threshold_px
@@ -2815,98 +2971,129 @@ class AnalysisService:
             if (
                 uses_rotating
                 and pair.rotating_capture_id is not None
-                and pair.rotating_angle_deg is not None
             ):
-                try:
-                    rotating_image = self._decode_image(
-                        self.get_frame_image_path(
-                            run.analysis_id,
-                            pair.frame_id,
-                            "rotating",
-                        )
+                rotating_pose = self._camera_pose_for_input(
+                    run,
+                    "rotating",
+                    pair.rotating_capture_id,
+                )
+                if rotating_pose is None:
+                    rotating_result = DetectionResult(
+                        frame_id=pair.frame_id,
+                        camera_id="rotating",
+                        timestamp=pair.rotating_timestamp,
+                        detection_type="Missing",
+                        valid=False,
+                        status_reason="rotating_camera_pose_unresolved",
                     )
-                    predicted_point = project_rotating_point(
-                        rotating_profile,
-                        pair.rotating_angle_deg,
-                        world_point,
-                    )
-                    observation = detect_rotating_tip_near_projection(
-                        rotating_image,
-                        predicted_point,
-                    )
-                    if observation.point is not None:
-                        rotating_point = observation.point
-                        undistorted_point = undistort_rotating_point(
-                            rotating_profile,
-                            observation.point,
-                        )
-                        multiview = robust_multiview_triangulate(
-                            (
-                                top_world_projection,
-                                side_world_projection,
-                                rotating_projection_matrix(
-                                    rotating_profile,
-                                    pair.rotating_angle_deg,
-                                ),
-                            ),
-                            (top_point, side_point, undistorted_point),
-                            confidence=(1.0, 1.0, observation.confidence),
-                            rejection_threshold_px=max(8.0, threshold),
-                        )
-                        rotating_error = multiview.reprojection_errors_px[2]
-                        rotating_used = multiview.used_observations[2]
-                        if rotating_used:
-                            refined_world_point = multiview.point
-                        rotating_result = DetectionResult(
-                            frame_id=pair.frame_id,
-                            camera_id="rotating",
-                            timestamp=pair.rotating_timestamp,
-                            candidate_points=[
-                                Point2D(
-                                    x_px=observation.point[0],
-                                    y_px=observation.point[1],
-                                )
-                            ],
-                            selected_point=Point2D(
-                                x_px=observation.point[0],
-                                y_px=observation.point[1],
-                            ),
-                            detection_type=(
-                                "Automatic"
-                                if rotating_used
-                                else "Invalid"
-                            ),
-                            valid=rotating_used,
-                            status_reason=(
-                                None
-                                if rotating_used
-                                else "rotating_observation_rejected"
-                            ),
-                        )
-                    else:
-                        rotating_result = DetectionResult(
-                            frame_id=pair.frame_id,
-                            camera_id="rotating",
-                            timestamp=pair.rotating_timestamp,
-                            detection_type="Missing",
-                            valid=False,
-                            status_reason="rotating_tip_not_found",
-                        )
                     self._store_detection(run, rotating_result)
-                    self._store_frame_artifacts(
-                        run,
-                        "rotating",
-                        pair.frame_id,
-                        rotating_image,
-                        np.zeros(rotating_image.shape[:2], dtype=np.uint8),
-                        rotating_result,
-                    )
-                except Exception as error:
                     self._log(
                         run,
                         "WARNING",
-                        f"影格 {pair.frame_id} 的環繞觀測未採用：{error}",
+                        f"影格 {pair.frame_id} 的環繞相機姿態未解析，"
+                        "保留頂+側基準結果。",
                     )
+                elif (
+                    rotating_intrinsics is not None
+                    and rotating_camera_matrix is not None
+                ):
+                    try:
+                        rotating_image = self._decode_image(
+                            self.get_frame_image_path(
+                                run.analysis_id,
+                                pair.frame_id,
+                                "rotating",
+                            )
+                        )
+                        predicted_point = self._project_world_point(
+                            world_point,
+                            rotating_pose,
+                            rotating_intrinsics,
+                            rotating_camera_matrix,
+                        )
+                        observation = detect_rotating_tip_near_projection(
+                            rotating_image,
+                            predicted_point,
+                        )
+                        if observation.point is not None:
+                            rotating_point = observation.point
+                            undistorted_point = self._undistort_camera_point(
+                                observation.point,
+                                rotating_intrinsics,
+                                rotating_camera_matrix,
+                            )
+                            multiview = robust_multiview_triangulate(
+                                (
+                                    top_world_projection,
+                                    side_world_projection,
+                                    rotating_camera_matrix
+                                    @ rotating_pose[:3, :],
+                                ),
+                                (top_point, side_point, undistorted_point),
+                                confidence=(
+                                    1.0,
+                                    1.0,
+                                    observation.confidence,
+                                ),
+                                rejection_threshold_px=max(8.0, threshold),
+                            )
+                            rotating_error = multiview.reprojection_errors_px[2]
+                            rotating_used = multiview.used_observations[2]
+                            if rotating_used:
+                                refined_world_point = multiview.point
+                            rotating_result = DetectionResult(
+                                frame_id=pair.frame_id,
+                                camera_id="rotating",
+                                timestamp=pair.rotating_timestamp,
+                                candidate_points=[
+                                    Point2D(
+                                        x_px=observation.point[0],
+                                        y_px=observation.point[1],
+                                    )
+                                ],
+                                selected_point=Point2D(
+                                    x_px=observation.point[0],
+                                    y_px=observation.point[1],
+                                ),
+                                detection_type=(
+                                    "Automatic"
+                                    if rotating_used
+                                    else "Invalid"
+                                ),
+                                valid=rotating_used,
+                                status_reason=(
+                                    None
+                                    if rotating_used
+                                    else "rotating_observation_rejected"
+                                ),
+                            )
+                        else:
+                            rotating_result = DetectionResult(
+                                frame_id=pair.frame_id,
+                                camera_id="rotating",
+                                timestamp=pair.rotating_timestamp,
+                                detection_type="Missing",
+                                valid=False,
+                                status_reason="rotating_tip_not_found",
+                            )
+                        self._store_detection(run, rotating_result)
+                        self._store_frame_artifacts(
+                            run,
+                            "rotating",
+                            pair.frame_id,
+                            rotating_image,
+                            np.zeros(
+                                rotating_image.shape[:2],
+                                dtype=np.uint8,
+                            ),
+                            rotating_result,
+                        )
+                    except Exception as error:
+                        self._log(
+                            run,
+                            "WARNING",
+                            f"影格 {pair.frame_id} 的環繞觀測未採用：{error}",
+                        )
             reconstructed.append({
                 "pair": pair,
                 "top": top_result,

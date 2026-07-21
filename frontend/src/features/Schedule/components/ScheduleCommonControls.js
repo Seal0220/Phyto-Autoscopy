@@ -96,12 +96,12 @@ export default function ScheduleCommonControls({
           ))}
         />
         {rotationEnabled ? (
-          <>
-            <InnerPanel className="grid-cols-[auto_minmax(0,1fr)] items-center">
+          <div className="grid min-w-0 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4">
+            <InnerPanel className="min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center">
               <h3 className="m-0 shrink-0 text-sm font-black text-neutral-200">
                 輪數時常
               </h3>
-              <div className="flex flex-row justify-self-end gap-3">
+              <div className="grid min-w-0 grid-cols-[minmax(0,0.45fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
                 <NumericInput
                   id={`schedule-${totalCyclesKey}`}
                   label={totalCyclesLabel}
@@ -112,10 +112,10 @@ export default function ScheduleCommonControls({
                   }))}
                   {...totalCyclesProps}
                   required
-                  className="w-30 min-w-30 max-w-30"
+                  className="min-w-0"
                 />
                 <DurationInput
-                  className="w-96 min-w-96 min-[520px]:col-span-2"
+                  className="min-w-0"
                   id={`schedule-${cycleDurationKey}`}
                   label={cycleDurationLabel}
                   value={schedule[cycleDurationKey]}
@@ -127,7 +127,7 @@ export default function ScheduleCommonControls({
                   required
                 />
                 <DurationInput
-                  className="w-96 min-w-96 in-[520px]:col-span-2"
+                  className="min-w-0"
                   id={`schedule-${cycleIntervalKey}`}
                   label={cycleIntervalLabel}
                   value={schedule[cycleIntervalKey]}
@@ -140,11 +140,11 @@ export default function ScheduleCommonControls({
                 />
               </div>
             </InnerPanel>
-            <InnerPanel className="grid-cols-[auto_minmax(0,1fr)] items-center">
+            <InnerPanel className="min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center">
               <h3 className="m-0 shrink-0 text-sm font-black text-neutral-200">
                 角度範圍
               </h3>
-              <div className="flex flex-row justify-self-end gap-3">
+              <div className="grid min-w-0 grid-cols-3 gap-3">
                 {SCHEDULE_COMMON_FIELDS.map(([key, label, props]) => (
                   <NumericInput
                     id={`schedule-${key}`}
@@ -157,19 +157,19 @@ export default function ScheduleCommonControls({
                     }))}
                     {...props}
                     required
-                    className="w-30 min-w-30 max-w-30"
+                    className="min-w-0"
                   />
                 ))}
               </div>
             </InnerPanel>
-          </>
+          </div>
         ) : (
           <InnerPanel className="grid-cols-[auto_minmax(0,1fr)] items-center">
             <h3 className="m-0 shrink-0 text-sm font-black text-neutral-200">
               排程時長
             </h3>
             <DurationInput
-              className="w-96 min-w-96 justify-self-end"
+              className="w-full min-w-0 justify-self-end"
               id={`schedule-${durationKey}`}
               label={durationLabel}
               value={schedule[durationKey]}

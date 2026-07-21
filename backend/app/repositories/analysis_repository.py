@@ -33,6 +33,22 @@ class AnalysisRepository:
     def _run_from_row(row) -> AnalysisRun:
         payload = dict(row)
         payload["parameters"] = _json_load(payload.pop("parameters_json"), {})
+        payload["intrinsics_snapshot"] = _json_load(
+            payload.pop("intrinsics_snapshot_json"),
+            {},
+        )
+        payload["aruco_layout_snapshot"] = _json_load(
+            payload.pop("aruco_layout_snapshot_json"),
+            {},
+        )
+        payload["camera_pose_results"] = _json_load(
+            payload.pop("camera_pose_results_json"),
+            [],
+        )
+        payload["pose_quality"] = _json_load(
+            payload.pop("pose_quality_json"),
+            {},
+        )
         payload["manual_review_completed"] = bool(
             payload["manual_review_completed"]
         )
@@ -42,18 +58,23 @@ class AnalysisRepository:
         self.database.execute(
             """
             INSERT INTO analysis_runs(
-                analysis_id, record_id, calibration_id, method_name,
+                analysis_id, record_id, method_name,
                 method_version, git_commit, parameters_json, created_at,
                 updated_at, created_by, output_path, status, stage,
                 current_frame, total_frames, progress,
-                manual_review_completed, last_error
+                manual_review_completed, last_error,
+                intrinsics_snapshot_json, aruco_layout_snapshot_json,
+                camera_pose_results_json, pose_estimation_version,
+                pose_quality_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?
+            )
             """,
             (
                 run.analysis_id,
                 run.record_id,
-                run.calibration_id,
                 run.method_name,
                 run.method_version,
                 run.git_commit,
@@ -69,6 +90,11 @@ class AnalysisRepository:
                 run.progress,
                 int(run.manual_review_completed),
                 run.last_error,
+                _json_dump(run.intrinsics_snapshot),
+                _json_dump(run.aruco_layout_snapshot),
+                _json_dump(run.camera_pose_results),
+                run.pose_estimation_version,
+                _json_dump(run.pose_quality),
             ),
         )
 
@@ -149,6 +175,31 @@ class AnalysisRepository:
             (_json_dump(parameters), updated_at, analysis_id),
         )
 
+    def update_pose_alignment(
+        self,
+        analysis_id: str,
+        *,
+        camera_pose_results: list[dict],
+        pose_estimation_version: str,
+        pose_quality: dict,
+        updated_at: str,
+    ) -> None:
+        self.database.execute(
+            """
+            UPDATE analysis_runs
+            SET camera_pose_results_json=?, pose_estimation_version=?,
+                pose_quality_json=?, updated_at=?
+            WHERE analysis_id=?
+            """,
+            (
+                _json_dump(camera_pose_results),
+                pose_estimation_version,
+                _json_dump(pose_quality),
+                updated_at,
+                analysis_id,
+            ),
+        )
+
     def delete(self, analysis_id: str) -> None:
         with self.database.transaction() as connection:
             connection.execute(
@@ -185,7 +236,10 @@ class AnalysisRepository:
             connection.execute(
                 """
                 UPDATE analysis_runs
-                SET average_reprojection_error_px=NULL
+                SET average_reprojection_error_px=NULL,
+                    camera_pose_results_json='[]',
+                    pose_estimation_version=NULL,
+                    pose_quality_json='{}'
                 WHERE analysis_id=?
                 """,
                 (analysis_id,),

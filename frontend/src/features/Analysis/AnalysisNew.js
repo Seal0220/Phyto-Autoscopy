@@ -35,7 +35,6 @@ export default function AnalysisNew({
   const { showNotification } = useNotificationsContext();
   const {
     sources,
-    activeCalibration,
     setup,
     currentStep,
     highestStep,
@@ -66,7 +65,7 @@ export default function AnalysisNew({
   const selectedSource = sources.find(
     (source) => source.record_id === setup.recordId,
   );
-  const hasOptions = sources.length > 0 || Boolean(activeCalibration);
+  const hasOptions = sources.length > 0;
   const mutationLocked = Boolean(mutationPending) || mutationRequiresRefresh;
 
   useEffect(() => {
@@ -149,7 +148,6 @@ export default function AnalysisNew({
       <AnalysisSetupSummaryStep
         setup={setup}
         source={selectedSource}
-        calibration={activeCalibration}
         createdRun={createdRun}
       />
     );

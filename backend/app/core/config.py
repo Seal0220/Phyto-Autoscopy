@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.core.constants import CAMERA_ROLES
 from app.core.exceptions import ConfigError
@@ -253,6 +259,141 @@ class CalibrationSettings(BaseModel):
     quality: CalibrationQualitySettings = Field(default_factory=CalibrationQualitySettings)
 
 
+class ArucoMarkerCenterSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x_mm: float
+    y_mm: float
+    z_mm: float = 0.0
+    orientation_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
+
+
+class ArucoWorldReferenceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dictionary: Literal[
+        "DICT_4X4_50",
+        "DICT_5X5_100",
+        "DICT_6X6_250",
+        "DICT_7X7_250",
+    ] = "DICT_5X5_100"
+    left_rear_id: int = Field(default=0, ge=0, le=9999)
+    right_rear_id: int = Field(default=1, ge=0, le=9999)
+    left_front_id: int = Field(default=2, ge=0, le=9999)
+    right_front_id: int = Field(default=3, ge=0, le=9999)
+    marker_size_mm: float = Field(default=50.0, gt=0, le=1000)
+    left_right_center_distance_mm: float = Field(default=300.0, gt=0, le=10000)
+    rear_front_center_distance_mm: float = Field(default=300.0, gt=0, le=10000)
+    marker_orientation_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
+    world_origin: Literal[
+        "layout_center",
+        "left_rear",
+        "right_rear",
+        "left_front",
+        "right_front",
+    ] = "layout_center"
+    x_axis_direction: Literal["right", "left"] = "right"
+    y_axis_direction: Literal["front", "rear"] = "front"
+    z_axis_direction: Literal["up", "down"] = "up"
+    advanced_mode: bool = False
+    marker_centers_world_mm: dict[str, ArucoMarkerCenterSettings] = Field(
+        default_factory=dict
+    )
+
+    @model_validator(mode="after")
+    def validate_world_reference(self) -> "ArucoWorldReferenceSettings":
+        marker_ids = (
+            self.left_rear_id,
+            self.right_rear_id,
+            self.left_front_id,
+            self.right_front_id,
+        )
+        if len(set(marker_ids)) != 4:
+            raise ValueError("四個 ArUco marker ID 不可重複。")
+        if not self.dictionary.startswith("DICT_"):
+            raise ValueError("ArUco dictionary 名稱格式無效。")
+        capacity_text = self.dictionary.rsplit("_", 1)[-1]
+        if capacity_text.isdigit():
+            capacity = int(capacity_text)
+            if any(marker_id >= capacity for marker_id in marker_ids):
+                raise ValueError(
+                    f"{self.dictionary} 的 marker ID 必須小於 {capacity}。"
+                )
+        required_positions = {
+            "left_rear",
+            "right_rear",
+            "left_front",
+            "right_front",
+        }
+        unknown_positions = set(self.marker_centers_world_mm).difference(
+            required_positions
+        )
+        if unknown_positions:
+            raise ValueError("進階 marker 世界座標包含未知位置。")
+        if self.advanced_mode and set(self.marker_centers_world_mm) != required_positions:
+            raise ValueError("進階模式必須指定四個 marker 中心的世界座標。")
+        return self
+
+
+class FixedCameraInstallationPriorSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    height_mm: float | None = Field(default=None, ge=0, le=10000)
+    horizontal_distance_to_center_mm: float | None = Field(
+        default=None,
+        ge=0,
+        le=10000,
+    )
+    facing_center_angle_deg: float | None = Field(
+        default=None,
+        ge=-360,
+        le=360,
+    )
+
+
+class RotatingCameraInstallationPriorSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    arm_height_mm: float | None = Field(default=None, ge=0, le=10000)
+
+
+class CameraInstallationPriorsSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    top: FixedCameraInstallationPriorSettings = Field(
+        default_factory=FixedCameraInstallationPriorSettings
+    )
+    side: FixedCameraInstallationPriorSettings = Field(
+        default_factory=FixedCameraInstallationPriorSettings
+    )
+    rotating: RotatingCameraInstallationPriorSettings = Field(
+        default_factory=RotatingCameraInstallationPriorSettings
+    )
+
+
+class PoseAlignmentSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    aruco_world: ArucoWorldReferenceSettings = Field(
+        default_factory=ArucoWorldReferenceSettings
+    )
+    camera_priors: CameraInstallationPriorsSettings = Field(
+        default_factory=CameraInstallationPriorsSettings
+    )
+    minimum_pnp_inliers: int = Field(default=4, ge=4, le=10000)
+    maximum_aruco_reprojection_error_px: float = Field(
+        default=5.0,
+        gt=0,
+        le=100,
+    )
+    minimum_sfm_matches: int = Field(default=16, ge=8, le=10000)
+    pose_estimation_version: str = Field(
+        default="aruco_world_v2",
+        min_length=1,
+        max_length=64,
+    )
+
+
 class LoggingSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -271,6 +412,7 @@ class AppSettings(BaseModel):
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
     calibration: CalibrationSettings = Field(default_factory=CalibrationSettings)
+    pose_alignment: PoseAlignmentSettings = Field(default_factory=PoseAlignmentSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @field_validator("cameras")
@@ -358,6 +500,7 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
         "schedule.json",
         "analysis.json",
         "calibration.json",
+        "pose_alignment.json",
         "logging.json",
     ):
         data = deep_merge(data, read_json_file(root / file_name))
@@ -376,6 +519,7 @@ def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | P
         "schedule": "schedule.json",
         "analysis": "analysis.json",
         "calibration": "calibration.json",
+        "pose_alignment": "pose_alignment.json",
         "logging": "logging.json",
         "default": "default.json",
     }

@@ -22,7 +22,6 @@ from app.services.calibration_capture_service import CalibrationCaptureService
 from app.services.calibration_lock_service import CalibrationLockService
 from app.services.calibration_storage_service import CalibrationStorageService
 from app.services.calibration_validation_service import CalibrationValidationService
-from app.services.extrinsic_calibration_service import ExtrinsicCalibrationService
 from app.services.intrinsic_calibration_service import IntrinsicCalibrationService
 from app.services.unified_calibration_service import (
     CalibrationService as UnifiedCalibrationService,
@@ -113,13 +112,6 @@ async def lifespan(app: FastAPI):
         calibration_lock_service,
         calibration_storage_service,
     )
-    extrinsic_calibration_service = ExtrinsicCalibrationService(
-        settings,
-        calibration_repository,
-        calibration_capture_service,
-        calibration_lock_service,
-        calibration_storage_service,
-    )
     calibration_validation_service = CalibrationValidationService(
         settings,
         calibration_repository,
@@ -128,11 +120,9 @@ async def lifespan(app: FastAPI):
         settings,
         calibration_repository,
         camera_manager,
-        motor_controller,
         snapshot_service,
         calibration_capture_service,
         intrinsic_calibration_service,
-        extrinsic_calibration_service,
         calibration_validation_service,
         calibration_lock_service,
         calibration_storage_service,
@@ -145,7 +135,7 @@ async def lifespan(app: FastAPI):
         analysis_repository,
         record_repository,
         capture_repository,
-        unified_calibration_service,
+        intrinsic_calibration_service,
     )
 
     context = AppContext(
@@ -167,7 +157,6 @@ async def lifespan(app: FastAPI):
         calibration_lock_service=calibration_lock_service,
         calibration_capture_service=calibration_capture_service,
         intrinsic_calibration_service=intrinsic_calibration_service,
-        extrinsic_calibration_service=extrinsic_calibration_service,
         calibration_validation_service=calibration_validation_service,
         calibration_storage_service=calibration_storage_service,
         analysis_service=analysis_service,

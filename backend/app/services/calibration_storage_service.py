@@ -8,9 +8,7 @@ from app.analysis.export.json_export import write_json_atomic
 from app.core.exceptions import CalibrationError
 from app.models.calibration_models import (
     CalibrationBoardProfile,
-    CalibrationObservation,
     CameraIntrinsics,
-    ExtrinsicProfile,
     IntrinsicRun,
 )
 
@@ -47,7 +45,6 @@ class CalibrationStorageService:
             self.root / "boards",
             self.root / "intrinsics" / "runs",
             self.root / "intrinsics" / "previews",
-            self.root / "extrinsics",
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -95,61 +92,17 @@ class CalibrationStorageService:
                 f"內參工作 {run.run_id}",
             )
 
-    def write_extrinsic_profile(
-        self,
-        profile: ExtrinsicProfile,
-        observations: list[CalibrationObservation] | None = None,
-    ) -> None:
-        with self._lock:
-            directory = self.root / "extrinsics" / profile.profile_id
-            observations = observations if observations is not None else (
-                self.repository.list_observations(profile.profile_id)
-            )
-            self._write(
-                directory / "profile.json",
-                profile.model_dump(mode="json"),
-                f"外參校正檔 {profile.name}",
-            )
-            self._write(
-                directory / "observations.json",
-                [item.model_dump(mode="json") for item in observations],
-                f"外參校正檔 {profile.name} 的觀測資料",
-            )
-            self._write(
-                directory / "quality.json",
-                profile.quality,
-                f"外參校正檔 {profile.name} 的品質資料",
-            )
-
     def write_index(
         self,
-        profiles: list[ExtrinsicProfile] | None = None,
         intrinsics: list[CameraIntrinsics] | None = None,
     ) -> None:
         with self._lock:
-            profiles = profiles if profiles is not None else (
-                self.repository.list_extrinsic_profiles()
-            )
             intrinsics = intrinsics if intrinsics is not None else (
                 self.repository.list_intrinsics()
             )
             self._write(
                 self.root / "index.json",
                 {
-                    "active_extrinsic_profile_id": next(
-                        (item.profile_id for item in profiles if item.is_active),
-                        None,
-                    ),
-                    "extrinsic_profiles": [
-                        {
-                            "profile_id": item.profile_id,
-                            "name": item.name,
-                            "status": item.status,
-                            "is_active": item.is_active,
-                            "updated_at": item.updated_at,
-                        }
-                        for item in profiles
-                    ],
                     "intrinsics": {
                         item.camera_id: item.updated_at
                         for item in intrinsics
@@ -168,11 +121,7 @@ class CalibrationStorageService:
             for camera_id in self.settings.cameras:
                 for run in self.repository.list_intrinsic_runs(camera_id):
                     self.write_intrinsic_run(run)
-            profiles = self.repository.list_extrinsic_profiles()
-            for profile in profiles:
-                self.write_extrinsic_profile(profile)
             self.write_index(
-                profiles=profiles,
                 intrinsics=self.repository.list_intrinsics(),
             )
             self._last_error = None

@@ -10,28 +10,18 @@ from app.calibration.board_generation import render_calibration_board
 from app.calibration.live_undistortion import LiveFrameUndistorter
 from app.core.exceptions import CalibrationError
 from app.core.state import AppContext, get_context
-from app.models.analysis_models import AnalysisCalibrationProfile
 from app.models.calibration_models import (
-    CalibrationArmHeightRequest,
     CalibrationBoardCreateRequest,
     CalibrationBoardProfile,
-    CalibrationObservation,
     CalibrationDetection,
     CalibrationLockRequest,
     CalibrationLockStatus,
     CameraIntrinsics,
-    ExtrinsicCaptureRequest,
-    ExtrinsicProfile,
-    ExtrinsicProfileCopyRequest,
-    ExtrinsicProfileCreateRequest,
-    ExtrinsicProfilePatchRequest,
     IntrinsicRun,
     IntrinsicRunActionRequest,
     IntrinsicRunCreateRequest,
-    QuickRelocationRequest,
     UnifiedCalibrationStatus,
 )
-from app.models.motor_models import MotorStatus, MoveRequest
 from app.models.camera_models import SnapshotResult
 from app.security.auth import get_request_principal
 from app.services.schedule_lock import schedule_calibration_guard
@@ -265,190 +255,6 @@ def get_undistorted_preview(
     return FileResponse(_safe_calibration_file(context, path))
 
 
-@router.get("/extrinsics", response_model=list[ExtrinsicProfile])
-def list_extrinsic_profiles(
-    context: AppContext = Depends(get_context),
-) -> list[ExtrinsicProfile]:
-    return context.extrinsic_calibration_service.list_profiles()
-
-
-@router.get("/extrinsics/active", response_model=ExtrinsicProfile | None)
-def get_active_extrinsic_profile(
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile | None:
-    return context.extrinsic_calibration_service.get_active()
-
-
-@router.get(
-    "/active-analysis-profile",
-    response_model=AnalysisCalibrationProfile | None,
-)
-def get_active_analysis_calibration(
-    context: AppContext = Depends(get_context),
-) -> AnalysisCalibrationProfile | None:
-    profiles = _service(context).list_profiles()
-    return profiles[0] if profiles else None
-
-
-@router.post("/extrinsics", response_model=ExtrinsicProfile)
-def create_extrinsic_profile(
-    payload: ExtrinsicProfileCreateRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.create(
-        payload,
-        _owner(request),
-    )
-
-
-@router.post("/extrinsics/relocate", response_model=ExtrinsicProfile)
-def quick_relocate_extrinsic_profile(
-    payload: QuickRelocationRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.quick_relocation(
-        payload,
-        _owner(request),
-    )
-
-
-@router.get("/extrinsics/{profile_id}", response_model=ExtrinsicProfile)
-def get_extrinsic_profile(
-    profile_id: str,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.get_profile(profile_id)
-
-
-@router.get(
-    "/extrinsics/{profile_id}/observations",
-    response_model=list[CalibrationObservation],
-)
-def list_extrinsic_observations(
-    profile_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[CalibrationObservation]:
-    return context.extrinsic_calibration_service.list_observations(profile_id)
-
-
-@router.patch("/extrinsics/{profile_id}", response_model=ExtrinsicProfile)
-def update_extrinsic_profile(
-    profile_id: str,
-    payload: ExtrinsicProfilePatchRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.update(
-        profile_id,
-        payload,
-        _owner(request),
-    )
-
-
-@router.delete("/extrinsics/{profile_id}")
-def delete_extrinsic_profile(
-    profile_id: str,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> dict[str, str]:
-    context.extrinsic_calibration_service.delete(profile_id, _owner(request))
-    return {"deleted": profile_id}
-
-
-@router.post("/extrinsics/{profile_id}/copy", response_model=ExtrinsicProfile)
-def copy_extrinsic_profile(
-    profile_id: str,
-    payload: ExtrinsicProfileCopyRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.copy(
-        profile_id,
-        payload,
-        _owner(request),
-    )
-
-
-@router.post("/extrinsics/{profile_id}/capture")
-def capture_extrinsic_observation(
-    profile_id: str,
-    payload: ExtrinsicCaptureRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-):
-    return context.extrinsic_calibration_service.capture(
-        profile_id,
-        payload,
-        _owner(request),
-    )
-
-
-@router.post("/extrinsics/{profile_id}/solve", response_model=ExtrinsicProfile)
-def solve_extrinsic_profile(
-    profile_id: str,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.solve(
-        profile_id,
-        _owner(request),
-    )
-
-
-@router.post("/extrinsics/{profile_id}/validate", response_model=ExtrinsicProfile)
-def validate_extrinsic_profile(
-    profile_id: str,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.validate(
-        profile_id,
-        _owner(request),
-    )
-
-
-@router.post("/extrinsics/{profile_id}/activate", response_model=ExtrinsicProfile)
-def activate_extrinsic_profile(
-    profile_id: str,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    candidate = context.extrinsic_calibration_service.get_profile(profile_id)
-    _service(context).analysis_profile(candidate)
-    profile = context.extrinsic_calibration_service.activate(
-        profile_id,
-        _owner(request),
-    )
-    return profile
-
-
-@router.post("/extrinsics/{profile_id}/archive", response_model=ExtrinsicProfile)
-def archive_extrinsic_profile(
-    profile_id: str,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    return context.extrinsic_calibration_service.archive(
-        profile_id,
-        _owner(request),
-    )
-
-
-@router.get("/extrinsics/{profile_id}/export")
-def export_extrinsic_profile(
-    profile_id: str,
-    context: AppContext = Depends(get_context),
-) -> FileResponse:
-    path = context.extrinsic_calibration_service.export(profile_id)
-    return FileResponse(
-        _safe_calibration_file(context, path.as_posix()),
-        filename=path.name,
-        media_type="application/zip",
-    )
-
-
 @router.post("/cameras/{camera_id}/detection", response_model=CalibrationDetection)
 def detect_calibration_board(
     camera_id: str,
@@ -517,77 +323,3 @@ def snapshot_calibration_camera(
 ) -> SnapshotResult:
     return _service(context).snapshot_camera(camera_id, _owner(request))
 
-
-@router.post("/motor/move", response_model=MotorStatus)
-def move_calibration_motor(
-    payload: MoveRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).move_motor(payload.angle_deg, _owner(request))
-
-
-@router.post("/motor/engage", response_model=MotorStatus)
-def engage_calibration_motor(
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).engage_motor(_owner(request))
-
-
-@router.post("/motor/disengage", response_model=MotorStatus)
-def disengage_calibration_motor(
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).disengage_motor(_owner(request))
-
-
-@router.post("/motor/return-origin", response_model=MotorStatus)
-def return_calibration_motor_origin(
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).return_motor_origin(_owner(request))
-
-
-@router.post("/motor/set-origin", response_model=MotorStatus)
-def set_calibration_motor_origin(
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).set_motor_origin(_owner(request))
-
-
-@router.post("/motor/stop", response_model=MotorStatus)
-def stop_calibration_motor(
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).stop_motor(_owner(request))
-
-
-@router.post("/motor/emergency-stop", response_model=MotorStatus)
-def emergency_stop_calibration_motor(
-    context: AppContext = Depends(get_context),
-) -> MotorStatus:
-    return _service(context).emergency_stop()
-
-
-@router.patch("/extrinsics/{profile_id}/arm-height", response_model=ExtrinsicProfile)
-def update_calibration_arm_height(
-    profile_id: str,
-    payload: CalibrationArmHeightRequest,
-    request: Request,
-    context: AppContext = Depends(get_context),
-) -> ExtrinsicProfile:
-    profile = context.extrinsic_calibration_service.get_profile(profile_id)
-    motion = profile.motion_model.model_copy(
-        update={"arm_height_mm": payload.arm_height_mm},
-        deep=True,
-    )
-    return context.extrinsic_calibration_service.update(
-        profile_id,
-        ExtrinsicProfilePatchRequest(motion_model=motion),
-        _owner(request),
-    )

@@ -21,6 +21,7 @@ import {
   analysisStageLabel,
   analysisStatusMeta,
 } from "../lib/analysisUtils";
+import AnalysisPoseQuality from "./AnalysisPoseQuality";
 
 function reviewLabel(run) {
   if (run.manual_review_completed) return "人工修正已完成";
@@ -147,6 +148,11 @@ export default function AnalysisDashboardRuns({
                   />
                 </div>
               </div>
+
+              <AnalysisPoseQuality
+                poses={run.camera_pose_results}
+                quality={run.pose_quality}
+              />
 
               {run.last_error ? (
                 <div

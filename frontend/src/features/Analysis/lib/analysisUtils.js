@@ -114,17 +114,37 @@ function normalizeResolution(value) {
 }
 
 function normalizeAnalysisRun(run) {
+  const poseQuality = run?.pose_quality;
+
   return {
     ...run,
     analysis_id: stringOrEmpty(run?.analysis_id),
     record_id: stringOrEmpty(run?.record_id),
-    calibration_id: stringOrEmpty(run?.calibration_id),
     status: stringOrEmpty(run?.status) || "draft",
     stage: stringOrEmpty(run?.stage),
     progress: Math.min(1, Math.max(0, numberOrZero(run?.progress))),
     current_frame: Math.max(0, numberOrZero(run?.current_frame)),
     total_frames: Math.max(0, numberOrZero(run?.total_frames)),
     last_error: stringOrEmpty(run?.last_error),
+    intrinsics_snapshot: run?.intrinsics_snapshot
+      && typeof run.intrinsics_snapshot === "object"
+      && !Array.isArray(run.intrinsics_snapshot)
+      ? run.intrinsics_snapshot
+      : {},
+    aruco_layout_snapshot: run?.aruco_layout_snapshot
+      && typeof run.aruco_layout_snapshot === "object"
+      && !Array.isArray(run.aruco_layout_snapshot)
+      ? run.aruco_layout_snapshot
+      : {},
+    camera_pose_results: Array.isArray(run?.camera_pose_results)
+      ? run.camera_pose_results
+      : [],
+    pose_estimation_version: stringOrEmpty(run?.pose_estimation_version),
+    pose_quality: poseQuality
+      && typeof poseQuality === "object"
+      && !Array.isArray(poseQuality)
+      ? poseQuality
+      : {},
     average_reprojection_error_px: Number.isFinite(Number(
       run?.average_reprojection_error_px
         ?? run?.mean_reprojection_error_px
@@ -167,7 +187,6 @@ export function analysisSourcesFromPayload(payload) {
       side: stringOrEmpty(source?.camera_directories?.side),
       rotating: stringOrEmpty(source?.camera_directories?.rotating),
     },
-    calibration_status: stringOrEmpty(source?.calibration_status),
     ready: Boolean(source?.ready),
     not_ready_reasons: Array.isArray(source?.not_ready_reasons)
       ? source.not_ready_reasons.filter((reason) => typeof reason === "string")
@@ -184,34 +203,6 @@ export function analysisRunsFromPayload(payload) {
     ["analysis_runs", "runs", "items"],
     "分析執行",
   ).map(normalizeAnalysisRun);
-}
-
-export function activeCalibrationFromPayload(payload) {
-  if (payload === null || payload === undefined) return null;
-  const profile = payload?.calibration || payload?.profile || payload;
-  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
-    throw new Error("目前啟用的相機校正資料格式錯誤，請重新讀取。");
-  }
-
-  return {
-    ...profile,
-    calibration_id: stringOrEmpty(profile?.calibration_id),
-    created_at: stringOrEmpty(profile?.created_at),
-    status: stringOrEmpty(profile?.status),
-    valid: Boolean(profile?.valid),
-    potentially_invalid_reasons: Array.isArray(profile?.potentially_invalid_reasons)
-      ? profile.potentially_invalid_reasons.filter((reason) => typeof reason === "string")
-      : [],
-    supports_rotating: Boolean(
-      profile?.rotating_camera_matrix
-      && profile?.rotating_distortion_coefficients
-      && profile?.rotating_axis_origin_mm
-      && profile?.rotating_axis_direction
-      && profile?.rotating_axis_from_camera_matrix
-      && Number.isFinite(Number(profile?.rotating_zero_angle_deg))
-      && [-1, 1].includes(Number(profile?.rotating_angle_direction)),
-    ),
-  };
 }
 
 export function mergeAnalysisRuns(
@@ -293,7 +284,6 @@ export function createInitialAnalysisSetup(recordId = "") {
         path: "",
       },
     },
-    calibrationId: "",
     startFrame: "1",
     endFrame: "",
     manualFrameOffset: "0",
@@ -439,7 +429,6 @@ function validateRoiBounds(
 export function validateAnalysisSetupStep(
   setup,
   step,
-  activeCalibration,
 ) {
   if (step === 1) {
     const required = setup.method === "top_side_rotating"
@@ -465,18 +454,6 @@ export function validateAnalysisSetupStep(
       && Number(setup.sourcePreview.rotating_pairable_frame_count) <= 0
     ) {
       throw new Error("請重新掃描並確認至少有一組包含旋臂視角的同步影格。");
-    }
-    if (!activeCalibration || !setup.calibrationId) {
-      throw new Error("目前沒有已啟用的相機校正，請先前往校正頁面完成並啟用外參校正檔。");
-    }
-    if (!activeCalibration.valid) {
-      throw new Error("目前啟用的相機校正無效，請先前往校正頁面重新驗證。");
-    }
-    if (
-      setup.method === "top_side_rotating"
-      && !activeCalibration.supports_rotating
-    ) {
-      throw new Error("頂+側+環繞需要已啟用且包含旋臂幾何的有效校正。");
     }
     return true;
   }
@@ -587,7 +564,6 @@ export function validateAnalysisSetupStep(
     validateAnalysisSetupStep(
       setup,
       prerequisite,
-      activeCalibration,
     );
   }
   return true;
@@ -602,7 +578,6 @@ export function buildAnalysisCreatePayload(setup) {
     record_id: setup.recordId || null,
     method: setup.method,
     camera_sources: setup.cameraSources,
-    calibration_id: setup.calibrationId,
     start_frame: Number(setup.startFrame),
     end_frame: Number(setup.endFrame),
     top_roi: topRoi,

@@ -23,6 +23,7 @@ SETTINGS_FILES = {
     "schedule": "schedule.json",
     "analysis": "analysis.json",
     "calibration": "calibration.json",
+    "pose_alignment": "pose_alignment.json",
     "logging": "logging.json",
 }
 

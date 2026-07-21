@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 
@@ -15,21 +14,16 @@ import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import CalibrationBoardSettings from "./components/CalibrationBoardSettings";
-import CalibrationExtrinsics from "./components/CalibrationExtrinsics";
-import CalibrationExtrinsicStatus from "./components/CalibrationExtrinsicStatus";
 import CalibrationIntrinsics from "./components/CalibrationIntrinsics";
-import CalibrationMotorControls from "./components/CalibrationMotorControls";
 import useUnifiedCalibration from "./hooks/useUnifiedCalibration";
 import { calibrationLockState } from "./lib/calibrationUtils";
 
 export default function Calibration() {
   const { showNotification } = useNotificationsContext();
   const [selectedBoardId, setSelectedBoardId] = useState("");
-  const [selectedProfileId, setSelectedProfileId] = useState("");
   const {
     status,
     boards,
-    profiles,
     runs,
     loading,
     pendingAction,
@@ -103,25 +97,11 @@ export default function Calibration() {
     showNotification,
   ]);
 
-  const selectedProfile = useMemo(() => profiles.find(
-    (profile) => profile.profile_id === selectedProfileId,
-  ) || null, [
-    profiles,
-    selectedProfileId,
-  ]);
   const lockState = calibrationLockState(status, ownsLock);
   const lockedByAnotherOperator = lockState.lockedByAnotherOperator;
   const lockMode = status?.lock?.mode;
-  const intrinsicLocked = ownsLock && [
-    "intrinsic",
-    "unified",
-  ].includes(lockMode);
-  const extrinsicLocked = ownsLock && [
-    "extrinsic",
-    "relocation",
-    "unified",
-  ].includes(lockMode);
-  const hasWorkspace = Boolean(status) || boards.length > 0 || profiles.length > 0;
+  const intrinsicLocked = ownsLock && lockMode === "intrinsic";
+  const hasWorkspace = Boolean(status) || boards.length > 0;
 
   const beginCalibration = useCallback(async (
     mode,
@@ -242,51 +222,6 @@ export default function Calibration() {
           </div>
         </Panel>
 
-        <Panel aria-label="外部參數">
-          <PanelHeader title="外部參數" />
-
-          <div className="grid gap-6 p-5 max-sm:p-4">
-            {hasWorkspace ? (
-              <>
-                <CalibrationExtrinsicStatus
-                  status={status}
-                  locked={extrinsicLocked}
-                  pendingAction={pendingAction}
-                  onAction={onAction}
-                />
-
-                <hr />
-
-                <CalibrationMotorControls
-                  status={status}
-                  profile={selectedProfile}
-                  locked={extrinsicLocked}
-                  pendingAction={pendingAction}
-                  onAction={onAction}
-                />
-
-                <hr />
-
-                <CalibrationExtrinsics
-                  selectedBoardId={selectedBoardId}
-                  profiles={profiles}
-                  status={status}
-                  locked={extrinsicLocked}
-                  pendingAction={pendingAction}
-                  systemActive={systemActive}
-                  lockedByAnotherOperator={lockedByAnotherOperator}
-                  startDisabled={requiresRefresh}
-                  selectedProfileId={selectedProfileId}
-                  onSelectedProfileChange={setSelectedProfileId}
-                  onAction={onAction}
-                  onBeginCalibration={beginCalibration}
-                  onEndCalibration={endCalibration}
-                  onNotify={showNotification}
-                />
-              </>
-            ) : null}
-          </div>
-        </Panel>
       </div>
     </main>
   );

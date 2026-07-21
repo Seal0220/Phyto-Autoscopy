@@ -83,7 +83,6 @@ class CalibrationLockService:
                 owner=owner,
                 mode=request.mode,
                 run_id=request.run_id,
-                profile_id=request.profile_id,
                 acquired_at=current.acquired_at or now.isoformat(),
                 expires_at=(
                     now + timedelta(minutes=CALIBRATION_LOCK_LEASE_MINUTES)

@@ -77,7 +77,6 @@ export function loadUnifiedCalibrationWorkspace(signal) {
   return Promise.all([
     requestUnifiedCalibration("/api/calibration/status", { signal }),
     requestUnifiedCalibration("/api/calibration/boards", { signal }),
-    requestUnifiedCalibration("/api/calibration/extrinsics", { signal }),
     ...["top", "side", "rotating"].map((cameraId) => (
       requestUnifiedCalibration(
         `/api/calibration/intrinsics/${cameraId}/runs`,

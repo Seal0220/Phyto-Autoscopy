@@ -2,8 +2,6 @@ import StatusCard from "@/components/cards/StatusCard";
 import InnerPanel from "@/components/panels/InnerPanel";
 import { StatusPill } from "@/components/panels/Panel";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
-import { formatDateTime } from "@/lib/formatUtils";
-
 import { ANALYSIS_METHODS } from "../analysisConfig";
 import {
   analysisFrameCount,
@@ -17,7 +15,6 @@ function roiLabel(roi) {
 export default function AnalysisSetupSummaryStep({
   setup,
   source,
-  calibration,
   createdRun,
 }) {
   const status = createdRun
@@ -73,15 +70,15 @@ export default function AnalysisSetupSummaryStep({
             </dd>
           </div>
           <div className="min-w-0">
-            <dt className="text-xs font-black text-neutral-500">啟用校正</dt>
-            <dd className="mt-1 m-0 break-all font-bold text-neutral-100">
-              {calibration?.calibration_id || setup.calibrationId || "—"}
+            <dt className="text-xs font-black text-neutral-500">內部參數</dt>
+            <dd className="mt-1 m-0 font-bold text-neutral-100">
+              建立分析時固化
             </dd>
           </div>
           <div>
-            <dt className="text-xs font-black text-neutral-500">校正更新時間</dt>
+            <dt className="text-xs font-black text-neutral-500">外部參數</dt>
             <dd className="mt-1 m-0 font-bold text-neutral-100">
-              {formatDateTime(calibration?.updated_at || calibration?.created_at)}
+              執行時由 ArUco 自動求解
             </dd>
           </div>
           <div className="min-w-0">

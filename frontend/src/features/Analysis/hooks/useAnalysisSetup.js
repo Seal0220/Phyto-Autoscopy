@@ -26,7 +26,6 @@ import {
   analysisMethodFromCameraSources,
   analysisSetupFromRecord,
   analysisSourcesFromPayload,
-  activeCalibrationFromPayload,
   buildAnalysisCreatePayload,
   createInitialAnalysisSetup,
   normalizeCreatedAnalysisRun,
@@ -52,7 +51,6 @@ export default function useAnalysisSetup({
   initialRecordId = "",
 }) {
   const [sources, setSources] = useState([]);
-  const [activeCalibration, setActiveCalibration] = useState(null);
   const [setup, setSetup] = useState(() => (
     createInitialAnalysisSetup(initialRecordId)
   ));
@@ -158,18 +156,14 @@ export default function useAnalysisSetup({
     setLoading(true);
 
     try {
-      const [sourcePayload, calibrationPayload] = await loadAnalysisSetupOptions(
+      const sourcePayload = await loadAnalysisSetupOptions(
         controller.signal,
       );
       const nextSources = analysisSourcesFromPayload(sourcePayload);
-      const nextActiveCalibration = activeCalibrationFromPayload(
-        calibrationPayload,
-      );
 
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setSources(nextSources);
-      setActiveCalibration(nextActiveCalibration);
       const selectedSource = nextSources.find(
         (source) => source.record_id === setupRef.current.recordId,
       );
@@ -179,14 +173,10 @@ export default function useAnalysisSetup({
           selectedSource,
         )
         : setupRef.current;
-      const setupWithCalibration = {
-        ...nextSetup,
-        calibrationId: nextActiveCalibration?.calibration_id || "",
-      };
-      setupRef.current = setupWithCalibration;
-      setSetup(setupWithCalibration);
+      setupRef.current = nextSetup;
+      setSetup(nextSetup);
       if (selectedSource) {
-        void performSourceScan(setupWithCalibration);
+        void performSourceScan(nextSetup);
       }
       setLoadError("");
       return true;
@@ -330,7 +320,6 @@ export default function useAnalysisSetup({
       validateAnalysisSetupStep(
         setup,
         currentStep,
-        activeCalibration,
       );
       const next = Math.min(4, currentStep + 1);
       setCurrentStep(next);
@@ -399,7 +388,6 @@ export default function useAnalysisSetup({
       validateAnalysisSetupStep(
         setup,
         4,
-        activeCalibration,
       );
     } catch (error) {
       setStepError(messageFromError(
@@ -421,7 +409,6 @@ export default function useAnalysisSetup({
 
     const run = normalizeCreatedAnalysisRun(result, {
       record_id: setup.recordId,
-      calibration_id: setup.calibrationId,
       method_name: setup.method,
       method_version: setup.method === "top_side_rotating" ? "2.0.0" : "1.0.0",
       status: "draft",
@@ -488,7 +475,6 @@ export default function useAnalysisSetup({
 
   return {
     sources,
-    activeCalibration,
     setup,
     currentStep,
     highestStep,

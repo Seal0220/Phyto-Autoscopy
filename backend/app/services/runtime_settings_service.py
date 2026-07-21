@@ -26,6 +26,7 @@ def build_candidate_settings(context: AppContext, group: str, payload: dict) -> 
         "schedule",
         "analysis",
         "calibration",
+        "pose_alignment",
         "logging",
     }:
         candidate_data = current

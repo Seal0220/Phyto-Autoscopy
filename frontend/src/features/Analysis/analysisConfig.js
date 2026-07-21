@@ -78,7 +78,9 @@ export const ANALYSIS_STATUS_META = {
 export const ANALYSIS_STAGE_LABELS = {
   validating: "驗證輸入資料",
   pairing_frames: "配對雙鏡頭影格",
-  calibrating: "套用相機校正",
+  detecting_aruco: "偵測 ArUco 世界基準",
+  estimating_camera_poses: "估算相機姿態",
+  refining_camera_poses: "精修相機姿態",
   initializing_background: "初始化背景模型",
   detecting_top_tip: "偵測俯視尖端",
   detecting_side_tip: "偵測側視尖端",

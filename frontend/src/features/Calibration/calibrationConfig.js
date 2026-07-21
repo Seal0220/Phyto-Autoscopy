@@ -35,17 +35,6 @@ export const CALIBRATION_CAMERA_MODEL_OPTIONS = Object.freeze([
   }),
 ]);
 
-export const CALIBRATION_SUGGESTED_ANGLES = Object.freeze([
-  0,
-  45,
-  90,
-  135,
-  180,
-  225,
-  270,
-  315,
-]);
-
 export const CALIBRATION_PAPER_SIZE_OPTIONS = Object.freeze([
   Object.freeze({
     value: "a3",

@@ -1,7 +1,6 @@
 import {
   CALIBRATION_BOARD_DEFAULTS,
   CALIBRATION_PAPER_SIZE_OPTIONS,
-  CALIBRATION_SUGGESTED_ANGLES,
 } from "../calibrationConfig.js";
 
 export function calibrationBoardMetrics({
@@ -54,35 +53,6 @@ export function calibrationLockState(
     ownsLock,
     lockedByAnotherOperator: Boolean(status?.lock?.locked) && !ownsLock,
   };
-}
-
-export function suggestedCalibrationAngles(range) {
-  const minimum = Number(range?.[0]);
-  const maximum = Number(range?.[1]);
-  if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) {
-    return [...CALIBRATION_SUGGESTED_ANGLES];
-  }
-  return CALIBRATION_SUGGESTED_ANGLES.filter((angle) => (
-    angle >= minimum && angle <= maximum
-  ));
-}
-
-export function calibrationAngleCompleted(
-  observations,
-  angle,
-  tolerance = 0.5,
-) {
-  return (observations || []).some((observation) => {
-    if (observation?.motor_angle_deg === null
-      || observation?.motor_angle_deg === undefined) {
-      return false;
-    }
-    const observedAngle = Number(observation.motor_angle_deg);
-    return observation.accepted
-      && observation.detections?.rotating?.board_detected
-      && Number.isFinite(observedAngle)
-      && Math.abs(observedAngle - angle) < tolerance;
-  });
 }
 
 export function intrinsicCaptureNotice(
