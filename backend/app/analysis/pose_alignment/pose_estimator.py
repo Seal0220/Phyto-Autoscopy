@@ -328,7 +328,7 @@ def estimate_aruco_pose(
     if not camera_on_expected_side:
         failure_reason = (
             "ArUco PnP 得到的相機位置位於世界基準背面，"
-            "請確認 Marker 朝向與 Z 軸方向。"
+            "請確認 標籤朝向與 Z 軸方向。"
         )
         warnings.append(failure_reason)
     elif not resolved:

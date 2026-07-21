@@ -6,10 +6,10 @@
       "right_rear_id": 1,
       "left_front_id": 2,
       "right_front_id": 3,
-      "marker_size_mm": 50.0,
-      "left_right_center_distance_mm": 300.0,
-      "rear_front_center_distance_mm": 300.0,
-      "marker_orientation_deg": 0.0,
+      "marker_size_mm": 50,
+      "left_right_center_distance_mm": 300,
+      "rear_front_center_distance_mm": 300,
+      "marker_orientation_deg": 0,
       "world_origin": "layout_center",
       "x_axis_direction": "right",
       "y_axis_direction": "front",
@@ -33,7 +33,7 @@
       }
     },
     "minimum_pnp_inliers": 4,
-    "maximum_aruco_reprojection_error_px": 5.0,
+    "maximum_aruco_reprojection_error_px": 5,
     "minimum_sfm_matches": 16,
     "pose_estimation_version": "aruco_world_v2"
   }

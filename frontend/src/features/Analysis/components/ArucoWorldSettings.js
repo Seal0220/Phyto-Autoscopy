@@ -16,10 +16,10 @@ import useSettings from "@/hooks/useSettings";
 import { cloneValue } from "@/features/Settings/lib/settingsUtils";
 
 const MARKERS = [
-  ["left_rear", "左後", "left_rear_id"],
-  ["right_rear", "右後", "right_rear_id"],
-  ["left_front", "左前", "left_front_id"],
-  ["right_front", "右前", "right_front_id"],
+  ["left_rear", "左上", "left_rear_id"],
+  ["right_rear", "右上", "right_rear_id"],
+  ["left_front", "左下", "left_front_id"],
+  ["right_front", "右下", "right_front_id"],
 ];
 
 const DICTIONARY_OPTIONS = [
@@ -38,10 +38,10 @@ const DICTIONARY_CAPACITY = {
 
 const ORIGIN_OPTIONS = [
   { value: "layout_center", label: "配置中心" },
-  { value: "left_rear", label: "左後 Marker 中心" },
-  { value: "right_rear", label: "右後 Marker 中心" },
-  { value: "left_front", label: "左前 Marker 中心" },
-  { value: "right_front", label: "右前 Marker 中心" },
+  { value: "left_rear", label: "左上 標籤中心" },
+  { value: "right_rear", label: "右上 標籤中心" },
+  { value: "left_front", label: "左下 標籤中心" },
+  { value: "right_front", label: "右下 標籤中心" },
 ];
 
 function requiredNumber(
@@ -126,10 +126,10 @@ function markerCentersForOrigin(
 
   const offset = origin === "layout_center"
     ? {
-        x_mm: values.reduce((sum, center) => sum + Number(center.x_mm), 0) / values.length,
-        y_mm: values.reduce((sum, center) => sum + Number(center.y_mm), 0) / values.length,
-        z_mm: values.reduce((sum, center) => sum + Number(center.z_mm), 0) / values.length,
-      }
+      x_mm: values.reduce((sum, center) => sum + Number(center.x_mm), 0) / values.length,
+      y_mm: values.reduce((sum, center) => sum + Number(center.y_mm), 0) / values.length,
+      z_mm: values.reduce((sum, center) => sum + Number(center.z_mm), 0) / values.length,
+    }
     : centers[origin];
 
   return Object.fromEntries(
@@ -153,14 +153,14 @@ function serializePoseAlignment(payload) {
   const settings = next.pose_alignment;
   const world = settings.aruco_world;
   const markerIds = MARKERS.map(([, label, key]) => (
-    requiredNumber(world[key], `${label} Marker ID`, {
+    requiredNumber(world[key], `${label} 標籤ID`, {
       minimum: 0,
       integer: true,
     })
   ));
 
   if (new Set(markerIds).size !== MARKERS.length) {
-    throw new Error("四個 ArUco Marker ID 不可重複。");
+    throw new Error("四個 ArUco 標籤ID 不可重複。");
   }
   const dictionaryCapacity = DICTIONARY_CAPACITY[world.dictionary];
   if (
@@ -168,7 +168,7 @@ function serializePoseAlignment(payload) {
     && markerIds.some((markerId) => markerId >= dictionaryCapacity)
   ) {
     throw new Error(
-      `${world.dictionary} 的 Marker ID 必須小於 ${dictionaryCapacity}。`,
+      `${world.dictionary} 的 標籤ID 必須小於 ${dictionaryCapacity}。`,
     );
   }
   MARKERS.forEach(([, , key], index) => {
@@ -176,7 +176,7 @@ function serializePoseAlignment(payload) {
   });
   world.marker_size_mm = requiredNumber(
     world.marker_size_mm,
-    "Marker 邊長",
+    "標籤邊長",
     { minimum: 0.001 },
   );
   world.left_right_center_distance_mm = requiredNumber(
@@ -186,19 +186,19 @@ function serializePoseAlignment(payload) {
   );
   world.rear_front_center_distance_mm = requiredNumber(
     world.rear_front_center_distance_mm,
-    "前後中心距離",
+    "上下中心距離",
     { minimum: 0.001 },
   );
   world.marker_orientation_deg = requiredNumber(
     world.marker_orientation_deg,
-    "Marker 朝向",
+    "標籤朝向",
   );
 
   if (world.advanced_mode) {
     const centers = world.marker_centers_world_mm || {};
     for (const [position, label] of MARKERS) {
       const center = centers[position];
-      if (!center) throw new Error(`請填寫${label} Marker 世界座標。`);
+      if (!center) throw new Error(`請填寫${label} 標籤世界座標。`);
       for (const axis of ["x", "y", "z"]) {
         center[`${axis}_mm`] = requiredNumber(
           center[`${axis}_mm`],
@@ -207,7 +207,7 @@ function serializePoseAlignment(payload) {
       }
       center.orientation_deg = requiredNumber(
         center.orientation_deg,
-        `${label} Marker 朝向`,
+        `${label} 標籤朝向`,
       );
     }
   } else {
@@ -292,8 +292,8 @@ function ArucoTopView({ world }) {
     : selectedOriginLabel;
 
   return (
-    <InnerPanel className="relative min-h-80 overflow-hidden bg-emerald-950/20">
-      <div className="absolute inset-8 rounded-xl border border-dashed border-emerald-200/30">
+    <InnerPanel className="place-self-center mx-auto relative size-120 overflow-hidden bg-emerald-950/20">
+      <div className="absolute inset-14 rounded-xl border border-dashed border-emerald-200/30">
         <span
           className="absolute z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-100 bg-emerald-300"
           style={{
@@ -301,44 +301,49 @@ function ArucoTopView({ world }) {
             top: `${originTop}%`,
           }}
         />
-        <span
-          className="absolute z-10 translate-x-2 translate-y-2 whitespace-nowrap text-xs font-black text-emerald-200"
+        <div
+          className="absolute z-10 translate-x-2 translate-y-2 whitespace-nowrap flex flex-col gap-0.5"
           style={{
             left: `${originLeft}%`,
             top: `${originTop}%`,
           }}
         >
-          世界原點：{originLabel}
-        </span>
+          <span className="text-sm font-black text-emerald-200">原點</span>
+          <span className="text-xs font-bold text-neutral-300">
+            X {world.x_axis_direction === "right" ? "向右" : "向左"}
+            {" · "}
+            Y {world.y_axis_direction === "front" ? "向下" : "向上"}
+            {" · "}
+            Z {world.z_axis_direction === "up" ? "向上" : "向下"}
+          </span>
+        </div>
+
+
         {points.map((point) => (
           <div
             key={point.position}
             className="absolute grid size-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-xl border border-emerald-200/50 bg-black/50 text-center shadow-lg"
             style={{
-              left: `${10 + ((point.x - minimumX) / width) * 80}%`,
-              top: `${10 + ((point.y - minimumY) / height) * 80}%`,
+              left: `${((point.x - minimumX) / width) * 100}%`,
+              top: `${((point.y - minimumY) / height) * 100}%`,
             }}
           >
             <span className="text-xs font-black text-emerald-200">
-              {point.label} ID {point.id}
+              [{point.id}] {point.label}
             </span>
           </div>
         ))}
-        <span className="absolute right-2 bottom-2 text-xs font-bold text-neutral-300">
-          Marker 邊長 {world.marker_size_mm} mm
+        <span className="absolute left-12 bottom-2 text-xs font-bold text-neutral-300 flex gap-1 justify-center items-center">
+          <span>標籤邊長</span>
+          <span className="text-sm font-black text-emerald-200">{world.marker_size_mm} mm</span>
         </span>
-        <span className="absolute top-2 left-1/2 -translate-x-1/2 text-xs font-bold text-neutral-300">
-          左右中心距離 {world.left_right_center_distance_mm} mm
+        <span className="absolute top-2 left-1/2 -translate-x-1/2 text-xs font-bold text-neutral-300 flex gap-2 justify-center items-center">
+          <span>左右中心距離</span>
+          <span className="text-sm font-black text-emerald-200">{world.left_right_center_distance_mm} mm</span>
         </span>
-        <span className="absolute top-1/2 left-2 -translate-y-1/2 [writing-mode:vertical-rl] text-xs font-bold text-neutral-300">
-          前後中心距離 {world.rear_front_center_distance_mm} mm
-        </span>
-        <span className="absolute bottom-2 left-2 text-xs font-bold text-neutral-300">
-          X {world.x_axis_direction === "right" ? "向右" : "向左"}
-          {" · "}
-          Y {world.y_axis_direction === "front" ? "向前" : "向後"}
-          {" · "}
-          Z {world.z_axis_direction === "up" ? "向上" : "向下"}
+        <span className="absolute top-1/2 left-2 -translate-y-1/2 [writing-mode:vertical-rl] text-xs font-bold text-neutral-300 flex gap-2 justify-center items-center">
+          <span>上下中心距離</span>
+          <span className="text-sm font-black text-emerald-200">{world.rear_front_center_distance_mm} mm</span>
         </span>
       </div>
     </InnerPanel>
@@ -405,7 +410,7 @@ export default function ArucoWorldSettings({
 
   return (
     <SettingPanel
-      label="ArUco 世界基準"
+      label="ArUco 基準"
       open={open}
       locked={saving}
       footer={(
@@ -418,18 +423,18 @@ export default function ArucoWorldSettings({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          {saving ? "儲存中…" : "儲存 ArUco 世界基準"}
+          {saving ? "儲存中…" : "儲存 ArUco 基準"}
         </Button>
       )}
     >
       {loading && !payload ? (
         <p className="grid min-h-28 place-items-center text-sm font-semibold text-neutral-400">
-          讀取 ArUco 世界基準中…
+          讀取 ArUco 基準中…
         </p>
       ) : null}
       {!loading && !payload && loadFailed ? (
         <RetryMessage
-          message={loadError || "讀取 ArUco 世界基準失敗。"}
+          message={loadError || "讀取 ArUco 基準失敗。"}
           onRetry={() => void loadGroup()}
           retrying={loading}
         />
@@ -437,16 +442,17 @@ export default function ArucoWorldSettings({
       {world ? (
         <div className="grid gap-5">
           <SubsectionHeader
-            title="ArUco 世界基準"
-            description="四個 Marker 共同定義毫米世界座標；所有距離皆為 Marker 中心至中心。"
+            title="ArUco 基準"
+            description="基準定位標籤，請依照設定放置標籤。"
           />
           <ArucoTopView world={world} />
 
-          <InnerPanel>
-            <div className="grid gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-4">
+          <InnerPanel className="w-fit mx-auto place-self-center">
+            <div className="flex flex-row gap-3">
               <SelectInput
                 id="aruco-dictionary"
-                label="ArUco Dictionary"
+                className="w-40"
+                label="ArUco 庫"
                 value={world.dictionary}
                 options={DICTIONARY_OPTIONS}
                 onValueChange={update(
@@ -454,7 +460,7 @@ export default function ArucoWorldSettings({
                   ["pose_alignment", "aruco_world", "dictionary"],
                 )}
               />
-              {MARKERS.map(([, label, key]) => (
+              {/* {MARKERS.map(([, label, key]) => (
                 <NumericInput
                   key={key}
                   id={`aruco-${key}`}
@@ -467,10 +473,11 @@ export default function ArucoWorldSettings({
                     ["pose_alignment", "aruco_world", key],
                   )}
                 />
-              ))}
+              ))} */}
               <NumericInput
                 id="aruco-marker-size"
-                label="Marker 邊長"
+                className="w-40"
+                label="標籤邊長"
                 value={world.marker_size_mm}
                 min={0.001}
                 step={0.1}
@@ -482,6 +489,7 @@ export default function ArucoWorldSettings({
               />
               <NumericInput
                 id="aruco-horizontal-distance"
+                className="w-40"
                 label="左右中心距離"
                 value={world.left_right_center_distance_mm}
                 min={0.001}
@@ -494,7 +502,8 @@ export default function ArucoWorldSettings({
               />
               <NumericInput
                 id="aruco-depth-distance"
-                label="前後中心距離"
+                className="w-40"
+                label="上下中心距離"
                 value={world.rear_front_center_distance_mm}
                 min={0.001}
                 step={0.1}
@@ -504,21 +513,21 @@ export default function ArucoWorldSettings({
                   ["pose_alignment", "aruco_world", "rear_front_center_distance_mm"],
                 )}
               />
-              <NumericInput
+              {/* <NumericInput
                 id="aruco-marker-orientation"
-                label="Marker 朝向"
+                label="標籤朝向"
                 value={world.marker_orientation_deg}
                 min={-360}
                 max={360}
                 step={0.1}
                 suffix="度"
-                description="0° 表示 Marker 上緣朝世界 Y 軸負方向。"
+                description="0° 表示 標籤上緣朝世界 Y 軸負方向。"
                 onValueChange={update(
                   updateField,
                   ["pose_alignment", "aruco_world", "marker_orientation_deg"],
                 )}
-              />
-              <SelectInput
+              /> */}
+              {/* <SelectInput
                 id="aruco-world-origin"
                 label="世界原點"
                 value={world.world_origin}
@@ -543,8 +552,8 @@ export default function ArucoWorldSettings({
                 label="Y 軸方向"
                 value={world.y_axis_direction}
                 options={[
-                  { value: "front", label: "向前" },
-                  { value: "rear", label: "向後" },
+                  { value: "front", label: "向下" },
+                  { value: "rear", label: "向上" },
                 ]}
                 onValueChange={update(
                   updateField,
@@ -563,14 +572,14 @@ export default function ArucoWorldSettings({
                   updateField,
                   ["pose_alignment", "aruco_world", "z_axis_direction"],
                 )}
-              />
+              /> */}
             </div>
           </InnerPanel>
 
-          <ToggleRow
+          {/* <ToggleRow
             checked={world.advanced_mode}
             label="進階世界座標"
-            description="開啟後直接指定每個 Marker 中心的毫米世界座標與朝向。"
+            description="開啟上直接指定每個 標籤中心的毫米世界座標與朝向。"
             onClick={() => setAdvancedMode(!world.advanced_mode)}
           />
 
@@ -581,7 +590,7 @@ export default function ArucoWorldSettings({
                 return (
                   <InnerPanel key={position}>
                     <h4 className="m-0 text-sm font-black text-emerald-200">
-                      {label} Marker 中心
+                      {label} 標籤中心
                     </h4>
                     <div className="grid grid-cols-2 gap-3">
                       {["x", "y", "z"].map((axis) => (
@@ -606,7 +615,7 @@ export default function ArucoWorldSettings({
                       ))}
                       <NumericInput
                         id={`aruco-${position}-orientation`}
-                        label="Marker 朝向"
+                        label="標籤朝向"
                         value={center?.orientation_deg ?? ""}
                         min={-360}
                         max={360}
@@ -628,7 +637,7 @@ export default function ArucoWorldSettings({
                 );
               })}
             </div>
-          ) : null}
+          ) : null} */}
 
           <SubsectionHeader
             title="相機安裝先驗"

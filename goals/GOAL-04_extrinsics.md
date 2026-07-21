@@ -70,12 +70,12 @@ world_alignment.py
 
 ---
 
-## 3. ArUco 世界基準設定
+## 3. ArUco 基準設定
 
 在系統設定加入：
 
 ```text
-ArUco 世界基準
+ArUco 基準
 ```
 
 裝置底部四角各固定一個不同 ID 的 ArUco 標記，四個標記共同定義毫米世界座標。
@@ -99,7 +99,7 @@ ArUco 世界基準
 左前 ID
 右前 ID
 
-Marker 邊長
+標籤邊長
 左右中心距離
 前後中心距離
 世界原點
@@ -158,7 +158,7 @@ refining_camera_poses
 
 ```text
 讀取各相機唯一內參
-→ 讀取 ArUco 世界基準設定
+→ 讀取 ArUco 基準設定
 → 偵測每張影像中的 ArUco 角點
 → 建立世界 3D 點與影像 2D 點對應
 → 求解每張影像的旋轉與平移

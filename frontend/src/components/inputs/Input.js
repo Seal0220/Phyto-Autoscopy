@@ -314,11 +314,13 @@ export function SelectInput({
   onValueChange,
   options,
   description,
+  className,
 }) {
   return (
     <FieldFrame
       label={label}
       description={description}
+      className={className}
     >
       <SelectMenu
         id={id}

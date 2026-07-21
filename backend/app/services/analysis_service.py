@@ -1115,11 +1115,11 @@ class AnalysisService:
                     ).read_aruco_layout_snapshot()
                 except (OSError, ValueError) as error:
                     raise AnalysisError(
-                        "分析建立時固化的 ArUco 世界基準快照遺失。"
+                        "分析建立時固化的 ArUco 基準快照遺失。"
                     ) from error
                 if stored_layout != run.aruco_layout_snapshot:
                     raise AnalysisError(
-                        "分析的 ArUco 世界基準快照與資料庫紀錄不一致。"
+                        "分析的 ArUco 基準快照與資料庫紀錄不一致。"
                     )
                 self._validate_required_parameters(
                     analysis,
@@ -2066,7 +2066,7 @@ class AnalysisService:
         self._verify_frozen_manifest(run, validation)
         intrinsics = self._intrinsics_for_run(run)
         pose_settings = self._pose_settings_for_run(run)
-        self._log(run, "INFO", "開始偵測本次資料集的 ArUco 世界基準。")
+        self._log(run, "INFO", "開始偵測本次資料集的 ArUco 基準。")
 
         def update_pose_stage(stage: str, progress: float) -> None:
             self._check_cancel(cancel_event)

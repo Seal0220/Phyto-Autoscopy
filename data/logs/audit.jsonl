@@ -2954,3 +2954,10 @@
 {"timestamp": "2026-07-21T02:37:14.070191+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/analysis/sources/preview", "outcome": "ok"}
 {"timestamp": "2026-07-21T02:39:05.388987+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
 {"timestamp": "2026-07-21T02:39:05.389990+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T05:01:59.109980+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T05:01:59.112493+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T05:02:58.703822+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T05:02:58.715498+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T06:14:40.179080+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/settings/pose_alignment", "outcome": "ok"}
+{"timestamp": "2026-07-21T06:26:57.920662+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-21T06:26:57.925704+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}

@@ -139,12 +139,12 @@ export default function Analysis() {
           </div>
         </Panel>
 
-        <Panel aria-label="ArUco 世界基準">
+        <Panel aria-label="ArUco 基準">
           <PanelHeader
-            title="ArUco 世界基準"
+            title="ArUco 基準"
             action={(
               <SettingsGear
-                label="ArUco 世界基準"
+                label="ArUco 基準"
                 open={poseSettingsOpen}
                 onClick={() => setPoseSettingsOpen((current) => !current)}
               />

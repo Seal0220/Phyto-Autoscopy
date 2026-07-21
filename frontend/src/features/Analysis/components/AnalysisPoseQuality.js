@@ -117,7 +117,7 @@ function PoseRow({ pose }) {
 
       <dl className="grid min-w-0 gap-2 text-xs min-[520px]:grid-cols-4">
         <Metric
-          label="可見 Marker"
+          label="可見標籤"
           value={`${count(pose.visible_marker_count)} 個`}
         />
         <Metric
