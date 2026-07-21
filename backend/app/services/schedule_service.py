@@ -60,8 +60,12 @@ class ScheduleService:
         self.rotation_service = rotation_service
         self.storage = storage
         self.status = "idle"
+        self.rotation_enabled = False
         self.record_id: str | None = None
         self.cycle_count = 0
+        self.total_cycles: int | None = None
+        self.cycle_duration_seconds: float | None = None
+        self.rotation_step_deg: float | None = None
         self.last_error: str | None = None
         self.elapsed_seconds = 0.0
         self.duration_seconds: float | None = None
@@ -77,8 +81,12 @@ class ScheduleService:
 
     def _reset_runtime_locked(self) -> None:
         self.status = "idle"
+        self.rotation_enabled = False
         self.record_id = None
         self.cycle_count = 0
+        self.total_cycles = None
+        self.cycle_duration_seconds = None
+        self.rotation_step_deg = None
         self.last_error = None
         self.elapsed_seconds = 0.0
         self.duration_seconds = None
@@ -94,8 +102,12 @@ class ScheduleService:
         with self._lock:
             return ScheduleStatus(
                 status=self.status,
+                rotation_enabled=self.rotation_enabled,
                 record_id=self.record_id,
                 cycle_count=self.cycle_count,
+                total_cycles=self.total_cycles,
+                cycle_duration_seconds=self.cycle_duration_seconds,
+                rotation_step_deg=self.rotation_step_deg,
                 last_error=self.last_error,
                 elapsed_seconds=round(self.elapsed_seconds, 3),
                 duration_seconds=self.duration_seconds,
@@ -116,6 +128,11 @@ class ScheduleService:
     def _resolve_plan(self, request: ScheduleStartRequest | None) -> SchedulePlan:
         request = request or ScheduleStartRequest()
         defaults = self.settings.schedule
+        rotation_enabled = (
+            defaults.rotation_enabled
+            if request.rotation_enabled is None
+            else request.rotation_enabled
+        )
         modes = request.modes or [
             TimeIntervalMode(
                 id="mode-1",
@@ -123,48 +140,157 @@ class ScheduleService:
                 interval_seconds=defaults.capture_interval_seconds,
             )
         ]
-        plan = SchedulePlan(
-            duration_seconds=(
+        cycle_interval_seconds = (
+            defaults.cycle_interval_seconds
+            if request.cycle_interval_seconds is None
+            else request.cycle_interval_seconds
+        )
+        rotation_start_deg = (
+            defaults.rotation_start_deg
+            if request.rotation_start_deg is None
+            else request.rotation_start_deg
+        )
+        rotation_end_deg = (
+            defaults.rotation_end_deg
+            if request.rotation_end_deg is None
+            else request.rotation_end_deg
+        )
+        motor = self.settings.motor
+        if rotation_end_deg < rotation_start_deg:
+            raise PhytoAutoscopyError("結束角度不可小於起始角度。")
+        if (
+            rotation_start_deg < motor.minimum_angle_deg
+            or rotation_end_deg > motor.maximum_angle_deg
+        ):
+            raise PhytoAutoscopyError(
+                "排程角度必須位於馬達設定的可用範圍內。"
+            )
+        capture_on_return = (
+            defaults.capture_on_return
+            if request.capture_on_return is None
+            else request.capture_on_return
+        )
+        total_cycles = None
+        cycle_duration_seconds = None
+        if rotation_enabled:
+            total_cycles = request.total_cycles or defaults.total_cycles
+            cycle_duration_seconds = (
+                request.cycle_duration_seconds
+                or defaults.cycle_duration_seconds
+            )
+            duration_seconds = (
+                total_cycles * cycle_duration_seconds
+                + max(0, total_cycles - 1) * cycle_interval_seconds
+            )
+            rotation_step_deg = self._automatic_rotation_step(
+                rotation_start_deg,
+                rotation_end_deg,
+                cycle_duration_seconds,
+                capture_on_return,
+            )
+        else:
+            duration_seconds = (
                 defaults.duration_minutes * 60
                 if request.duration_seconds is None
                 else request.duration_seconds
-            ),
-            rotation_start_deg=(
-                defaults.rotation_start_deg
-                if request.rotation_start_deg is None
-                else request.rotation_start_deg
-            ),
-            rotation_end_deg=(
-                defaults.rotation_end_deg
-                if request.rotation_end_deg is None
-                else request.rotation_end_deg
-            ),
-            rotation_step_deg=(
-                defaults.rotation_step_deg
-                if request.rotation_step_deg is None
-                else request.rotation_step_deg
-            ),
+            )
+            cycle_interval_seconds = 0.0
+            rotation_step_deg = defaults.rotation_step_deg
+
+        plan = SchedulePlan(
+            rotation_enabled=rotation_enabled,
+            duration_seconds=duration_seconds,
+            total_cycles=total_cycles,
+            cycle_duration_seconds=cycle_duration_seconds,
+            cycle_interval_seconds=cycle_interval_seconds,
+            rotation_start_deg=rotation_start_deg,
+            rotation_end_deg=rotation_end_deg,
+            rotation_step_deg=rotation_step_deg,
             angle_tolerance_deg=(
                 defaults.angle_tolerance_deg
                 if request.angle_tolerance_deg is None
                 else request.angle_tolerance_deg
             ),
-            capture_on_return=(
-                defaults.capture_on_return
-                if request.capture_on_return is None
-                else request.capture_on_return
-            ),
+            capture_on_return=capture_on_return,
             modes=modes,
         )
-        motor = self.settings.motor
-        if (
-            plan.rotation_start_deg < motor.minimum_angle_deg
-            or plan.rotation_end_deg > motor.maximum_angle_deg
-        ):
-            raise PhytoAutoscopyError(
-                "排程角度必須位於馬達設定的可用範圍內。"
-            )
         return plan
+
+    def _estimated_cycle_seconds(
+        self,
+        start_deg: float,
+        end_deg: float,
+        step_deg: float,
+        capture_on_return: bool,
+    ) -> float:
+        sequence = self.rotation_service.schedule_capture_sequence(
+            start_deg,
+            end_deg,
+            step_deg,
+            capture_on_return,
+        )
+        velocity = self.settings.motor.velocity_limit_deg_s
+        if velocity <= 0:
+            raise PhytoAutoscopyError(
+                "馬達速度限制必須大於 0，才能自動計算步進度數。"
+            )
+        stabilization_seconds = (
+            self.settings.schedule.stabilization_delay_ms / 1000
+        )
+        current_angle = 0.0
+        travel_degrees = 0.0
+        for target_angle, _ in sequence:
+            travel_degrees += abs(target_angle - current_angle)
+            current_angle = target_angle
+        travel_degrees += abs(current_angle)
+        return (
+            travel_degrees / velocity
+            + len(sequence) * stabilization_seconds
+        )
+
+    def _automatic_rotation_step(
+        self,
+        start_deg: float,
+        end_deg: float,
+        cycle_duration_seconds: float,
+        capture_on_return: bool,
+    ) -> float:
+        angle_range = end_deg - start_deg
+        maximum_step = max(0.1, angle_range)
+        minimum_duration = self._estimated_cycle_seconds(
+            start_deg,
+            end_deg,
+            maximum_step,
+            capture_on_return,
+        )
+        if cycle_duration_seconds + 1e-9 < minimum_duration:
+            raise PhytoAutoscopyError(
+                "每輪時長太短；依目前旋轉範圍、速度與穩定等待設定，"
+                f"至少需要 {minimum_duration:.1f} 秒。"
+            )
+        minimum_step = min(0.1, maximum_step)
+        if self._estimated_cycle_seconds(
+            start_deg,
+            end_deg,
+            minimum_step,
+            capture_on_return,
+        ) <= cycle_duration_seconds + 1e-9:
+            return minimum_step
+
+        lower = minimum_step
+        upper = maximum_step
+        for _ in range(50):
+            candidate = (lower + upper) / 2
+            if self._estimated_cycle_seconds(
+                start_deg,
+                end_deg,
+                candidate,
+                capture_on_return,
+            ) <= cycle_duration_seconds + 1e-9:
+                upper = candidate
+            else:
+                lower = candidate
+        return round(upper, 6)
 
     def _mode_folder(self, index: int, mode: CaptureMode) -> str:
         return f"{index:02d}_{mode.type}_{mode.id}"
@@ -201,7 +327,7 @@ class ScheduleService:
     def start(self, request: ScheduleStartRequest | None = None) -> ScheduleStatus:
         plan = self._resolve_plan(request)
         runtimes = self._build_runtimes(plan)
-        self._selected_cameras()
+        self._selected_cameras(plan)
         with self._lock:
             if self._worker is not None and self._worker.is_alive():
                 raise PhytoAutoscopyError("排程正在執行或停止中。")
@@ -232,20 +358,32 @@ class ScheduleService:
                 raise
 
             self.status = "running"
+            self.rotation_enabled = plan.rotation_enabled
             self.record_id = record.record_id
             self.cycle_count = 0
+            self.total_cycles = plan.total_cycles
+            self.cycle_duration_seconds = plan.cycle_duration_seconds
+            self.rotation_step_deg = (
+                plan.rotation_step_deg
+                if plan.rotation_enabled
+                else None
+            )
             self.last_error = None
             self.elapsed_seconds = 0.0
             self.duration_seconds = plan.duration_seconds
             self.current_angle_deg = None
             self.current_step_index = 0
-            self.total_steps = len(
-                self.rotation_service.schedule_capture_sequence(
-                    plan.rotation_start_deg,
-                    plan.rotation_end_deg,
-                    plan.rotation_step_deg,
-                    plan.capture_on_return,
+            self.total_steps = (
+                len(
+                    self.rotation_service.schedule_capture_sequence(
+                        plan.rotation_start_deg,
+                        plan.rotation_end_deg,
+                        plan.rotation_step_deg,
+                        plan.capture_on_return,
+                    )
                 )
+                if plan.rotation_enabled
+                else 0
             )
             self._runtimes = runtimes
             self._stop_event.clear()
@@ -307,7 +445,8 @@ class ScheduleService:
                     self.records.update_status(record_id, "stopping")
                 except Exception:
                     logger.exception("Failed to persist stopping state: %s", record_id)
-        self.motor_controller.stop()
+        if self.rotation_enabled:
+            self.motor_controller.stop()
         return self.get_status()
 
     def reset(self) -> ScheduleStatus:
@@ -336,17 +475,45 @@ class ScheduleService:
             pass
         return time.monotonic() - paused_at
 
-    def _selected_cameras(self) -> list[str]:
-        schedule = self.settings.schedule
-        selected = []
-        if schedule.capture_top:
-            selected.append("top")
-        if schedule.capture_side:
-            selected.append("side")
-        if schedule.capture_rotating:
+    def _wait_without_capture(
+        self,
+        interval_seconds: float,
+        started_at: float,
+        paused_seconds: float,
+        maximum_elapsed_seconds: float | None = None,
+    ) -> tuple[float, bool]:
+        remaining_seconds = interval_seconds
+        while remaining_seconds > 1e-9:
+            paused_seconds += self._wait_while_paused()
+            if self._stop_event.is_set():
+                return paused_seconds, False
+
+            elapsed_seconds = time.monotonic() - started_at - paused_seconds
+            with self._lock:
+                self.elapsed_seconds = elapsed_seconds
+            if (
+                maximum_elapsed_seconds is not None
+                and elapsed_seconds >= maximum_elapsed_seconds
+            ):
+                return paused_seconds, False
+
+            wait_seconds = min(0.1, remaining_seconds)
+            if maximum_elapsed_seconds is not None:
+                wait_seconds = min(
+                    wait_seconds,
+                    maximum_elapsed_seconds - elapsed_seconds,
+                )
+            wait_started_at = time.monotonic()
+            if self._stop_event.wait(wait_seconds):
+                return paused_seconds, False
+            remaining_seconds -= time.monotonic() - wait_started_at
+
+        return paused_seconds, True
+
+    def _selected_cameras(self, plan: SchedulePlan) -> list[str]:
+        selected = ["top", "side"]
+        if plan.rotation_enabled:
             selected.append("rotating")
-        if not selected:
-            raise PhytoAutoscopyError("請至少啟用一台擷取相機。")
         disabled = [
             camera_id
             for camera_id in selected
@@ -467,6 +634,196 @@ class ScheduleService:
                 f"排程擷取失敗，相機：{', '.join(failed_cameras)}"
             )
 
+    def _run_stationary_capture(
+        self,
+        record_id: str,
+        plan: SchedulePlan,
+        runtimes: list[ModeRuntime],
+        camera_ids: list[str],
+        started_at: float,
+    ) -> float:
+        paused_seconds = 0.0
+        for runtime in runtimes:
+            runtime.next_due_seconds = 0.0
+
+        while not self._stop_event.is_set():
+            paused_seconds += self._wait_while_paused()
+            if self._stop_event.is_set():
+                break
+
+            elapsed_seconds = time.monotonic() - started_at - paused_seconds
+            with self._lock:
+                self.elapsed_seconds = elapsed_seconds
+                self.current_angle_deg = None
+            if elapsed_seconds >= plan.duration_seconds:
+                break
+
+            due_modes: list[tuple[ModeRuntime, list[float], str]] = []
+            for runtime in runtimes:
+                due, targets, trigger_value = self._due_targets(
+                    runtime,
+                    elapsed_seconds,
+                    0.0,
+                    plan.angle_tolerance_deg,
+                )
+                if due:
+                    due_modes.append((runtime, targets, trigger_value))
+            if due_modes:
+                self._capture_modes(
+                    record_id,
+                    due_modes,
+                    1,
+                    elapsed_seconds,
+                    0.0,
+                    0.0,
+                    "stationary",
+                    camera_ids,
+                )
+            if self._stop_event.wait(0.1):
+                break
+
+        return paused_seconds
+
+    def _run_rotation_cycles(
+        self,
+        record_id: str,
+        plan: SchedulePlan,
+        runtimes: list[ModeRuntime],
+        camera_ids: list[str],
+        started_at: float,
+    ) -> float:
+        paused_seconds = 0.0
+        total_cycles = plan.total_cycles or 1
+        cycle_duration_seconds = plan.cycle_duration_seconds or 0.0
+        cycle_steps = self.rotation_service.schedule_capture_sequence(
+            plan.rotation_start_deg,
+            plan.rotation_end_deg,
+            plan.rotation_step_deg,
+            plan.capture_on_return,
+        )
+
+        for cycle_id in range(1, total_cycles + 1):
+            if self._stop_event.is_set():
+                break
+            paused_seconds += self._wait_while_paused()
+            if self._stop_event.is_set():
+                break
+
+            cycle_started_seconds = (
+                time.monotonic() - started_at - paused_seconds
+            )
+            for runtime in runtimes:
+                runtime.captured_targets.clear()
+                if isinstance(runtime.mode, TimeIntervalMode):
+                    runtime.next_due_seconds = cycle_started_seconds
+            previous_direction: str | None = None
+            completed_cycle = True
+            with self._lock:
+                self.cycle_count = cycle_id
+
+            for step_index, (commanded_angle, motion_direction) in enumerate(
+                cycle_steps,
+                start=1,
+            ):
+                if self._stop_event.is_set():
+                    completed_cycle = False
+                    break
+                paused_seconds += self._wait_while_paused()
+                if self._stop_event.is_set():
+                    completed_cycle = False
+                    break
+
+                if motion_direction != previous_direction:
+                    if motion_direction == "return":
+                        for runtime in runtimes:
+                            runtime.captured_targets.clear()
+                    previous_direction = motion_direction
+
+                elapsed_seconds = time.monotonic() - started_at - paused_seconds
+                with self._lock:
+                    self.elapsed_seconds = elapsed_seconds
+                    self.current_angle_deg = commanded_angle
+                    self.current_step_index = step_index
+
+                self.motor_controller.move_to_angle(commanded_angle)
+                stabilization_seconds = (
+                    self.settings.schedule.stabilization_delay_ms / 1000
+                )
+                if (
+                    stabilization_seconds > 0
+                    and self._stop_event.wait(stabilization_seconds)
+                ):
+                    completed_cycle = False
+                    break
+
+                elapsed_seconds = time.monotonic() - started_at - paused_seconds
+                with self._lock:
+                    self.elapsed_seconds = elapsed_seconds
+                actual_angle = float(
+                    self.motor_controller.status().command_position_deg
+                )
+                if (
+                    abs(actual_angle - commanded_angle)
+                    > plan.angle_tolerance_deg + 1e-9
+                ):
+                    raise MotorError(
+                        f"馬達實際角度 {actual_angle:g} 度超出目標角度 "
+                        f"{commanded_angle:g} 度的允許誤差。"
+                    )
+
+                due_modes: list[tuple[ModeRuntime, list[float], str]] = []
+                for runtime in runtimes:
+                    due, targets, trigger_value = self._due_targets(
+                        runtime,
+                        elapsed_seconds,
+                        actual_angle,
+                        plan.angle_tolerance_deg,
+                    )
+                    if due:
+                        due_modes.append((runtime, targets, trigger_value))
+                if due_modes:
+                    self._capture_modes(
+                        record_id,
+                        due_modes,
+                        cycle_id,
+                        elapsed_seconds,
+                        commanded_angle,
+                        actual_angle,
+                        motion_direction,
+                        camera_ids,
+                    )
+
+            if not completed_cycle:
+                break
+
+            self.motor_controller.return_origin()
+            with self._lock:
+                self.current_angle_deg = 0.0
+
+            elapsed_seconds = time.monotonic() - started_at - paused_seconds
+            cycle_elapsed_seconds = elapsed_seconds - cycle_started_seconds
+            remaining_cycle_seconds = max(
+                0.0,
+                cycle_duration_seconds - cycle_elapsed_seconds,
+            )
+            paused_seconds, continue_schedule = self._wait_without_capture(
+                remaining_cycle_seconds,
+                started_at,
+                paused_seconds,
+            )
+            if not continue_schedule or cycle_id >= total_cycles:
+                break
+
+            paused_seconds, continue_schedule = self._wait_without_capture(
+                plan.cycle_interval_seconds,
+                started_at,
+                paused_seconds,
+            )
+            if not continue_schedule:
+                break
+
+        return paused_seconds
+
     def _run(
         self,
         record_id: str,
@@ -480,94 +837,24 @@ class ScheduleService:
         final_status = "completed"
         background_error: BaseException | None = None
         try:
-            camera_ids = self._selected_cameras()
-            self.motor_controller.engage()
-            cycle_steps = self.rotation_service.schedule_capture_sequence(
-                plan.rotation_start_deg,
-                plan.rotation_end_deg,
-                plan.rotation_step_deg,
-                plan.capture_on_return,
-            )
-            cycle_id = 0
-
-            while not self._stop_event.is_set():
-                cycle_id += 1
-                for runtime in runtimes:
-                    runtime.captured_targets.clear()
-                previous_direction: str | None = None
-                with self._lock:
-                    self.cycle_count = cycle_id
-
-                for step_index, (commanded_angle, motion_direction) in enumerate(
-                    cycle_steps,
-                    start=1,
-                ):
-                    if self._stop_event.is_set():
-                        break
-                    paused_seconds += self._wait_while_paused()
-                    if self._stop_event.is_set():
-                        break
-
-                    if motion_direction != previous_direction:
-                        if motion_direction == "return":
-                            for runtime in runtimes:
-                                runtime.captured_targets.clear()
-                        previous_direction = motion_direction
-
-                    elapsed_seconds = time.monotonic() - started_at - paused_seconds
-                    with self._lock:
-                        self.elapsed_seconds = elapsed_seconds
-                        self.current_angle_deg = commanded_angle
-                        self.current_step_index = step_index
-                    if elapsed_seconds > duration_seconds:
-                        break
-
-                    self.motor_controller.move_to_angle(commanded_angle)
-                    delay_seconds = self.settings.schedule.stabilization_delay_ms / 1000
-                    if delay_seconds > 0 and self._stop_event.wait(delay_seconds):
-                        break
-
-                    elapsed_seconds = time.monotonic() - started_at - paused_seconds
-                    with self._lock:
-                        self.elapsed_seconds = elapsed_seconds
-                    if elapsed_seconds > duration_seconds:
-                        break
-                    actual_angle = float(self.motor_controller.status().command_position_deg)
-                    if abs(actual_angle - commanded_angle) > plan.angle_tolerance_deg + 1e-9:
-                        raise MotorError(
-                            f"馬達實際角度 {actual_angle:g} 度超出目標角度 "
-                            f"{commanded_angle:g} 度的允許誤差。"
-                        )
-
-                    due_modes: list[tuple[ModeRuntime, list[float], str]] = []
-                    for runtime in runtimes:
-                        due, targets, trigger_value = self._due_targets(
-                            runtime,
-                            elapsed_seconds,
-                            actual_angle,
-                            plan.angle_tolerance_deg,
-                        )
-                        if due:
-                            due_modes.append((runtime, targets, trigger_value))
-                    if due_modes:
-                        self._capture_modes(
-                            record_id,
-                            due_modes,
-                            cycle_id,
-                            elapsed_seconds,
-                            commanded_angle,
-                            actual_angle,
-                            motion_direction,
-                            camera_ids,
-                        )
-                else:
-                    self.motor_controller.return_origin()
-                    with self._lock:
-                        self.current_angle_deg = 0.0
-
-                elapsed_seconds = time.monotonic() - started_at - paused_seconds
-                if elapsed_seconds >= duration_seconds:
-                    break
+            camera_ids = self._selected_cameras(plan)
+            if plan.rotation_enabled:
+                self.motor_controller.engage()
+                paused_seconds = self._run_rotation_cycles(
+                    record_id,
+                    plan,
+                    runtimes,
+                    camera_ids,
+                    started_at,
+                )
+            else:
+                paused_seconds = self._run_stationary_capture(
+                    record_id,
+                    plan,
+                    runtimes,
+                    camera_ids,
+                    started_at,
+                )
 
             if self._stop_event.is_set():
                 final_status = "stopped"
@@ -588,7 +875,11 @@ class ScheduleService:
         finally:
             cleanup_error: BaseException | None = None
             try:
-                if self.settings.schedule.return_to_origin and self.motor_controller.status().engaged:
+                if (
+                    plan.rotation_enabled
+                    and self.settings.schedule.return_to_origin
+                    and self.motor_controller.status().engaged
+                ):
                     self.motor_controller.return_origin()
             except Exception as exc:
                 cleanup_error = exc

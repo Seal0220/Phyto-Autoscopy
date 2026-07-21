@@ -6,7 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { FiRefreshCw } from "react-icons/fi";
+import {
+  FiAperture,
+  FiRefreshCw,
+} from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 import FullscreenImage from "@/components/media/FullscreenImage";
@@ -27,6 +30,7 @@ export default function CameraStream({
   enabled,
   connected,
   actualFps,
+  calibrated = false,
   streamPath,
   onNotify,
 }) {
@@ -34,6 +38,7 @@ export default function CameraStream({
   const [streamFailed, setStreamFailed] = useState(false);
   const [retryScheduled, setRetryScheduled] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
+  const [undistortionEnabled, setUndistortionEnabled] = useState(false);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const failureNotifiedRef = useRef(false);
@@ -109,6 +114,12 @@ export default function CameraStream({
   ]);
 
   useEffect(() => {
+    if (!calibrated) {
+      setUndistortionEnabled(false);
+    }
+  }, [calibrated]);
+
+  useEffect(() => {
     const updatePageVisibility = () => {
       setPageVisible(document.visibilityState === "visible");
     };
@@ -127,7 +138,18 @@ export default function CameraStream({
   const source = streamPath
     || `/api/cameras/${encodeURIComponent(cameraId)}/stream`;
   const separator = source.includes("?") ? "&" : "?";
-  const streamSource = `${source}${separator}retry=${retryToken}`;
+  const streamParameters = new URLSearchParams({
+    retry: String(retryToken),
+  });
+  if (calibrated && undistortionEnabled) {
+    streamParameters.set("undistort", "true");
+  }
+  const streamSource = `${source}${separator}${streamParameters.toString()}`;
+  const undistortionTitle = !calibrated
+    ? "尚無有效內參，無法套用去畸變"
+    : undistortionEnabled
+      ? "顯示原始影像"
+      : "套用即時去畸變";
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
@@ -176,36 +198,58 @@ export default function CameraStream({
         </div>
       ) : null}
       {streamActive ? (
-        <FullscreenImage
-          label={label}
-          src={streamSource}
-          alt={`${label}全螢幕即時預覽`}
-          onLoad={handleStreamLoad}
-          onError={handleStreamError}
-        >
-          {streamFailed ? (
-            <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
-              <div className="grid justify-items-center gap-3">
-                <p className="m-0 text-sm font-semibold text-rose-200">
-                  {retryScheduled
-                    ? "影像載入失敗，準備重新載入…"
-                    : "影像串流無法載入。"
-                  }
-                </p>
-                <Button
-                  className="min-h-9 px-3 text-xs"
-                  onClick={reloadStream}
-                >
-                  <FiRefreshCw
-                    className="size-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  立即重新載入
-                </Button>
+        <>
+          <Button
+            className="absolute right-16 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
+            variant={undistortionEnabled ? "primary" : "default"}
+            disabled={!calibrated}
+            aria-label={undistortionTitle}
+            aria-pressed={undistortionEnabled}
+            title={undistortionTitle}
+            onClick={() => {
+              clearRetryTimer();
+              retryCountRef.current = 0;
+              failureNotifiedRef.current = false;
+              setStreamFailed(false);
+              setUndistortionEnabled((current) => !current);
+            }}
+          >
+            <FiAperture
+              className="size-6 shrink-0"
+              aria-hidden="true"
+            />
+          </Button>
+          <FullscreenImage
+            label={label}
+            src={streamSource}
+            alt={`${label}全螢幕即時預覽`}
+            onLoad={handleStreamLoad}
+            onError={handleStreamError}
+          >
+            {streamFailed ? (
+              <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
+                <div className="grid justify-items-center gap-3">
+                  <p className="m-0 text-sm font-semibold text-rose-200">
+                    {retryScheduled
+                      ? "影像載入失敗，準備重新載入…"
+                      : "影像串流無法載入。"
+                    }
+                  </p>
+                  <Button
+                    className="min-h-9 px-3 text-xs"
+                    onClick={reloadStream}
+                  >
+                    <FiRefreshCw
+                      className="size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    立即重新載入
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </FullscreenImage>
+            ) : null}
+          </FullscreenImage>
+        </>
       ) : null}
     </div>
   );

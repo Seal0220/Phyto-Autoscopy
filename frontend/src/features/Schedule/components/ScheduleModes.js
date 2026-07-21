@@ -13,6 +13,7 @@ export default function ScheduleModes({
   schedule,
   setSchedule,
   canEdit,
+  rotationEnabled,
 }) {
   function addMode() {
     let index = schedule.modes.length + 1;
@@ -84,7 +85,10 @@ export default function ScheduleModes({
         className="mb-3"
         titleId="capture-modes-title"
         title="擷取模式"
-        description="共四種擷取模式，每一模式將獨立產生紀錄檔。"
+        description={rotationEnabled
+          ? "共四種擷取模式，每一模式將獨立產生紀錄檔。"
+          : "未啟用旋臂時固定使用雙鏡頭時間間隔擷取。"
+        }
       >
         <Button
           onClick={addMode}
@@ -106,6 +110,7 @@ export default function ScheduleModes({
               mode={mode}
               index={index}
               canEdit={canEdit}
+              fixedTimeInterval={!rotationEnabled}
               onChangeType={(label) => changeModeType(mode.id, label)}
               onRemove={() => removeMode(mode.id)}
               onUpdate={(patch) => updateMode(mode.id, patch)}

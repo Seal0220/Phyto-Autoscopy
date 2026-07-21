@@ -256,6 +256,7 @@ function CalibrationIntrinsicCard({
         enabled={enabled}
         connected={connected}
         actualFps={cameraStatus?.actual_fps}
+        calibrated={intrinsics?.status === "valid"}
         streamPath={boardProfileId
           ? `/api/calibration/cameras/${camera.id}/stream?board_profile_id=${encodeURIComponent(boardProfileId)}`
           : undefined

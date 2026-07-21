@@ -15,6 +15,7 @@ export default function ScheduleModeCard({
   mode,
   index,
   canEdit,
+  fixedTimeInterval,
   onChangeType,
   onRemove,
   onUpdate,
@@ -46,7 +47,10 @@ export default function ScheduleModeCard({
           id={`schedule-${mode.id}-type`}
           label="擷取模式"
           value={selectedMeta.label}
-          options={SCHEDULE_MODE_LABELS}
+          options={fixedTimeInterval
+            ? [SCHEDULE_MODE_META.time_interval.label]
+            : SCHEDULE_MODE_LABELS
+          }
           description={selectedMeta.description}
           onValueChange={onChangeType}
         />

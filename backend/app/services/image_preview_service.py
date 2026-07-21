@@ -21,6 +21,7 @@ class ImagePreviewService:
         camera_id: str,
         first_frame=None,
         first_sequence: int | None = None,
+        frame_undistorter=None,
     ) -> AsyncIterator[bytes]:
         frame = first_frame
         sequence = first_sequence
@@ -67,10 +68,16 @@ class ImagePreviewService:
                             camera_id,
                         )
                         return
+                frame_data = frame.data
+                if frame_undistorter is not None:
+                    frame_data = await asyncio.to_thread(
+                        frame_undistorter.apply,
+                        frame_data,
+                    )
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
-                    + frame.data
+                    + frame_data
                     + b"\r\n"
                 )
                 frame = None

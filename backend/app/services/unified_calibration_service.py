@@ -277,6 +277,7 @@ class CalibrationService:
         board_profile_id: str,
         first_frame: object,
         first_sequence: int,
+        frame_undistorter: object | None = None,
     ) -> AsyncIterator[bytes]:
         board = self.repository.get_board(board_profile_id)
         if board is None:
@@ -305,7 +306,13 @@ class CalibrationService:
                         self.capture_service.timestamp(frame),
                         result,
                     )
-                    yield self._mjpeg_frame(result.preview_jpeg or frame.data)
+                    frame_data = result.preview_jpeg or frame.data
+                    if frame_undistorter is not None:
+                        frame_data = await asyncio.to_thread(
+                            frame_undistorter.apply,
+                            frame_data,
+                        )
+                    yield self._mjpeg_frame(frame_data)
                     frame, sequence = await asyncio.to_thread(
                         self.camera_manager.wait_for_frame,
                         camera_id,

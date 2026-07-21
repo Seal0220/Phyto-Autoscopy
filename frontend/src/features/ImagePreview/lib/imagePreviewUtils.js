@@ -128,12 +128,8 @@ export function imagePreviewDeviceOptions(
     }
 
     devicesByIndex.set(deviceIndex, {
-      assignedCameraId: typeof result?.camera_id === "string"
-        ? result.camera_id
-        : null,
-      deviceName: typeof result?.device_name === "string"
-        ? result.device_name.trim()
-        : "",
+      assignedCameraId: typeof result?.camera_id === "string" ? result.camera_id : null,
+      deviceName: typeof result?.device_name === "string" ? result.device_name.trim() : "",
     });
   }
 
@@ -141,10 +137,8 @@ export function imagePreviewDeviceOptions(
     .sort(([left], [right]) => left - right)
     .flatMap(([deviceIndex, state]) => {
       const draftAssignment = draftAssignments.get(deviceIndex);
-      const assignedCameraId = draftAssignment
-        || (!hasCameraDrafts ? state.assignedCameraId : null);
-      const usedByAnotherCamera = assignedCameraId
-        && assignedCameraId !== imagePreviewId;
+      const assignedCameraId = draftAssignment || (!hasCameraDrafts ? state.assignedCameraId : null);
+      const usedByAnotherCamera = assignedCameraId && assignedCameraId !== imagePreviewId;
 
       if (usedByAnotherCamera) return [];
 
@@ -152,7 +146,7 @@ export function imagePreviewDeviceOptions(
 
       return [{
         value: String(deviceIndex),
-        label: `索引 ${deviceIndex} · ${deviceName}`,
+        label: `[${deviceIndex}] ${deviceName}`,
       }];
     });
 

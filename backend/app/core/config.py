@@ -110,9 +110,9 @@ class ScheduleSettings(BaseModel):
     device_name: str = "CHLOROCULUS"
     capture_interval_seconds: int = 60
     duration_minutes: int = 240
-    capture_top: bool = True
-    capture_side: bool = True
-    capture_rotating: bool = True
+    total_cycles: int = Field(default=48, ge=1)
+    cycle_duration_seconds: float = Field(default=300.0, gt=0)
+    cycle_interval_seconds: float = Field(default=0.0, ge=0)
     rotation_enabled: bool = True
     rotation_start_deg: float = 0.0
     rotation_end_deg: float = 360.0

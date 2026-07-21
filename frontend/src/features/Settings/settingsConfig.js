@@ -17,9 +17,6 @@ export const SETTINGS_CONFIG = {
       stabilization_delay_ms: true,
       capture_on_return: true,
       return_to_origin: true,
-      capture_top: true,
-      capture_side: true,
-      capture_rotating: true,
     },
   },
   logging: {
@@ -38,9 +35,6 @@ export const FIELD_META = {
     step: 0.1,
     suffix: "度/秒²",
   },
-  capture_side: {
-    label: "擷取側視角",
-  },
   capture_on_return: {
     label: "往返皆擷取",
     description: "關閉時，抵達結束角度後會直接回到原點並開始下一輪；開啟時，會依正向相同的步進與擷取配置返回原點，並在回程擷取。",
@@ -51,12 +45,6 @@ export const FIELD_META = {
     unit: "seconds",
     min: 1,
     max: 86400,
-  },
-  capture_rotating: {
-    label: "擷取旋臂視角",
-  },
-  capture_top: {
-    label: "擷取俯視角",
   },
   duration_minutes: {
     label: "總時長",
@@ -142,10 +130,6 @@ export const SECTION_META = {
       title: "執行行為",
       description: "排程拍攝前後的共用硬體行為。",
     },
-    capture: {
-      title: "擷取視角",
-      description: "選擇排程預設啟用的相機。",
-    },
   },
   logging: {
     root: {
@@ -156,6 +140,6 @@ export const SECTION_META = {
 
 export const SECTION_ORDER = {
   motor: ["movement"],
-  schedule: ["execution", "capture"],
+  schedule: ["execution"],
   logging: ["root"],
 };

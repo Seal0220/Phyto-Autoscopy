@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app.calibration.board_generation import render_calibration_board
+from app.calibration.live_undistortion import LiveFrameUndistorter
 from app.core.exceptions import CalibrationError
 from app.core.state import AppContext, get_context
 from app.models.analysis_models import AnalysisCalibrationProfile
@@ -466,11 +467,22 @@ def detect_calibration_board(
 async def calibration_camera_stream(
     camera_id: str,
     board_profile_id: str = Query(default="default_charuco"),
+    undistort: bool = Query(default=False),
     context: AppContext = Depends(get_context),
 ) -> StreamingResponse:
     status = context.camera_manager.get_status(camera_id)
     if not status.enabled:
         raise CalibrationError(f"相機 {camera_id} 尚未啟用。")
+    frame_undistorter = None
+    if undistort:
+        intrinsics = context.intrinsic_calibration_service.get_intrinsics(
+            camera_id
+        )
+        if intrinsics.status != "valid":
+            raise CalibrationError(
+                f"相機 {camera_id} 沒有可用的有效內參，無法即時去畸變。"
+            )
+        frame_undistorter = LiveFrameUndistorter(intrinsics)
     first_frame, first_sequence = await asyncio.to_thread(
         context.camera_manager.wait_for_frame,
         camera_id,
@@ -482,6 +494,7 @@ async def calibration_camera_stream(
             board_profile_id,
             first_frame,
             first_sequence,
+            frame_undistorter,
         ),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )

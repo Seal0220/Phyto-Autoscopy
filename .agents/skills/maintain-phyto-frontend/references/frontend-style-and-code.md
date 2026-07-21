@@ -574,7 +574,7 @@ The login form uses the same background, panel, field, button, radius, and typog
 The schedule feature is split by responsibility:
 
 - `Schedule.js`: feature entry and execution controls;
-- `components/ScheduleCommonControls.js`: total duration, start angle, end angle, execution step, and angle tolerance shared by all modes;
+- `components/ScheduleCommonControls.js`: the authoritative arm toggle and the common timing/angle controls selected by that toggle;
 - `components/ScheduleModes.js`: list composition and add/remove behavior;
 - `components/ScheduleModeCard.js`: one mode container and its controls;
 - `components/ScheduleModeFields.js`: mode-specific input selection;
@@ -584,6 +584,12 @@ The schedule feature is split by responsibility:
 
 Multiple modes may participate in one schedule. Keep each mode instance independently identifiable, and keep output/logging concepts distinguishable by mode. Shared parameters belong above the mode list rather than repeated within every mode.
 
+`啟用旋臂` is the authoritative schedule camera/movement mode. Keep the existing mode-card add, remove, select, and three-column list interaction in both states; only the available mode options and common inputs change. When disabled, the schedule uses `top + side`, exposes only total duration, and every added mode must be `time_interval`. When enabled, it uses `top + side + rotating`, exposes total cycles, per-cycle duration, inter-cycle interval, start/end angles, and angle tolerance, and permits all four established capture modes. Do not expose a manual rotation-step input: the backend derives the step from the configured per-cycle duration and motor settings.
+
+For rotating schedules, calculate the displayed and persisted total schedule runtime as `total_cycles * cycle_duration_seconds + (total_cycles - 1) * cycle_interval_seconds`. The `排程執行時間` status card must use that same calculated duration before execution and prefer the backend-confirmed `duration_seconds` after start. Fixed dual-camera schedules continue using the entered `duration_seconds` directly.
+
+`每輪間隔` (`cycle_interval_seconds`) is a non-negative duration shared by all modes. It starts only after one complete forward/return cycle has returned to `0°`, and delays the beginning of the next cycle. The interval counts toward the schedule's total duration, excludes paused time, remains immediately interruptible by stop, and is not applied after the final or an incomplete cycle. No capture mode is evaluated during this wait. Reset every mode's per-cycle capture state at the beginning of each new forward/return cycle; in particular, reset each time-interval mode's next due time to the new cycle start so waiting time cannot trigger or carry a capture into the next cycle.
+
 `Schedule.js` emits the `運行狀態` and `排程` panels as sibling control-panel grid items so both can share the same schedule form state without duplicating it in `ControlPanel`. Keep runtime cards out of the schedule form. The runtime panel contains the equal-width status-card grid directly beneath its `PanelHeader`, without a description block or extra nested surface. Use the live motor command position for `目前角度`, falling back to the schedule angle only when motor status is unavailable.
 
 Every schedule cycle reaches the shared end angle and then returns to the `0°` origin before the next cycle. `往返皆擷取` (`capture_on_return`) selects how that return is performed: when disabled, reaching the end angle is followed by a direct return to the origin with no return-path capture evaluation; when enabled, the motor returns step by step with the same forward movement and capture configuration, excluding the duplicated end point. Reset angle-target completion at the direction change so each target may be captured once in the forward direction and once in the return direction; time-interval modes continue evaluating on the return path only when this option is enabled. Record `motion_direction` in every mode log so the two passes remain distinguishable. Do not add a per-cycle motor-release setting because the motor must remain engaged between cycles. The separate `排程結束後回到原點` option is applied once when the whole schedule completes, stops, or fails so an interrupted partial cycle can still return to `0°`.
@@ -592,7 +598,7 @@ The `通用配置` header has a right-side `預設` button through `SubsectionHe
 
 Schedule transport mode names are `time_interval`, `angle_interval`, `specific_angles`, and `equal_divisions`. The time-based mode is always `time_interval`; `seconds_interval` is obsolete and may appear only in an explicit legacy-normalization path.
 
-Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic, parsing comma-separated angle strings, equal-division calculation, and payload construction belong in the schedule library. Equal divisions treat `points` as the total number of capture points including both the shared start and end angles; the interval is therefore `(end - start) / (points - 1)`. Schedule submissions must send `duration_seconds` to the backend; convert minute-based stored defaults only when loading them into the schedule UI.
+Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic, parsing comma-separated angle strings, equal-division calculation, and payload construction belong in the schedule library. Equal divisions treat `points` as the total number of capture points including both the shared start and end angles; the interval is therefore `(end - start) / (points - 1)`. Fixed dual-camera submissions send `duration_seconds`. Rotating submissions send `total_cycles`, `cycle_duration_seconds`, and `cycle_interval_seconds`, all with durations expressed in seconds; the backend derives the authoritative total duration. Convert minute-based stored defaults only when loading them into the schedule UI.
 
 ### 7.3 Settings
 

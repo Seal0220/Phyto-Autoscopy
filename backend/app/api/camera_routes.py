@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
+from app.calibration.live_undistortion import LiveFrameUndistorter
 from app.core.state import AppContext, get_context
-from app.core.exceptions import CameraError
+from app.core.exceptions import CalibrationError, CameraError
 from app.models.camera_models import (
     CameraSettingsUpdate,
     CameraStatus,
@@ -42,11 +43,22 @@ def camera_status(camera_id: str, context: AppContext = Depends(get_context)) ->
 @router.get("/{camera_id}/stream")
 async def camera_stream(
     camera_id: str,
+    undistort: bool = Query(default=False),
     context: AppContext = Depends(get_context),
 ) -> StreamingResponse:
     status = context.camera_manager.get_status(camera_id)
     if not status.enabled:
         raise CameraError(f"相機 {camera_id} 尚未啟用。")
+    frame_undistorter = None
+    if undistort:
+        intrinsics = context.intrinsic_calibration_service.get_intrinsics(
+            camera_id
+        )
+        if intrinsics.status != "valid":
+            raise CalibrationError(
+                f"相機 {camera_id} 沒有可用的有效內參，無法即時去畸變。"
+            )
+        frame_undistorter = LiveFrameUndistorter(intrinsics)
     # A reconnect or settings update briefly reports `connected=False` while
     # the persistent reader obtains its first frame.  Wait for that bounded
     # first frame instead of rejecting a valid stream during this transition.
@@ -60,6 +72,7 @@ async def camera_stream(
             camera_id,
             first_frame,
             first_sequence,
+            frame_undistorter,
         ),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )

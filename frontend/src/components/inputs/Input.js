@@ -113,8 +113,8 @@ export function Input({
         <span
           className={
             isNumber
-              ? "pointer-events-none flex shrink-0 items-center px-2 text-xs font-extrabold whitespace-nowrap text-neutral-500"
-              : "pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-extrabold text-neutral-500"
+              ? "pointer-events-none flex shrink-0 items-center pr-2 text-xs font-extrabold whitespace-nowrap text-neutral-500 select-none"
+              : "pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-extrabold text-neutral-500 select-none"
           }
         >
           {suffix}

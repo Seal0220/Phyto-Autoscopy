@@ -95,9 +95,7 @@ function sectionFor(
   }
 
   if (group === "schedule") {
-    return ["capture_top", "capture_side", "capture_rotating"].includes(key)
-      ? "capture"
-      : "execution";
+    return "execution";
   }
 
   return "root";

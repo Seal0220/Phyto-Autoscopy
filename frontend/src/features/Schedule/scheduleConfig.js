@@ -1,16 +1,22 @@
 export const SCHEDULE_COMMON_DEFAULTS = {
+  rotation_enabled: true,
   duration_seconds: "14400",
+  total_cycles: "48",
+  cycle_duration_seconds: "300",
+  cycle_interval_seconds: "0",
   rotation_start_deg: "0",
   rotation_end_deg: "360",
-  rotation_step_deg: "1",
   angle_tolerance_deg: "0.5",
 };
 
 export const INITIAL_SCHEDULE = {
+  rotation_enabled: true,
   duration_seconds: "14400",
+  total_cycles: "48",
+  cycle_duration_seconds: "300",
+  cycle_interval_seconds: "0",
   rotation_start_deg: "0",
   rotation_end_deg: "360",
-  rotation_step_deg: "1",
   angle_tolerance_deg: "0.5",
   modes: [
     {
@@ -25,6 +31,35 @@ export const SCHEDULE_DURATION_FIELD = [
   "duration_seconds",
   "總時長",
   { unit: "seconds" },
+];
+
+export const SCHEDULE_TOTAL_CYCLES_FIELD = [
+  "total_cycles",
+  "總輪數",
+  {
+    min: 1,
+    max: 100000,
+    step: 1,
+    suffix: "輪",
+  },
+];
+
+export const SCHEDULE_CYCLE_DURATION_FIELD = [
+  "cycle_duration_seconds",
+  "每輪時長",
+  {
+    unit: "seconds",
+    description: "包含旋臂完成正向與回程並回到原點的時間；步進度數會由後端自動計算。",
+  },
+];
+
+export const SCHEDULE_CYCLE_INTERVAL_FIELD = [
+  "cycle_interval_seconds",
+  "每輪間隔",
+  {
+    unit: "seconds",
+    description: "一輪往復完成並回到原點後，等待指定時間再開始下一輪；等待期間不擷取，下一輪會重新計算所有擷取模式。",
+  },
 ];
 
 export const SCHEDULE_COMMON_FIELDS = [
@@ -43,16 +78,6 @@ export const SCHEDULE_COMMON_FIELDS = [
     "結束角度",
     {
       min: 0,
-      max: 360,
-      step: 0.1,
-      suffix: "度",
-    },
-  ],
-  [
-    "rotation_step_deg",
-    "步進度數",
-    {
-      min: 0.1,
       max: 360,
       step: 0.1,
       suffix: "度",

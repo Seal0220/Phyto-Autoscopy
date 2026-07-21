@@ -19,6 +19,7 @@ import {
 } from "../scheduleConfig";
 import {
   buildSchedulePayload,
+  scheduleWithRotationEnabled,
 } from "../lib/scheduleUtils";
 
 export default function useSchedule({
@@ -80,19 +81,30 @@ export default function useSchedule({
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       const scheduleSettings = payload.schedule;
+      const rotationEnabled = scheduleSettings.rotation_enabled
+        ?? INITIAL_SCHEDULE.rotation_enabled;
 
-      setSchedule((previous) => ({
+      setSchedule((previous) => scheduleWithRotationEnabled({
+        rotation_enabled: rotationEnabled,
         duration_seconds: String(
           (scheduleSettings.duration_minutes ?? Number(INITIAL_SCHEDULE.duration_seconds) / 60) * 60,
+        ),
+        total_cycles: String(
+          scheduleSettings.total_cycles ?? INITIAL_SCHEDULE.total_cycles,
+        ),
+        cycle_duration_seconds: String(
+          scheduleSettings.cycle_duration_seconds
+            ?? INITIAL_SCHEDULE.cycle_duration_seconds,
+        ),
+        cycle_interval_seconds: String(
+          scheduleSettings.cycle_interval_seconds
+            ?? INITIAL_SCHEDULE.cycle_interval_seconds,
         ),
         rotation_start_deg: String(
           scheduleSettings.rotation_start_deg ?? INITIAL_SCHEDULE.rotation_start_deg,
         ),
         rotation_end_deg: String(
           scheduleSettings.rotation_end_deg ?? INITIAL_SCHEDULE.rotation_end_deg,
-        ),
-        rotation_step_deg: String(
-          scheduleSettings.rotation_step_deg ?? INITIAL_SCHEDULE.rotation_step_deg,
         ),
         angle_tolerance_deg: String(
           scheduleSettings.angle_tolerance_deg ?? INITIAL_SCHEDULE.angle_tolerance_deg,
@@ -107,7 +119,7 @@ export default function useSchedule({
             }
             : mode
         )),
-      }));
+      }, rotationEnabled));
       setDefaultsLoadError("");
       return true;
     } catch (error) {

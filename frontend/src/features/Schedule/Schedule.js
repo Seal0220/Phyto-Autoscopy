@@ -102,6 +102,7 @@ export default function Schedule({
               schedule={schedule}
               setSchedule={setSchedule}
               canEdit={canEdit}
+              rotationEnabled={Boolean(schedule.rotation_enabled)}
             />
           </fieldset>
 

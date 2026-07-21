@@ -1,3 +1,9 @@
+"use client";
+
+import {
+  useEffect,
+  useState,
+} from "react";
 import {
   FiCamera,
   FiRefreshCw,
@@ -15,6 +21,16 @@ import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
+function validCalibrationIds(intrinsics) {
+  return new Set(
+    Array.isArray(intrinsics)
+      ? intrinsics
+        .filter((item) => item?.status === "valid")
+        .map((item) => item.camera_id)
+      : [],
+  );
+}
+
 export default function ImagePreview({
   imagePreviewById,
   busyActions,
@@ -24,7 +40,44 @@ export default function ImagePreview({
   onRunAction,
   onNotify,
 }) {
+  const [calibratedCameraIds, setCalibratedCameraIds] = useState(
+    () => new Set(),
+  );
   const cameraBusy = [...busyActions].some((action) => action.startsWith("camera."));
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCalibrations() {
+      try {
+        const response = await fetch("/api/calibration/intrinsics", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("讀取相機校正狀態失敗。");
+        }
+        const intrinsics = await response.json();
+        if (mounted) {
+          setCalibratedCameraIds(validCalibrationIds(intrinsics));
+        }
+      } catch (error) {
+        if (mounted) {
+          setCalibratedCameraIds(new Set());
+          onNotify?.(
+            error instanceof Error
+              ? error.message
+              : "讀取相機校正狀態失敗。",
+            "error",
+          );
+        }
+      }
+    }
+
+    void loadCalibrations();
+    return () => {
+      mounted = false;
+    };
+  }, [onNotify]);
 
   return (
     <Panel
@@ -100,6 +153,7 @@ export default function ImagePreview({
                 enabled={enabled}
                 connected={connected}
                 actualFps={imagePreview?.actual_fps}
+                calibrated={calibratedCameraIds.has(imagePreviewId)}
                 onNotify={onNotify}
               />
               <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.035] px-3 py-2">

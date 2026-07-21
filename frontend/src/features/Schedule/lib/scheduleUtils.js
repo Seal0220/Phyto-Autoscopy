@@ -45,13 +45,54 @@ export function scheduleModeTypeFromLabel(label) {
   return Object.entries(SCHEDULE_MODE_META).find(([, meta]) => meta.label === label)?.[0] || "time_interval";
 }
 
+export function scheduleWithRotationEnabled(
+  schedule,
+  rotationEnabled,
+) {
+  if (rotationEnabled) {
+    return {
+      ...schedule,
+      rotation_enabled: true,
+    };
+  }
+
+  return {
+    ...schedule,
+    rotation_enabled: false,
+    modes: schedule.modes.map((mode) => (
+      mode.type === "time_interval"
+        ? mode
+        : {
+          id: mode.id,
+          type: "time_interval",
+          ...SCHEDULE_MODE_META.time_interval.initial,
+        }
+    )),
+  };
+}
+
+export function schedulePlannedDurationSeconds(schedule) {
+  if (!schedule.rotation_enabled) {
+    return Number(schedule.duration_seconds) || 0;
+  }
+
+  const totalCycles = Math.max(0, Number(schedule.total_cycles) || 0);
+  const cycleDuration = Math.max(
+    0,
+    Number(schedule.cycle_duration_seconds) || 0,
+  );
+  const cycleInterval = Math.max(
+    0,
+    Number(schedule.cycle_interval_seconds) || 0,
+  );
+  return totalCycles * cycleDuration
+    + Math.max(0, totalCycles - 1) * cycleInterval;
+}
+
 export function buildSchedulePayload(schedule) {
+  const rotationEnabled = Boolean(schedule.rotation_enabled);
   const payload = {
-    duration_seconds: Number(schedule.duration_seconds),
-    rotation_start_deg: Number(schedule.rotation_start_deg),
-    rotation_end_deg: Number(schedule.rotation_end_deg),
-    rotation_step_deg: Number(schedule.rotation_step_deg),
-    angle_tolerance_deg: Number(schedule.angle_tolerance_deg),
+    rotation_enabled: rotationEnabled,
     modes: schedule.modes.map((mode) => {
       if (mode.type === "specific_angles") {
         const parts = mode.angles
@@ -101,8 +142,26 @@ export function buildSchedulePayload(schedule) {
     }),
   };
 
+  if (rotationEnabled) {
+    payload.total_cycles = Number(schedule.total_cycles);
+    payload.cycle_duration_seconds = Number(
+      schedule.cycle_duration_seconds,
+    );
+    payload.cycle_interval_seconds = Number(
+      schedule.cycle_interval_seconds,
+    );
+    payload.rotation_start_deg = Number(schedule.rotation_start_deg);
+    payload.rotation_end_deg = Number(schedule.rotation_end_deg);
+    payload.angle_tolerance_deg = Number(schedule.angle_tolerance_deg);
+  } else {
+    payload.duration_seconds = Number(schedule.duration_seconds);
+  }
+
   const invalidCommon = Object.entries(payload)
-    .filter(([key]) => key !== "modes")
+    .filter(([key]) => ![
+      "modes",
+      "rotation_enabled",
+    ].includes(key))
     .some(([, value]) => !Number.isFinite(value));
 
   if (invalidCommon) {
@@ -110,19 +169,51 @@ export function buildSchedulePayload(schedule) {
   }
 
   if (
-    payload.duration_seconds <= 0
-    || payload.rotation_step_deg <= 0
-    || payload.angle_tolerance_deg < 0
+    !rotationEnabled
+    && payload.duration_seconds <= 0
   ) {
-    throw new Error("總時長與步進度數必須大於 0，角度誤差不可小於 0。");
+    throw new Error("總時長必須大於 0。");
   }
 
-  if (payload.rotation_end_deg < payload.rotation_start_deg) {
+  if (
+    rotationEnabled
+    && (
+      !Number.isInteger(payload.total_cycles)
+      || payload.total_cycles <= 0
+    )
+  ) {
+    throw new Error("總輪數必須是大於 0 的整數。");
+  }
+
+  if (
+    rotationEnabled
+    && (
+      payload.cycle_duration_seconds <= 0
+      || payload.cycle_interval_seconds < 0
+      || payload.angle_tolerance_deg < 0
+    )
+  ) {
+    throw new Error(
+      "每輪時長必須大於 0，每輪間隔與角度誤差不可小於 0。",
+    );
+  }
+
+  if (
+    rotationEnabled
+    && payload.rotation_end_deg < payload.rotation_start_deg
+  ) {
     throw new Error("結束角度不可小於起始角度。");
   }
 
   if (!payload.modes.length) {
     throw new Error("請至少新增一個擷取模式。");
+  }
+
+  if (
+    !rotationEnabled
+    && payload.modes.some((mode) => mode.type !== "time_interval")
+  ) {
+    throw new Error("未啟用旋臂時只能使用時間間隔擷取模式。");
   }
 
   return payload;

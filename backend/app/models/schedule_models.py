@@ -51,7 +51,11 @@ CaptureMode = Annotated[
 
 
 class SchedulePlan(BaseModel):
+    rotation_enabled: bool = True
     duration_seconds: float = Field(gt=0)
+    total_cycles: int | None = Field(default=None, ge=1)
+    cycle_duration_seconds: float | None = Field(default=None, gt=0)
+    cycle_interval_seconds: float = Field(default=0.0, ge=0)
     rotation_start_deg: float
     rotation_end_deg: float
     rotation_step_deg: float = Field(gt=0)
@@ -61,6 +65,14 @@ class SchedulePlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self):
+        if self.rotation_enabled:
+            if self.total_cycles is None or self.cycle_duration_seconds is None:
+                raise ValueError("啟用旋臂時必須設定總輪數與每輪時長。")
+        elif any(
+            not isinstance(mode, TimeIntervalMode)
+            for mode in self.modes
+        ):
+            raise ValueError("未啟用旋臂時只能使用時間間隔擷取模式。")
         if self.rotation_end_deg < self.rotation_start_deg:
             raise ValueError("結束角度不可小於起始角度。")
         mode_ids = [mode.id for mode in self.modes]
@@ -83,10 +95,13 @@ class SchedulePlan(BaseModel):
 class ScheduleStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    rotation_enabled: bool | None = None
     duration_seconds: float | None = Field(default=None, gt=0)
+    total_cycles: int | None = Field(default=None, ge=1)
+    cycle_duration_seconds: float | None = Field(default=None, gt=0)
+    cycle_interval_seconds: float | None = Field(default=None, ge=0)
     rotation_start_deg: float | None = None
     rotation_end_deg: float | None = None
-    rotation_step_deg: float | None = Field(default=None, gt=0)
     angle_tolerance_deg: float | None = Field(default=None, ge=0)
     capture_on_return: bool | None = None
     modes: list[CaptureMode] = Field(default_factory=list, max_length=20)
@@ -100,8 +115,12 @@ class ModeProgress(BaseModel):
 
 class ScheduleStatus(BaseModel):
     status: str
+    rotation_enabled: bool = False
     record_id: str | None = None
     cycle_count: int = 0
+    total_cycles: int | None = None
+    cycle_duration_seconds: float | None = None
+    rotation_step_deg: float | None = None
     last_error: str | None = None
     elapsed_seconds: float = 0
     duration_seconds: float | None = None

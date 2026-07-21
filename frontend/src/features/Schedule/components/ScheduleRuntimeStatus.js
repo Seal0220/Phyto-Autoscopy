@@ -7,6 +7,7 @@ import { formatElapsed } from "@/lib/formatUtils";
 
 import {
   scheduleErrorMessage,
+  schedulePlannedDurationSeconds,
   scheduleStatusLabel,
 } from "../lib/scheduleUtils";
 
@@ -21,8 +22,20 @@ export default function ScheduleRuntimeStatus({
     status,
   });
   const totalDuration = formatElapsed(
-    scheduleStatus.duration_seconds ?? Number(schedule.duration_seconds || 0),
+    scheduleStatus.duration_seconds ?? schedulePlannedDurationSeconds(schedule),
   );
+  const hasRuntimePlan = [
+    "running",
+    "paused",
+    "stopping",
+    "failed",
+  ].includes(status);
+  const rotationEnabled = hasRuntimePlan
+    ? Boolean(scheduleStatus.rotation_enabled)
+    : Boolean(schedule.rotation_enabled);
+  const totalCycles = hasRuntimePlan
+    ? Number(scheduleStatus.total_cycles || 0)
+    : Number(schedule.total_cycles || 0);
   const angle = Number(
     motor.command_position_deg ?? scheduleStatus.current_angle_deg,
   );
@@ -55,13 +68,16 @@ export default function ScheduleRuntimeStatus({
         />
         <StatusCard
           title="排程"
-          content={scheduleStatus.cycle_count ?? 0}
-          note="次循環"
+          content={rotationEnabled
+            ? `${scheduleStatus.cycle_count ?? 0} / ${totalCycles}`
+            : "雙鏡頭"
+          }
+          note={rotationEnabled ? "輪" : "時間擷取"}
         />
         <StatusCard
           title="目前角度"
-          content={currentAngle}
-          note="度"
+          content={rotationEnabled ? currentAngle : "—"}
+          note={rotationEnabled ? "度" : "未啟用旋臂"}
         />
       </section>
     </Panel>
