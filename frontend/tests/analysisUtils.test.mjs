@@ -19,15 +19,23 @@ test("record auto-fill derives the method from rotating availability", () => {
   const initial = createInitialAnalysisSetup();
   const populated = analysisSetupFromRecord(initial, {
     record_id: "record-auto",
-    total_frame_count: 8,
-    camera_directories: {
-      top: "record-auto/top",
-      side: "record-auto/side",
-      rotating: "record-auto/rotating",
+    record_path: "C:/captures/record-auto",
+    ended_at: "2026-07-22T03:00:00Z",
+    total_image_count: 24,
+    capture_configuration: {
+      rotation_enabled: true,
+      total_cycles: 2,
     },
+    total_frame_count: 8,
+    rotating_frame_count: 8,
   });
 
   assert.equal(populated.recordId, "record-auto");
+  assert.equal(populated.recordPath, "C:/captures/record-auto");
+  assert.deepEqual(populated.captureConfiguration, {
+    rotation_enabled: true,
+    total_cycles: 2,
+  });
   assert.equal(populated.endFrame, "8");
   assert.equal(populated.method, "top_side_rotating");
   assert.equal(populated.cameraSources.rotating.enabled, true);
@@ -43,8 +51,7 @@ test("record auto-fill derives the method from rotating availability", () => {
 
 function validSetup() {
   const setup = createInitialAnalysisSetup("record-1");
-  setup.cameraSources.top.path = "session-1/top";
-  setup.cameraSources.side.path = "session-1/side";
+  setup.recordPath = "C:/captures/record-1";
   setup.sourcePreview = {
     ready: true,
     total_frame_count: 12,
@@ -362,7 +369,20 @@ test("analysis payload keeps the selected method and unified camera sources", ()
     "top_side",
   );
   assert.equal(payload.method, "top_side");
-  assert.deepEqual(payload.camera_sources, setup.cameraSources);
+  assert.deepEqual(payload.camera_sources, {
+    top: {
+      enabled: true,
+      path: "C:/captures/record-1",
+    },
+    side: {
+      enabled: true,
+      path: "C:/captures/record-1",
+    },
+    rotating: {
+      enabled: false,
+      path: "C:/captures/record-1",
+    },
+  });
   assert.equal(payload.parameters.segmentation.method, "mog2");
   assert.equal(payload.parameters.side_detection.minimum_path_connectivity, 8);
   assert.equal(
@@ -378,7 +398,6 @@ test("advanced analysis requires rotating source, angle preview, and calibration
   setup.method = "top_side_rotating";
   setup.cameraSources.rotating = {
     enabled: true,
-    path: "session-1/rotating",
   };
   setup.sourcePreview = {
     ...setup.sourcePreview,
@@ -409,17 +428,15 @@ test("advanced analysis requires rotating source, angle preview, and calibration
   );
 });
 
-test("manual directories create an analysis without a record ID", () => {
+test("analysis setup requires a selected Record root", () => {
   const setup = validSetup();
   setup.recordId = "";
-  setup.cameraSources.top.path = "D:/dataset/top";
-  setup.cameraSources.side.path = "D:/dataset/side";
+  setup.recordPath = "";
 
-  const payload = buildAnalysisCreatePayload(setup);
-
-  assert.equal(payload.record_id, null);
-  assert.equal(payload.camera_sources.top.path, "D:/dataset/top");
-  assert.equal(payload.camera_sources.side.path, "D:/dataset/side");
+  assert.throws(
+    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
+    /請先選擇一筆可分析紀錄/,
+  );
 });
 
 test("analysis reads only the active calibration adapter and clamps progress", () => {

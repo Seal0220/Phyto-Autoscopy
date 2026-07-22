@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 
-import usePhytoSocket from "@/hooks/usePhytoSocket";
+import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
 import {
   abortRequest,
   messageFromError,
@@ -56,7 +56,7 @@ export default function useAnalysisRun({
     snapshot,
     socketError,
     resetSocketError,
-  } = usePhytoSocket();
+  } = usePhytoSocketContext();
 
   const load = useCallback(async ({
     silent = false,
@@ -66,7 +66,7 @@ export default function useAnalysisRun({
     loadGenerationRef.current = generation;
     abortRequest(
       loadControllerRef.current,
-      "已由新的分析執行讀取取代。",
+      "已由新的分析紀錄讀取取代。",
     );
     const controller = new AbortController();
     loadControllerRef.current = controller;
@@ -97,7 +97,7 @@ export default function useAnalysisRun({
       if (mountedRef.current && generation === loadGenerationRef.current) {
         setLoadError(messageFromError(
           error,
-          "讀取分析執行狀態失敗。",
+          "讀取分析紀錄狀態失敗。",
         ));
       }
       return false;

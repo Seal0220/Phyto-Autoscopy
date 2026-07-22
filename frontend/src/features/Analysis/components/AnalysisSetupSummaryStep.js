@@ -96,6 +96,15 @@ export default function AnalysisSetupSummaryStep({
                 .join("、")}
             </dd>
           </div>
+          <div className="min-w-0">
+            <dt className="text-xs font-black text-neutral-500">擷取模式</dt>
+            <dd className="mt-1 m-0 break-words font-bold text-neutral-100">
+              {setup.availableModes
+                .filter((mode) => setup.selectedModeIds.includes(mode.id))
+                .map((mode) => mode.label)
+                .join("、") || "全部影像"}
+            </dd>
+          </div>
           <div>
             <dt className="text-xs font-black text-neutral-500">分析影格</dt>
             <dd className="mt-1 m-0 font-bold text-neutral-100">

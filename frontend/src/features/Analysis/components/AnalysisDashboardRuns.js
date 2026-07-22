@@ -41,8 +41,8 @@ export default function AnalysisDashboardRuns({
   onResults,
 }) {
   return (
-    <Panel aria-label="分析執行">
-      <PanelHeader title="分析執行" />
+    <Panel aria-label="分析紀錄">
+      <PanelHeader title="分析紀錄" />
       <div className="grid gap-3 p-5 max-sm:p-4">
         {exportFailure ? (
           <div
@@ -135,7 +135,7 @@ export default function AnalysisDashboardRuns({
                   </span>
                 </div>
                 <div
-                  className="h-2 overflow-hidden rounded-full border border-white/10 bg-black/20"
+                  className="h-2 overflow-hidden rounded-full border border-white/15 bg-black/20"
                   role="progressbar"
                   aria-label={`${run.analysis_id || "分析"}進度`}
                   aria-valuemin="0"
@@ -218,7 +218,7 @@ export default function AnalysisDashboardRuns({
         }) : (
           <InnerPanel>
             <p className="m-0 py-4 text-center text-sm font-semibold text-neutral-400">
-              尚無分析執行。
+              尚無分析紀錄。
             </p>
           </InnerPanel>
         )}

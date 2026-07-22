@@ -7,7 +7,7 @@ export const STORAGE_PATH_FIELDS = [
   {
     key: "snapshots_dir",
     label: "單張影像儲存位置",
-    description: "影像預覽中的單張擷取會直接儲存在此目錄，不會建立排程紀錄。",
+    description: "攝影機中的單張擷取會直接儲存在此目錄，不會建立排程紀錄。",
   },
   {
     key: "calibration_dir",
@@ -41,8 +41,8 @@ export const RECORD_EXPORT_META = {
     label: "CSV",
   },
   json: {
-    endpoint: "record-json",
-    filenameSuffix: "record.json",
+    endpoint: "config-json",
+    filenameSuffix: "config.json",
     label: "JSON",
   },
 };

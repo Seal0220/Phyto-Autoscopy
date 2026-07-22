@@ -13,7 +13,7 @@ import {
   RequestTimeoutError,
 } from "@/lib/httpUtils";
 import { downloadAnalysisExport } from "@/features/AnalysisRun/lib/analysisRunApiUtils";
-import usePhytoSocket from "@/hooks/usePhytoSocket";
+import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
 
 import { loadAnalysisDashboard } from "../lib/analysisApiUtils";
 import {
@@ -46,7 +46,7 @@ export default function useAnalysisDashboard() {
     connection,
     socketError,
     resetSocketError,
-  } = usePhytoSocket();
+  } = usePhytoSocketContext();
 
   useEffect(() => {
     mountedRef.current = true;

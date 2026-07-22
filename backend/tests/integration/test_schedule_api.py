@@ -57,14 +57,18 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
         record_id = response.json()["record_id"]
         modes_dir = tmp_path / "data" / "captures" / record_id / "modes"
         expected_folders = {
-            "01_time_interval_time",
-            "02_angle_interval_angle",
-            "03_specific_angles_specific",
-            "04_equal_divisions_equal",
+            "TimeInterval.01",
+            "AngleInterval.01",
+            "SpecificAngles.01",
+            "EqualDivisions.01",
+        }
+        mode_log_names = {
+            folder: "mode.log.csv"
+            for folder in expected_folders
         }
 
         def mode_ready(folder: str) -> bool:
-            log_path = modes_dir / folder / "capture_log.csv"
+            log_path = modes_dir / folder / mode_log_names[folder]
             if not log_path.exists():
                 return False
             try:
@@ -77,7 +81,7 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
                 "side",
                 "rotating",
             }
-            if folder == "01_time_interval_time":
+            if folder == "TimeInterval.01":
                 return has_all_cameras
             return has_all_cameras and "return" in {
                 row["motion_direction"]
@@ -115,12 +119,22 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
         )
         assert record["ended_at"]
 
+        record_dir = modes_dir.parent
+        assert (record_dir / "config.json").is_file()
+        assert (record_dir / "metadata.csv").is_file()
+        assert (record_dir / "record.log.csv").is_file()
+
         assert {path.name for path in modes_dir.iterdir() if path.is_dir()} == expected_folders
         first_capture_times: dict[str, dict[str, str]] = {}
         for folder in expected_folders:
             mode_dir = modes_dir / folder
-            with (mode_dir / "capture_log.csv").open(encoding="utf-8-sig", newline="") as handle:
+            with (mode_dir / mode_log_names[folder]).open(
+                encoding="utf-8-sig",
+                newline="",
+            ) as handle:
                 rows = list(csv.DictReader(handle))
+            assert (mode_dir / "config.json").is_file()
+            assert (mode_dir / "metadata.csv").is_file()
             assert rows
             assert all(row["elapsed_seconds"] for row in rows)
             assert all(row["actual_angle_deg"] for row in rows)
@@ -130,7 +144,7 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
                 row["motion_direction"]
                 for row in rows
             }.issubset({"forward", "return"})
-            if folder != "01_time_interval_time":
+            if folder != "TimeInterval.01":
                 assert {
                     row["motion_direction"]
                     for row in rows
@@ -140,8 +154,13 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
                 "side",
                 "rotating",
             }
+            image_names = {
+                path.name
+                for path in mode_dir.glob("rounds/round.*/snapshot.*/*.jpg")
+            }
+            assert image_names
             assert all(
-                any((mode_dir / camera_id).glob("*.jpg"))
+                any(image_name.startswith(f"{camera_id}-") for image_name in image_names)
                 for camera_id in ("top", "side", "rotating")
             )
             first_capture_times[folder] = {

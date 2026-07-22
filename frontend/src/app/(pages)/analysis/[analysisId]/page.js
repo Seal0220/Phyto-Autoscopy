@@ -10,7 +10,7 @@ import { getSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "分析執行 | Phyto-Autoscopy",
+  title: "分析紀錄 | Phyto-Autoscopy",
 };
 
 export default async function AnalysisRunPage({

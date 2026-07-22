@@ -32,6 +32,7 @@ Inspect the live implementation before editing. The most important visual source
 - `frontend/src/components/panels/SettingPanel.js`
 - `frontend/src/components/panels/SettingsGear.js`
 - `frontend/src/components/cards/StatusCard.js`
+- `frontend/src/components/data/InformationGrid.js`
 - `frontend/src/components/actions/ActionRow.js`
 - `frontend/src/components/buttons/Button.js`
 - `frontend/src/components/headers/SubsectionHeader.js`
@@ -76,11 +77,12 @@ frontend/src/
 │  ├─ actions/               # server actions such as authentication
 │  ├─ api/                   # same-origin BFF route handlers
 │  ├─ globals.css            # Tailwind v4 entry point only
-│  └─ layout.js              # document shell, font, body foundation
+│  └─ layout.js              # document shell and authenticated application shell
 ├─ components/
 │  ├─ actions/               # shared ActionRow
 │  ├─ buttons/               # shared Button
 │  ├─ cards/                 # shared StatusCard
+│  ├─ data/                  # shared label/value information grids
 │  ├─ fields/                # shared FieldFrame
 │  ├─ headers/               # shared SubsectionHeader
 │  ├─ inputs/                # shared Input, SelectMenu, Toggle, ToggleRow
@@ -107,6 +109,8 @@ frontend/src/
 ```
 
 Every `page.js` belongs below `app/(pages)/`, including the root `/` entry. Never place a page beside `app/layout.js` or inside `app/api`; keep `layout.js`, `actions/`, `api/`, `globals.css`, and application assets outside the route group. Because `(pages)` is a Next.js route group, it organizes source files without adding a URL segment.
+
+`app/layout.js` owns the authenticated application shell. After resolving the login session, it mounts the single `PhytoSocketProvider`, the page-level `main` background and horizontal padding, and `MainNavigation` once around authenticated page content. Feature entries must not repeat this shell; they begin with their own max-width, top-spacing, responsive grid, and panels. The unauthenticated login keeps its dedicated centered `main` because the root layout does not mount the authenticated shell without a valid session.
 
 ### 3.1 `components`
 
@@ -156,7 +160,11 @@ Use root `lib` only for cross-feature deterministic/server modules such as:
 - request and BFF helpers;
 - authenticated session helpers.
 
-Capture records are a separate domain. Use `record`/`Record`, `record_id`, `record_path`, `/api/records`, and `records.list` at that boundary. The word `session` is reserved for login/authentication state and its signed cookie/ticket helpers. Normalize legacy capture-record session names at the boundary instead of spreading them through feature code. The filesystem root remains `captures_dir` (`data/captures` by default) because it stores captured images, per-mode folders, CSV logs, and `record.json`; SQLite stores the Record/Capture relationships, metadata, states, and file paths used by read APIs.
+Shared display formatting belongs in `lib/formatUtils.js`. Optional elapsed values, numbers with units, Boolean state labels, and ranges with units must use its exported helpers rather than feature-local `display*` functions.
+
+Capture records are a separate domain. Use `record`/`Record`, `record_id`, `record_path`, `/api/records`, and `records.list` at that boundary. The word `session` is reserved for login/authentication state and its signed cookie/ticket helpers. Normalize legacy capture-record session names at the boundary instead of spreading them through feature code. The filesystem root remains `captures_dir` (`data/captures` by default) because it stores captured images, per-mode folders, CSV logs, and `config.json`; SQLite stores the Record/Capture relationships, metadata, states, and file paths used by read APIs.
+
+Schedule captures use a mode-first hierarchy. A Record directory is named `record_<timestamp>` and contains the complete parent `config.json`, `metadata.csv`, and `record.log.csv`. Each mode is stored below `modes/<ModeName>.<number>/` with its own `config.json`, `metadata.csv`, `mode.log.csv`, and `rounds/` directory. Rotating modes use `rounds/round.01`, `rounds/round.02`, and so on without timestamps; continuous or non-rotating capture uses the sole `rounds/round.00`. Snapshot folders use `snapshot.<number>_<timestamp>`, and image filenames use `<camera>-<mode abbreviation>.<mode number>_r.<round number>_s.<snapshot number>_<timestamp>.jpg`. Every filesystem timestamp uses `YYYY.MM.DD-hh.mm.ss.xxxxxx` in the project timezone; serialized CSV and JSON time fields remain ISO 8601. Keep the canonical mode names `ContinuousInterval`, `TimeInterval`, `AngleInterval`, `SpecificAngles`, and `EqualDivisions`, with abbreviations `CI`, `TI`, `AI`, `SA`, and `ED`.
 
 Feature-specific pure code belongs in that feature's `lib/`, even when it currently has one caller. A feature config file must never contain algorithms; pure code belongs in its `lib/*Utils.js` file.
 
@@ -189,8 +197,8 @@ Core principles:
 | Main panel                | `bg-white/[0.07]`                      | Top-level dashboard panels              |
 | Panel header              | `bg-white/[0.04]`                      | Header band inside a panel              |
 | Inner panel               | `bg-white/[0.06]`                      | Grouped feature content                 |
-| Quiet control             | `bg-black/15`, `bg-black/10`         | Inputs, unselected control rows         |
-| Structural border         | `border-white/10`                      | Panels, cards and ordinary grouping     |
+| Quiet control             | `bg-black/15`, `bg-black/15`         | Inputs, unselected control rows         |
+| Structural border         | `border-white/15`                      | Panels, cards and ordinary grouping     |
 | Control border            | `border-white/15`                      | Inputs, buttons and popups              |
 | Strong neutral hover      | `border-white/25`, `bg-white/[0.13]` | Default button hover                    |
 | Accent                    | Emerald 100–500                         | Active, selected, focus, success        |
@@ -234,7 +242,7 @@ Use heavy weights to maintain the current interface character. Keep titles short
 | Layer                      | Radius                                                           |
 | -------------------------- | ---------------------------------------------------------------- |
 | Main panel                 | `rounded-[28px]`                                               |
-| Inner feature panel        | `rounded-[22px]`                                               |
+| Inner feature panel        | `rounded-xl`                                               |
 | Controls and compact cards | `rounded-xl`                                                   |
 | Popup options and tooltip  | `rounded-lg` or `rounded-xl` according to the live primitive |
 | Pills/status chips         | `rounded-full`                                                 |
@@ -248,7 +256,7 @@ Main panels use `overflow-visible` so field tooltips and menus can escape their 
 Main panel treatment:
 
 ```text
-border border-white/10
+border border-white/15
 bg-white/[0.07]
 shadow-[0_24px_80px_rgba(0,0,0,0.26),inset_0_1px_0_rgba(255,255,255,0.08)]
 backdrop-blur-2xl
@@ -257,7 +265,7 @@ backdrop-blur-2xl
 Inner panel treatment:
 
 ```text
-border border-white/10
+border border-white/15
 bg-white/[0.06]
 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]
 ```
@@ -265,7 +273,7 @@ shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]
 Compact status card treatment:
 
 ```text
-border border-white/10
+border border-white/15
 bg-white/6
 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]
 ```
@@ -279,6 +287,7 @@ Use deep external shadows mainly on top-level panels, floating menus, and notifi
 - Keep the document language `zh-Hant`.
 - Preserve the `min-w-[320px]` body floor.
 - Keep horizontal overflow prevented at the page level.
+- Keep authenticated page background, `px-5 pb-8 max-sm:px-3`, and `MainNavigation` in the root layout rather than copying them into page or feature components.
 - Use `min-w-0` on flex/grid children that contain IDs, filenames, device names, or other long data.
 - Truncate or wrap long operational identifiers intentionally; do not let them widen the viewport.
 
@@ -369,6 +378,12 @@ The live component is a compact `article` with `rounded-xl`, `p-3`, and no descr
 
 For a group of status cards, use an explicit equal-width grid such as `grid-cols-3`; never use content-sized implicit columns such as `grid-flow-col`. Preserve the compact side-by-side presentation when space allows, and add responsive stacking only when content genuinely cannot fit. Each card's content region must remain `min-w-0` and centered so long status text wraps inside its fixed column rather than changing card widths.
 
+#### Shared `InformationGrid`
+
+Use `InformationGrid` from `components/data/InformationGrid.js` for compact fixed-format label/value information. It owns configurable numeric `rows` and `columns`, column-first item flow, full-height neutral column dividers, label/value alignment, optional hover-only requirement tooltip, semantic value tones, narrow-screen stacking, and optional internal horizontal scrolling. Callers provide an `items` array containing `label`, `value`, optional `tone`, optional `requirement`, and optional `truncate`; they must not restate the grid, divider, `dt`, or `dd` classes. Pass only `rows` to derive `columns`, or only `columns` to derive `rows`; when neither is provided the component defaults to two rows and derives its columns. Pass both only when an exact grid capacity is intentional.
+
+Current consumers include calibration coverage metrics, camera intrinsic summaries, available-Record summaries, and persisted capture configuration. Use named props rather than `children` because the component owns a fixed information schema. This component is for compact facts, not dominant runtime status; continue to use `StatusCard` when content requires the title/content/note hierarchy.
+
 ### 6.4 `ActionRow`
 
 Use `ActionRow` from `components/actions/ActionRow.js` for an action-button group placed at the bottom of a form, settings surface, or content card. It centrally owns this layout:
@@ -406,7 +421,7 @@ Title modes are fixed:
 <SubsectionHeader
   titleId="capture-modes-title"
   title="擷取模式"
-  description="共四種擷取模式，每一模式將獨立產生紀錄檔。"
+  description="共五種擷取模式，每一模式將獨立產生紀錄檔。"
 >
   <Button>新增擷取</Button>
 </SubsectionHeader>
@@ -565,9 +580,9 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 ### 7.1 Control panel
 
-`features/ControlPanel/ControlPanel.js` is the GOAL-01 capture-system composition boundary and is mounted only by `/capture`. It coordinates capture data, connection state, notifications, settings disclosure state, and the five capture-page regions: `ImagePreview`, `SystemStatus`, `Schedule`, `Control`, and `RecordsStorage`. Keep feature-specific markup and transformations out of it, and do not mount these capture controls in `/analysis` or `/models`.
+`features/ControlPanel/ControlPanel.js` is the GOAL-01 capture-system composition boundary and is mounted only by `/capture`. It coordinates capture data, connection state, notifications, settings disclosure state, and the five capture-page regions: `ImagePreview` (`攝影機`), `SystemStatus`, `Schedule`, `Control`, and `RecordsStorage`. Keep feature-specific markup and transformations out of it, and do not mount these capture controls in `/analysis` or `/models`.
 
-`features/MainNavigation/MainNavigation.js` owns the application-level `[捕捉] [分析] [校正] [模型]` route navigation, connection status, emergency stop, logout, and an optional secondary-navigation slot. On `/capture`, pass the five capture anchors as secondary navigation. Other top-level pages render only the route navigation and global actions. Icon-only actions need accessible labels and must use existing button language.
+`features/MainNavigation/MainNavigation.js` owns the application-level `[捕捉] [分析] [校正] [模型]` route navigation, connection status, emergency stop, logout, and capture-page secondary navigation. It is mounted once by the root layout, derives the five capture anchors from the `/capture` pathname, and consumes the shared socket context rather than accepting page-owned runtime props. Other routes render only the route navigation and global actions. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
@@ -584,19 +599,21 @@ The schedule feature is split by responsibility:
 
 Multiple modes may participate in one schedule. Keep each mode instance independently identifiable, and keep output/logging concepts distinguishable by mode. Shared parameters belong above the mode list rather than repeated within every mode.
 
-`啟用旋臂` is the authoritative schedule camera/movement mode. Keep the existing mode-card add, remove, select, and three-column list interaction in both states; only the available mode options and common inputs change. When disabled, the schedule uses `top + side`, exposes only total duration, and every added mode must be `time_interval`. When enabled, it uses `top + side + rotating`, exposes total cycles, per-cycle duration, inter-cycle interval, start/end angles, and angle tolerance, and permits all four established capture modes. Do not expose a manual rotation-step input: the backend derives the step from the configured per-cycle duration and motor settings.
+`啟用旋臂` is the authoritative schedule camera/movement mode. Keep the existing mode-card add, remove, select, and three-column list interaction in both states; only the available mode options and common inputs change. When disabled, the schedule uses `top + side`, exposes only total duration, and every added mode must be `continuous_interval`. When enabled, it uses `top + side + rotating`, exposes total cycles, per-cycle duration, inter-cycle interval, start/end angles, angle tolerance, rotating-arm height, stabilization delay, return-path capture, and final return-to-origin behavior, and permits all five established capture modes. Do not expose a manual rotation-step input: the backend derives the step from the configured per-cycle duration and motor settings.
 
 For rotating schedules, calculate the displayed and persisted total schedule runtime as `total_cycles * cycle_duration_seconds + (total_cycles - 1) * cycle_interval_seconds`. The `排程執行時間` status card must use that same calculated duration before execution and prefer the backend-confirmed `duration_seconds` after start. Fixed dual-camera schedules continue using the entered `duration_seconds` directly.
 
-`每輪間隔` (`cycle_interval_seconds`) is a non-negative duration shared by all modes. It starts only after one complete forward/return cycle has returned to `0°`, and delays the beginning of the next cycle. The interval counts toward the schedule's total duration, excludes paused time, remains immediately interruptible by stop, and is not applied after the final or an incomplete cycle. No capture mode is evaluated during this wait. Reset every mode's per-cycle capture state at the beginning of each new forward/return cycle; in particular, reset each time-interval mode's next due time to the new cycle start so waiting time cannot trigger or carry a capture into the next cycle.
+`每輪間隔` (`cycle_interval_seconds`) is a non-negative duration shared by all round-scoped modes. It starts only after one complete forward/return cycle has returned to `0°`, and delays the beginning of the next cycle. The interval counts toward the schedule's total duration, excludes paused time, remains immediately interruptible by stop, and is not applied after the final or an incomplete cycle. Reset every round-scoped mode's per-cycle capture state at the beginning of each new forward/return cycle; in particular, reset each `time_interval` mode's next due time to the new cycle start so waiting time cannot trigger or carry a capture into the next cycle. `continuous_interval` is the deliberate exception: it runs from the schedule clock and continues evaluating during movement and inter-cycle waits.
 
 `Schedule.js` emits the `運行狀態` and `排程` panels as sibling control-panel grid items so both can share the same schedule form state without duplicating it in `ControlPanel`. Keep runtime cards out of the schedule form. The runtime panel contains the equal-width status-card grid directly beneath its `PanelHeader`, without a description block or extra nested surface. Use the live motor command position for `目前角度`, falling back to the schedule angle only when motor status is unavailable.
 
 Every schedule cycle reaches the shared end angle and then returns to the `0°` origin before the next cycle. `往返皆擷取` (`capture_on_return`) selects how that return is performed: when disabled, reaching the end angle is followed by a direct return to the origin with no return-path capture evaluation; when enabled, the motor returns step by step with the same forward movement and capture configuration, excluding the duplicated end point. Reset angle-target completion at the direction change so each target may be captured once in the forward direction and once in the return direction; time-interval modes continue evaluating on the return path only when this option is enabled. Record `motion_direction` in every mode log so the two passes remain distinguishable. Do not add a per-cycle motor-release setting because the motor must remain engaged between cycles. The separate `排程結束後回到原點` option is applied once when the whole schedule completes, stops, or fails so an interrupted partial cycle can still return to `0°`.
 
-The `通用配置` header has a right-side `預設` button through `SubsectionHeader` children. It restores only `SCHEDULE_COMMON_DEFAULTS`; existing capture modes remain intact.
+The `通用配置` header owns `重新載入`, `儲存配置`, and `預設` actions through `SubsectionHeader` children. The Schedule panel has no settings gear or separate settings disclosure. `儲存配置` persists the moved execution behavior and the shared rotating-arm height together; the height is the same `cameras.rotating.arm_height_mm` value used by camera settings. `預設` restores only `SCHEDULE_COMMON_DEFAULTS`, preserves the current rotating-arm height, and leaves capture modes intact.
 
-Schedule transport mode names are `time_interval`, `angle_interval`, `specific_angles`, and `equal_divisions`. The time-based mode is always `time_interval`; `seconds_interval` is obsolete and may appear only in an explicit legacy-normalization path.
+Schedule transport mode names are `continuous_interval`, `time_interval`, `angle_interval`, `specific_angles`, and `equal_divisions`. `continuous_interval` means uninterrupted schedule-clock capture and is the only mode permitted without the rotating arm. `time_interval` resets for each rotating round and does not capture during the inter-round wait. `seconds_interval` is obsolete and may appear only in an explicit legacy-normalization path.
+
+Scheduled output uses snapshot-owned camera files rather than camera-owned folders. Round-scoped modes write `rounds/round-xx/<mode>/snapshots/snapshot-xx_<timestamp>/<camera>.jpg`; reset the snapshot sequence to `01` inside every new round. `continuous_interval` and every fixed dual-camera schedule write `continuity/<mode>/snapshots/snapshot-xx_<timestamp>/<camera>.jpg` with one schedule-wide sequence. Keep the mode log beside its `snapshots` directory. Every snapshot folder groups the `top`, `side`, and when enabled `rotating` observations from one trigger.
 
 Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic, parsing comma-separated angle strings, equal-division calculation, and payload construction belong in the schedule library. Equal divisions treat `points` as the total number of capture points including both the shared start and end angles; the interval is therefore `(end - start) / (points - 1)`. Fixed dual-camera submissions send `duration_seconds`. Rotating submissions send `total_cycles`, `cycle_duration_seconds`, and `cycle_interval_seconds`, all with durations expressed in seconds; the backend derives the authoritative total duration. Convert minute-based stored defaults only when loading them into the schedule UI.
 
@@ -604,11 +621,11 @@ Mode-specific calculation rules must not be hidden in JSX. Angle-tolerance logic
 
 `components/panels/SettingPanel.js` is only the composed disclosure/container surface. It owns the shared `ActionRow` placement through its `footer` slot, with `px-6 pb-6` as the default footer spacing, but it must not branch on a settings group, fetch data, own field layouts, or contain feature-specific markup. `features/Settings/Settings.js` owns the generic settings editor; its config, field components, and utilities remain inside the Settings feature.
 
-`features/ImagePreview/components/ImagePreviewSettings.js` is an independent ImagePreview feature component. It owns the image-preview-only layout: no repeated camera title, an enabled toggle across each camera column, and remaining inputs in a responsive grid of at most three columns. Image preview settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
+`features/ImagePreview/components/ImagePreviewSettings.js` is an independent ImagePreview feature component whose formal UI title is `攝影機`. It owns the camera-only layout: no repeated camera title, an enabled toggle across each camera column, regular inputs in a responsive grid of at most three columns, and a same-column `相機安裝參數` subsection. `top` and `side` own optional installation height and optional horizontal distance to the world origin. Their directions are fixed domain constants rather than editable settings: `top` points vertically downward (`90°`) and `side` points horizontally (`0°`). `rotating` owns the optional shared rotating-arm height and its own optional horizontal distance to the world origin. Camera settings must never be restored as a conditional branch inside `SettingPanel` or the Settings feature.
 
-The ImagePreview `裝置索引` field uses the shared custom select rather than a numeric input. Its first option is always `無`, representing a real unassigned `null` value and disabling that camera when selected. Remaining options come from the same-origin camera scan endpoint and include only connected devices not assigned to another enabled camera in the current draft. Never add fallback, undetected, disconnected, or occupied rows. Labels use only `裝置 {index} {name}` without backend names, mock badges, availability text, or parenthetical status. A successful scan normalizes assignments whose devices disappeared back to `無`; a failed scan preserves the existing draft. Keep the explicit rescan action with pending and failure handling, and reject an enabled camera without an assigned device before saving.
+The ImagePreview `裝置索引` field uses the shared custom select rather than a numeric input. Its first option is always `無`, representing a real unassigned `null` value and disabling that camera when selected. Remaining options come from the same-origin camera scan endpoint and include only connected devices not assigned to another camera in the current draft, including disabled cameras that retain a selected index. Never add fallback, undetected, disconnected, or occupied rows. Labels use only `裝置 {index} {name}` without backend names, mock badges, availability text, or parenthetical status. A successful scan only refreshes the option list; it must never clear, replace, enable, or disable a camera draft. Keep the explicit rescan action with pending and failure handling, and reject an enabled camera without an assigned device before saving. A device index belongs to at most one camera regardless of its enabled state; users must explicitly set the previous camera to `無` before reassigning it.
 
-The ImagePreview panel header keeps its actions in this order: `擷取全部`, `重新連線全部`, then the settings gear. `擷取全部` remains unavailable while a schedule is active; `重新連線全部` uses the single `camera.reconnect_all` command and remains available during a schedule, matching individual camera reconnection. Let the action group wrap on narrow screens instead of overflowing the panel header.
+The `攝影機` panel header keeps its actions in this order: `擷取全部`, `重新連線全部`, then the settings gear. `擷取全部` remains unavailable while a schedule is active; `重新連線全部` uses the single `camera.reconnect_all` command and remains available during a schedule, matching individual camera reconnection. Let the action group wrap on narrow screens instead of overflowing the panel header.
 
 Each image preview places its camera name over the upper center of the image instead of repeating it in the footer. The name uses a compact translucent bordered surface with square top corners and `rounded-b-xl` lower corners. An icon-only enlarge action remains at the lower right of the image. `features/ImagePreview/components/ImagePreviewFullscreen.js` owns the full-viewport dialog and renders it through a body portal so panel overflow and stacking contexts cannot clip it. Opening and closing use 400ms opacity and size transitions with `motion-reduce` support. Preserve background-click and Escape dismissal, body-scroll locking, a visible close action, and descriptive Traditional Chinese accessible labels.
 
@@ -618,7 +635,7 @@ The inline image-preview viewport and its waiting/disabled placeholder use `aspe
 
 Mount an MJPEG `<img>` only while that camera is enabled, connected, and the browser page is visible. The first connected render opens the stream with its current source exactly once; do not change the source merely because status changed from disconnected to connected or because a reconnect action completed. Stream errors own bounded source-token retries. Unmount the stream when the camera disconnects or the page becomes hidden so long-lived HTTP/1.1 requests cannot accumulate and exhaust the browser's same-origin connection pool, which would otherwise block settings and control requests.
 
-ControlPanel settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together.
+ControlPanel settings disclosure state is an array of open group IDs, not a single selected group. Toggling one gear changes only that group's membership, so multiple setting panels may remain open together. Initialize the capture page with the `cameras` group open; users may still close it with its settings gear.
 
 `features/Settings/components/SettingsSection.js` uses `content-start` so each settings column remains top-aligned when a neighboring section contains more controls. Do not stretch or distribute a section's controls to fill the tallest grid row.
 
@@ -640,7 +657,7 @@ The formal UI title is `紀錄與儲存`. Use `record_id` and `record_path` from
 
 The canonical camera identifiers and Traditional Chinese view names are `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Use them consistently in frontend metadata, backend settings, API payloads, runtime state, schedule fields (`capture_top`, `capture_side`, `capture_rotating`), and all newly generated storage paths. Manual capture actions in ImagePreview are standalone snapshots. Both the individual `擷取` action and `擷取全部` use snapshot actions rather than Record capture actions, store images directly in `snapshots_dir` (`data/snapshots` by default) without nested directories, and use filenames containing the camera identifier plus a timestamp. Snapshot operations do not create Record/Capture rows; scheduled and record-owned captures continue using `captures_dir` and SQLite relationships.
 
-Motor and capture actions must have one authoritative activation point. The `控制` panel owns simple direct motor actions: holding torque, moving to a target angle, setting/returning to origin, and stopping. Other locations may show state, but must not create independent controls with conflicting state. Disable and apply grayscale to this direct-control group while a schedule is running, paused, or stopping.
+Motor and capture actions must have one authoritative activation point. The `控制` panel owns simple direct motor actions: holding torque, moving to a target angle, setting/returning to origin, and stopping. Other locations may show state, but must not create independent controls with conflicting state. The backend starts motor auto-detection and connection independently of user commands, retries while no controller is available, and publishes `motor.connected` as the authoritative state. `系統狀態` displays a dedicated `馬達連接` row. Disable and apply grayscale to the complete direct-control surface and its settings whenever the realtime connection or motor connection is unavailable, or while a schedule is running, paused, or stopping. A rotating schedule cannot start while the motor is disconnected; fixed dual-camera capture remains available.
 
 The motor origin is always the numeric `0°` reference and is not an editable setting. `設為原點` redefines the motor's current physical position as `0°`; `回到原點` consequently moves to `0°`. Never reintroduce an `origin_deg` field or a configurable origin-angle value in the frontend, API model, persisted settings, or hardware adapter. In motor movement settings, place `速度限制` and `加速度限制` in the same two-column grid with an explicit gap, and let the duration-style movement timeout span the full row beneath them.
 
@@ -648,13 +665,13 @@ While a schedule is running, paused, or stopping, every user-initiated modificat
 
 ### 7.5 Analysis creation and calibration
 
-Analysis creation has one source workflow. Do not show source-type cards, analysis-method cards, tabs, or add a data-source discriminator field. Put the `可分析紀錄` list inside the first step of `新增分析`; do not render it as a separate dashboard panel. Give the list a fixed maximum height and let its record items scroll internally. Selecting a Record fills the three camera paths from persisted metadata and immediately scans them, while `手動填寫` clears the automatic Record source. Auto-filled paths remain editable and each camera remains independently enabled or disabled.
+Analysis creation has one Record-backed source workflow. Do not show source-type cards, analysis-method cards, tabs, a data-source discriminator, or manual directory entry. Make the Record list the first `選擇紀錄` step of `新增分析`; do not render it as a separate dashboard panel or inside `配置設定`. Give the list a fixed maximum height and let its record items scroll internally. Each Record's preselection information list shows exactly four metrics: start time, end time, persisted capture-mode count, and total captured-image count. Do not show per-camera or pairable-frame counts there; pairing belongs to the post-selection scan result. Present these four metrics in the same two-row, column-flow layout as `CalibrationCoverageMap`, with the complete divider between its two columns. Selecting a Record fills one read-only Record root directory and its available schedule modes from persisted metadata. Keep every `continuous_interval` mode visible but unselected by default, default-select every other available mode, and immediately scan only when that default selection contains at least one mode. The second `配置設定` step owns `捕捉配置`; never expose separate per-camera or mode-directory path fields. Display the immutable Record-level schedule configuration directly below the root directory using the same two-row, column-flow metric layout as `CalibrationCoverageMap`: labels and values share a row, values use emerald emphasis, and full-height neutral dividers separate columns. Render the modes inside one compact `選取模式` block, with one `aria-pressed` selectable pill per mode. Pills wrap within the block, retain lighter hover feedback when selected, use `cursor-pointer`, and display the mode name, instance number, persisted configuration, and actual image count. Use a hollow-circle icon for an unselected mode and a check icon for a selected mode. Changing the selected modes immediately rescans the selected data without rewriting the Record root. Render the top, side, and rotating enabled flags as three controls in one separate responsive row; toggling a flag does not invalidate the directory preview.
 
-Render the `影像目錄` heading, camera rows, and controls directly in the setup panel. Do not wrap that section in another `InnerPanel`, repeat its heading, or add a decorative nested surface. The scan result is a same-level sibling section separated by the established white/10 rule. Transient step validation and source-scan warnings belong only in the global bottom-right notification history; do not duplicate them as amber or rose warning blocks inside `新增分析`.
+Render the `捕捉配置` heading, read-only Record root, Record summary, immutable Record-level schedule configuration, mode selector, camera row, and controls directly in the second-step setup panel. Its summary repeats the selected Record's start time, end time, persisted mode count, and total captured-image count using the shared `InformationGrid` before the schedule configuration values. Do not wrap that section in another `InnerPanel`, repeat its heading, or add a decorative nested surface. The scan result is a same-level sibling section separated by the established white/10 rule. Transient step validation and source-scan warnings belong only in the global bottom-right notification history; do not duplicate them as amber or rose warning blocks inside `新增分析`.
 
 Render the three canonical sources as `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Each source row owns its enabled toggle and path input, then shows scan-derived image count, resolution, pairing state, and safe Traditional Chinese errors. A path change invalidates the previous preview. Do not let the user proceed until the current paths have been scanned, enabled files are readable and resolution-consistent, and pairing is valid.
 
-Treat camera toggles as Boolean analysis flags. Changing only an enabled flag preserves paths and the current scan preview; changing a directory path cancels any stale scan and invalidates that preview. Infer `top_side_rotating` when `rotating` is enabled and otherwise use `top_side`, rather than presenting separate method-selection buttons.
+Treat camera toggles as Boolean analysis flags. `top` and `side` are mandatory, permanently enabled, disabled controls in the UI, and are forced to `enabled: true` again at the payload boundary. `rotating` defaults to enabled after initialization and every Record selection, but remains user-adjustable. Changing the rotating flag preserves the Record path, invalidates the previous preview, cancels any stale scan, and immediately scans again with the newly inferred method. Changing a directory path has the same stale-preview and cancellation requirements. Infer `top_side_rotating` when `rotating` is enabled and otherwise use `top_side`, rather than presenting separate method-selection buttons.
 
 The only method values and labels are:
 
@@ -663,13 +680,13 @@ The only method values and labels are:
 
 Rotating angles may come from Record metadata, canonical filenames, or an imported angle CSV. Present their availability as source-validation state rather than as another analysis mode. Missing or invalid rotating observations must be explained before submission; during result rendering, a rejected rotating observation falls back to the `top+side` baseline for that frame instead of failing the complete run.
 
-Calibration is an independent top-level feature at `/calibration`, beside `/analysis` in the main navigation. Analysis must not render calibration creation, selection, editing, validation, deletion, settings, matrices, or profile-management UI. It may read the currently active calibration as a read-only dependency, carry its ID in the analysis request, and show that immutable reference in analysis metadata. If no suitable active calibration exists, block progression through the shared notification channel and direct the operator to `/calibration`; do not recreate an embedded calibration step.
+Calibration is an independent top-level feature at `/calibration`, beside `/analysis` in the main navigation. Analysis must not render calibration or ArUco creation, editing, validation, settings, matrices, or profile-management UI. It consumes the available intrinsic calibration and the ArUco reference as read-only analysis dependencies. Missing required calibration is reported through the shared notification channel and directs the operator to `/calibration`; do not recreate an embedded calibration or ArUco step.
 
-The `/calibration` page owns one unified single-page workflow arranged as exactly three top-level panels: `校正板`, `內部參數`, and `外部參數`. `校正板` keeps its OpenCV board controls permanently visible instead of hiding them behind an add disclosure. Its board type, profile name, ArUco dictionary, marker ratio, and print margin are fixed implementation details and must not be selectable or displayed as form fields. The operator selects only the paper size, print orientation, and grid dimensions; the backend derives the physical square/marker sizes from the printable paper area, generates a 300 DPI PNG at the selected paper dimensions, saves a reusable historical profile, renders its preview, and provides a direct download. `內部參數` presents `top`, `side`, and `rotating` horizontally as three camera-owned cards. Each card combines one shared live stream, connection/board/intrinsics status, a three-value active-intrinsics summary (model, resolution, reprojection error), and the current calibration actions. All per-camera state belongs only in these cards; never duplicate camera connection, intrinsic validity, or board-detection status in `外部參數`. Do not restore separate preview and intrinsics rows, snapshot controls, marker/corner/sharpness counters, full error breakdowns, or a second undistorted preview in this panel. Camera-model comparison remains fixed to automatic selection; the operator chooses only automatic/manual sample capture and its interval. `外部參數` owns external-profile status, motor/arm positioning, arbitrary-camera observation graphs, motion modeling, world alignment, multiple external-calibration profiles, validation, activation, relocation, and export. Do not split calibration by camera count or restore `/analysis/calibration` routes. Rebuild intrinsics only after the physical camera/lens/focus/resolution relationship changes; moving a camera invalidates extrinsics rather than intrinsics. A failed calibration attempt must remain retryable and must not overwrite the last valid result.
+The `/calibration` page owns one unified single-page workflow arranged as three top-level panels: `校正板`, `ArUco 基準`, and `內部參數`. On desktop widths at `981px` and above, place `校正板` and `ArUco 基準` side by side in one equal-width row; stack them vertically below that breakpoint, while `內部參數` remains full width beneath them. `校正板` keeps its OpenCV board controls permanently visible instead of hiding them behind an add disclosure. Its board type, profile name, ArUco dictionary, marker ratio, and print margin are fixed implementation details and must not be selectable or displayed as form fields. The operator selects only the paper size, print orientation, and grid dimensions; the backend derives the physical square/marker sizes from the printable paper area, generates a 300 DPI PNG at the selected paper dimensions, saves a reusable historical profile, renders its preview, and provides a direct download. `ArUco 基準` is directly visible in its panel and owns only the marker-world reference; it has no settings gear and never contains camera installation parameters. `內部參數` presents `top`, `side`, and `rotating` horizontally as three camera-owned cards. Each card combines one shared live stream, connection/board/intrinsics status, a three-value active-intrinsics summary (model, resolution, reprojection error), and the current calibration actions. Do not restore separate preview and intrinsics rows, snapshot controls, marker/corner/sharpness counters, full error breakdowns, or a second undistorted preview in this panel. Camera-model comparison remains fixed to automatic selection. Rebuild intrinsics only after the physical camera/lens/focus/resolution relationship changes. A failed calibration attempt must remain retryable and must not overwrite the last valid result.
 
 Nominal CM1.3M30M12Q specifications such as AR0130, 2.1 mm lens, or 126° diagonal FOV are initialization hints only. Never present them as solved intrinsics. Matrices shown in advanced calibration views are read-only and system-calculated; no frontend form may accept a manually entered transformation matrix.
 
-The analysis request boundary sends `record_id`, `method`, `camera_sources.top|side|rotating` entries shaped as `{ enabled, path }`, and `calibration_id`. A manually entered source may send a null `record_id`. Never derive separate downstream pipelines from how paths were populated: both Record-filled and manual paths become the same immutable input manifest and use the same scan, pairing, analysis, and result flow.
+The analysis request boundary sends `record_id`, selected `mode_ids`, `method`, `camera_sources.top|side|rotating` entries shaped as `{ enabled, path }`, and `calibration_id`. A manually entered source may send a null `record_id` and an empty `mode_ids` list. Never derive separate downstream pipelines from how paths were populated: both Record-filled and manual paths become the same immutable input manifest and use the same scan, pairing, analysis, and result flow.
 
 Each analysis owns one result page and one chart set. Show the `top+side` baseline and, for `top_side_rotating`, the refined three-view series on the same visualizations. Preserve baseline/refined 3D coordinates, per-camera reprojection errors, rotating angle, and whether the rotating observation was accepted so the refinement remains auditable.
 
@@ -851,7 +868,7 @@ Avoid keeping two independently mutable copies of one backend status.
 
 ### 11.2 WebSocket behavior
 
-Reusable connection, reconnection, message parsing, and cleanup behavior belongs in `usePhytoSocket.js`. UI sections consume normalized state/events rather than opening their own sockets.
+Reusable connection, reconnection, message parsing, and cleanup behavior belongs in `usePhytoSocket.js`. The authenticated root layout mounts one `PhytoSocketProvider`; `MainNavigation` and feature hooks consume `usePhytoSocketContext` so route components never open parallel status sockets or pass connection state back up into the application shell.
 
 Always clean up listeners, timers, and connections created by an effect. Keep same-origin/session ticket behavior intact.
 

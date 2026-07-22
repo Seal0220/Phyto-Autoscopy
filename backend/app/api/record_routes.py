@@ -47,10 +47,10 @@ def metadata_csv(record_id: str, context: AppContext = Depends(get_context)) -> 
     )
 
 
-@router.get("/{record_id}/record-json")
-def record_json(record_id: str, context: AppContext = Depends(get_context)) -> FileResponse:
+@router.get("/{record_id}/config-json")
+def config_json(record_id: str, context: AppContext = Depends(get_context)) -> FileResponse:
     return FileResponse(
-        context.record_service.get_record_file(record_id, "record.json"),
+        context.record_service.get_record_file(record_id, "config.json"),
         media_type="application/json",
-        filename="record.json",
+        filename="config.json",
     )

@@ -10,18 +10,14 @@ import {
 import ImagePreview from "@/features/ImagePreview/ImagePreview";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 import Control from "@/features/Control/Control";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
-import { CAPTURE_SECONDARY_NAVIGATION_ITEMS } from "@/features/MainNavigation/mainNavigationConfig";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import RecordsStorage from "@/features/RecordsStorage/RecordsStorage";
 import useRecordsStorage from "@/features/RecordsStorage/hooks/useRecordsStorage";
 import Schedule from "@/features/Schedule/Schedule";
 import SystemStatus from "@/features/SystemStatus/SystemStatus";
-import usePhytoSocket from "@/hooks/usePhytoSocket";
+import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
 import {
   messageFromError,
-  parseJsonResponse,
-  responseErrorMessage,
 } from "@/lib/httpUtils";
 
 import { executeControlPanelAction } from "./lib/controlPanelUtils";
@@ -31,19 +27,18 @@ export default function ControlPanel() {
     snapshot,
     connection,
     socketError,
-    authExpired,
     command,
-  } = usePhytoSocket();
+  } = usePhytoSocketContext();
   const {
     showNotification,
     syncRecentErrors,
   } = useNotificationsContext();
   const [busyActions, setBusyActions] = useState(() => new Set());
-  const [logoutPending, setLogoutPending] = useState(false);
-  const [openSettingsGroups, setOpenSettingsGroups] = useState([]);
+  const [openSettingsGroups, setOpenSettingsGroups] = useState([
+    "cameras",
+  ]);
   const mountedRef = useRef(false);
   const pendingActionsRef = useRef(new Map());
-  const logoutPendingRef = useRef(false);
   const previousScheduleActiveRef = useRef(false);
   const {
     records,
@@ -77,12 +72,6 @@ export default function ControlPanel() {
     snapshot?.system?.recent_errors,
     syncRecentErrors,
   ]);
-
-  useEffect(() => {
-    if (authExpired) {
-      window.location.replace("/");
-    }
-  }, [authExpired]);
 
   const runAction = useCallback((
     action,
@@ -130,39 +119,6 @@ export default function ControlPanel() {
     return request;
   }, [command, showNotification]);
 
-  async function logout() {
-    if (logoutPendingRef.current) return;
-
-    logoutPendingRef.current = true;
-    setLogoutPending(true);
-
-    try {
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-      });
-      const payload = await parseJsonResponse(response);
-
-      if (!response.ok) {
-        throw new Error(responseErrorMessage(
-          payload,
-          "登出失敗，請稍後重試。",
-        ));
-      }
-
-      window.location.assign("/");
-    } catch (error) {
-      if (mountedRef.current) {
-        showNotification(messageFromError(error, "登出失敗，請稍後重試。"), "error");
-      }
-    } finally {
-      logoutPendingRef.current = false;
-
-      if (mountedRef.current) {
-        setLogoutPending(false);
-      }
-    }
-  }
-
   function toggleSettings(group) {
     setOpenSettingsGroups((current) => (
       current.includes(group)
@@ -189,21 +145,7 @@ export default function ControlPanel() {
   }, [loadRecords, scheduleActive]);
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation
-        isConnected={isConnected}
-        emergencyStopping={busyActions.has("motor.emergency_stop")}
-        logoutPending={logoutPending}
-        onEmergencyStop={() => void runAction(
-          "motor.emergency_stop",
-          {},
-          "已送出緊急停止命令。",
-        )}
-        onLogout={() => void logout()}
-        secondaryItems={CAPTURE_SECONDARY_NAVIGATION_ITEMS}
-      />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[8.75rem] min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-[11.5rem]">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-35 min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-46">
         <ImagePreview
           imagePreviewById={imagePreviewById}
           busyActions={busyActions}
@@ -218,22 +160,12 @@ export default function ControlPanel() {
             imagePreviewMeta={IMAGE_PREVIEW_META}
             imagePreviewById={imagePreviewById}
             connection={connection}
+            motor={motor}
             schedule={scheduleStatus}
             system={system}
           />
         </aside>
-        <Schedule
-          scheduleStatus={scheduleStatus}
-          motor={motor}
-          isConnected={isConnected}
-          busyActions={busyActions}
-          scheduleActive={scheduleActive}
-          open={openSettingsGroups.includes("schedule")}
-          onToggle={() => toggleSettings("schedule")}
-          onNotify={showNotification}
-          onRunAction={runAction}
-          onStarted={loadRecords}
-        />
+
         <Control
           motor={motor}
           isConnected={isConnected}
@@ -244,6 +176,18 @@ export default function ControlPanel() {
           onNotify={showNotification}
           onRunAction={runAction}
         />
+
+        <Schedule
+          scheduleStatus={scheduleStatus}
+          motor={motor}
+          isConnected={isConnected}
+          busyActions={busyActions}
+          scheduleActive={scheduleActive}
+          onNotify={showNotification}
+          onRunAction={runAction}
+          onStarted={loadRecords}
+        />
+
         <RecordsStorage
           records={records}
           loading={recordsLoading}
@@ -254,7 +198,6 @@ export default function ControlPanel() {
           onNotify={showNotification}
           onLoad={loadRecords}
         />
-      </div>
-    </main>
+    </div>
   );
 }

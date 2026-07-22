@@ -82,15 +82,15 @@ export function Input({
         h-10.5 min-w-0
         ${isNumber ? (
           suffix
-            ? "grid grid-cols-[minmax(0,1fr)_auto_2.25rem] rounded-xl border border-white/10 bg-black/15 overflow-hidden transition hover:border-white/20 focus-within:border-emerald-300/60 focus-within:ring-4 focus-within:ring-emerald-300/10"
-            : "grid grid-cols-[minmax(0,1fr)_2.25rem] rounded-xl border border-white/10 bg-black/15 transition hover:border-white/20 focus-within:border-emerald-300/60 focus-within:ring-4 focus-within:ring-emerald-300/10"
+            ? "grid grid-cols-[minmax(0,1fr)_auto_2.25rem] rounded-xl border border-white/15 bg-black/15 overflow-hidden transition hover:border-white/20 focus-within:border-emerald-300/60 focus-within:ring-4 focus-within:ring-emerald-300/10"
+            : "grid grid-cols-[minmax(0,1fr)_2.25rem] rounded-xl border border-white/15 bg-black/15 transition hover:border-white/20 focus-within:border-emerald-300/60 focus-within:ring-4 focus-within:ring-emerald-300/10"
         ) : "relative"}
         ${containerClassName || ""}
       `}
     >
       <input
         className={`
-          min-w-0 w-full rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition
+          min-w-0 w-full rounded-xl border border-white/15 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition
           ${
             isNumber
               ? "rounded-none! border-0! bg-transparent appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
@@ -282,12 +282,18 @@ export function TextInput({
   description,
   ...inputProps
 }) {
-  const valueProps = onValueChange
-    ? {
-      value: value ?? "",
-      onChange: (event) => onValueChange(event.target.value),
-    }
-    : {};
+  const valueProps = {
+    ...(value !== undefined
+      ? {
+        value: value ?? "",
+      }
+      : {}),
+    ...(onValueChange
+      ? {
+        onChange: (event) => onValueChange(event.target.value),
+      }
+      : {}),
+  };
 
   return (
     <FieldFrame
@@ -341,7 +347,7 @@ export function Select({
   return (
     <select
       className={`
-        min-h-10 w-full rounded-xl border border-white/10 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10 appearance-none
+        min-h-10 w-full rounded-xl border border-white/15 bg-black/15 px-3 py-2 text-sm font-semibold text-white outline-none transition hover:border-white/20 focus:border-emerald-300/60 focus:ring-4 focus:ring-emerald-300/10 appearance-none
         ${className || ""}
       `}
       {...props}

@@ -7,6 +7,10 @@ export const SCHEDULE_COMMON_DEFAULTS = {
   rotation_start_deg: "0",
   rotation_end_deg: "360",
   angle_tolerance_deg: "0.5",
+  stabilization_delay_ms: "800",
+  capture_on_return: true,
+  return_to_origin: true,
+  arm_height_mm: "",
 };
 
 export const INITIAL_SCHEDULE = {
@@ -18,6 +22,10 @@ export const INITIAL_SCHEDULE = {
   rotation_start_deg: "0",
   rotation_end_deg: "360",
   angle_tolerance_deg: "0.5",
+  stabilization_delay_ms: "800",
+  capture_on_return: true,
+  return_to_origin: true,
+  arm_height_mm: "",
   modes: [
     {
       id: "mode-1",
@@ -62,6 +70,27 @@ export const SCHEDULE_CYCLE_INTERVAL_FIELD = [
   },
 ];
 
+export const SCHEDULE_STABILIZATION_FIELD = [
+  "stabilization_delay_ms",
+  "穩定等待",
+  {
+    unit: "milliseconds",
+    description: "旋臂停止後，等待植物晃動減弱再拍攝。",
+  },
+];
+
+export const SCHEDULE_ARM_HEIGHT_FIELD = [
+  "arm_height_mm",
+  "旋臂高度",
+  {
+    min: 0,
+    max: 10000,
+    step: 0.1,
+    suffix: "mm",
+    description: "與攝影機設定中的旋臂高度共用同一筆設定。",
+  },
+];
+
 export const SCHEDULE_COMMON_FIELDS = [
   [
     "rotation_start_deg",
@@ -96,6 +125,13 @@ export const SCHEDULE_COMMON_FIELDS = [
 ];
 
 export const SCHEDULE_MODE_META = {
+  continuous_interval: {
+    label: "連續間隔擷取",
+    description: "依設定間隔持續擷取，不受每輪時長或每輪等待影響。",
+    initial: {
+      interval_seconds: "60",
+    },
+  },
   time_interval: {
     label: "時間間隔擷取",
     description: "依設定時間間隔擷取一次。",
@@ -127,6 +163,7 @@ export const SCHEDULE_MODE_META = {
 };
 
 export const SCHEDULE_MODE_LABELS = [
+  "連續間隔擷取",
   "時間間隔擷取",
   "角度間隔擷取",
   "特定角度擷取",

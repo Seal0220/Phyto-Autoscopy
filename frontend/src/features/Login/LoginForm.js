@@ -15,8 +15,8 @@ export default function LoginForm() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#06100c] p-5">
-      <section className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.07] shadow-[0_24px_80px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl" aria-labelledby="login-title">
-        <div className="flex min-h-14 items-center gap-3 border-b border-white/10 bg-white/4 px-5">
+      <section className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/15 bg-white/[0.07] shadow-[0_24px_80px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl" aria-labelledby="login-title">
+        <div className="flex min-h-14 items-center gap-3 border-b border-white/15 bg-white/4 px-5">
           <span className="size-2 rounded-full bg-emerald-300" aria-hidden="true" />
           <span className="text-xs font-black tracking-[0.16em] text-neutral-400">PHYTO-AUTOSCOPY</span>
         </div>

@@ -16,26 +16,28 @@ import Button from "@/components/buttons/Button";
 import NavLink from "@/components/navigation/NavLink";
 import { StatusPill } from "@/components/panels/Panel";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
+import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
 import {
   abortRequest,
   messageFromError,
   RequestTimeoutError,
 } from "@/lib/httpUtils";
 
-import { MAIN_NAVIGATION_ITEMS } from "./mainNavigationConfig";
+import {
+  CAPTURE_SECONDARY_NAVIGATION_ITEMS,
+  MAIN_NAVIGATION_ITEMS,
+} from "./mainNavigationConfig";
 import { postMainNavigationAction } from "./lib/mainNavigationApiUtils";
 import { isMainNavigationItemActive } from "./lib/mainNavigationUtils";
 
-export default function MainNavigation({
-  isConnected = null,
-  emergencyStopping = false,
-  logoutPending = false,
-  onEmergencyStop,
-  onLogout,
-  secondaryItems = [],
-}) {
+export default function MainNavigation() {
   const pathname = usePathname();
   const { showNotification } = useNotificationsContext();
+  const {
+    authExpired,
+    connection,
+    snapshot,
+  } = usePhytoSocketContext();
   const [localEmergencyPending, setLocalEmergencyPending] = useState(false);
   const [localLogoutPending, setLocalLogoutPending] = useState(false);
   const mountedRef = useRef(false);
@@ -52,12 +54,13 @@ export default function MainNavigation({
     };
   }, []);
 
-  async function handleEmergencyStop() {
-    if (onEmergencyStop) {
-      onEmergencyStop();
-      return;
+  useEffect(() => {
+    if (authExpired) {
+      window.location.replace("/");
     }
+  }, [authExpired]);
 
+  async function handleEmergencyStop() {
     if (localEmergencyPending) return;
 
     const controller = new AbortController();
@@ -70,6 +73,10 @@ export default function MainNavigation({
         "緊急停止失敗，請立即檢查設備狀態。",
         controller.signal,
       );
+
+      if (mountedRef.current) {
+        showNotification("已送出緊急停止命令。", "success");
+      }
     } catch (error) {
       if (error?.name === "AbortError" && !mountedRef.current) return;
 
@@ -101,11 +108,6 @@ export default function MainNavigation({
   }
 
   async function handleLogout() {
-    if (onLogout) {
-      onLogout();
-      return;
-    }
-
     if (localLogoutPending) return;
 
     const controller = new AbortController();
@@ -149,14 +151,15 @@ export default function MainNavigation({
     }
   }
 
+  const secondaryItems = pathname === "/capture"
+    ? CAPTURE_SECONDARY_NAVIGATION_ITEMS
+    : [];
   const hasSecondaryNavigation = secondaryItems.length > 0;
-  const effectiveEmergencyPending = emergencyStopping
-    || localEmergencyPending;
-  const effectiveLogoutPending = logoutPending
-    || localLogoutPending;
+  const isConnected = connection === "connected";
+  const motorConnected = snapshot?.motor?.connected;
 
   return (
-    <header className="fixed inset-x-0 top-0 z-300 border-b border-white/10 bg-[#07110d]/90 px-5 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.14)] backdrop-blur-2xl max-[980px]:px-3 max-[980px]:py-2">
+    <header className="fixed inset-x-0 top-0 z-300 border-b border-white/15 bg-[#07110d]/90 px-5 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.14)] backdrop-blur-2xl max-[980px]:px-3 max-[980px]:py-2">
       <div className="mx-auto grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 max-[980px]:grid-cols-[minmax(0,1fr)_auto] max-[980px]:gap-2">
         <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3">
           <span
@@ -177,7 +180,7 @@ export default function MainNavigation({
 
         <div className="flex flex-row gap-4 justify-center items-center">
           <nav
-            className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-black/10 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
             aria-label="主要導覽"
           >
             {MAIN_NAVIGATION_ITEMS.map((item) => {
@@ -204,7 +207,7 @@ export default function MainNavigation({
 
           {hasSecondaryNavigation ? (
             <nav
-              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-black/10 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
+              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
               aria-label="捕捉頁面導覽"
             >
               {secondaryItems.map((item) => (
@@ -220,17 +223,18 @@ export default function MainNavigation({
         </div>
 
         <div className="col-start-3 flex min-w-0 items-center justify-end gap-2 max-[980px]:col-start-2 max-[980px]:row-start-1">
-          {isConnected !== null ? (
-            <div className="max-[720px]:hidden">
-              <StatusPill tone={isConnected ? "success" : "warning"}>
-                {isConnected ? "即時連線已建立" : "即時連線中"}
-              </StatusPill>
-            </div>
-          ) : null}
+          <div className="max-[720px]:hidden">
+            <StatusPill tone={isConnected ? "success" : "warning"}>
+              {isConnected ? "即時連線已建立" : "即時連線中"}
+            </StatusPill>
+          </div>
           <Button
             className="min-h-9 px-3 text-xs"
             variant="danger"
-            disabled={effectiveEmergencyPending}
+            disabled={
+              localEmergencyPending
+              || motorConnected === false
+            }
             onClick={() => void handleEmergencyStop()}
           >
             <FiAlertOctagon
@@ -241,14 +245,14 @@ export default function MainNavigation({
           </Button>
           <Button
             className="min-h-9 px-3 text-xs"
-            disabled={effectiveLogoutPending}
+            disabled={localLogoutPending}
             onClick={() => void handleLogout()}
           >
             <FiLogOut
               className="size-4 shrink-0"
               aria-hidden="true"
             />
-            {effectiveLogoutPending ? "登出中…" : "登出"}
+            {localLogoutPending ? "登出中…" : "登出"}
           </Button>
         </div>
       </div>

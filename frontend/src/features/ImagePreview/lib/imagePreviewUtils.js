@@ -100,14 +100,11 @@ export function imagePreviewDeviceOptions(
 ) {
   const devicesByIndex = new Map();
   const draftAssignments = new Map();
-  const hasCameraDrafts = Object.keys(cameraDrafts).length > 0;
-
   for (const [cameraId, config] of Object.entries(cameraDrafts)) {
     const deviceIndex = Number(config?.device_index);
 
     if (
-      config?.enabled
-      && Number.isInteger(deviceIndex)
+      Number.isInteger(deviceIndex)
       && deviceIndex >= 0
       && deviceIndex <= 63
     ) {
@@ -137,7 +134,7 @@ export function imagePreviewDeviceOptions(
     .sort(([left], [right]) => left - right)
     .flatMap(([deviceIndex, state]) => {
       const draftAssignment = draftAssignments.get(deviceIndex);
-      const assignedCameraId = draftAssignment || (!hasCameraDrafts ? state.assignedCameraId : null);
+      const assignedCameraId = draftAssignment || state.assignedCameraId;
       const usedByAnotherCamera = assignedCameraId && assignedCameraId !== imagePreviewId;
 
       if (usedByAnotherCamera) return [];
@@ -159,32 +156,6 @@ export function imagePreviewDeviceOptions(
   ];
 }
 
-export function unavailableImagePreviewAssignments(
-  payload,
-  scanResults,
-) {
-  const availableIndexes = new Set(
-    (Array.isArray(scanResults) ? scanResults : [])
-      .filter((result) => result?.connected)
-      .map((result) => Number(result?.device_index))
-      .filter((deviceIndex) => (
-        Number.isInteger(deviceIndex)
-        && deviceIndex >= 0
-        && deviceIndex <= 63
-      )),
-  );
-
-  return IMAGE_PREVIEW_ORDER.filter((imagePreviewId) => {
-    const deviceIndex = payload?.cameras?.[imagePreviewId]?.device_index;
-
-    if (deviceIndex === null || deviceIndex === undefined || deviceIndex === "") {
-      return false;
-    }
-
-    return !availableIndexes.has(Number(deviceIndex));
-  });
-}
-
 export function visibleImagePreviewSettings(payload) {
   return imagePreviewSettingsSections(payload).flatMap(({ leaves }) => leaves);
 }
@@ -200,7 +171,7 @@ export function serializeImagePreviewSettingsPayload(payload) {
     }
 
     if (
-      meta.type === "select"
+      (meta.type === "select" || meta.optional)
       && (
         leaf.value === null
         || leaf.value === undefined
@@ -233,9 +204,9 @@ export function serializeImagePreviewSettingsPayload(payload) {
   for (const imagePreviewId of IMAGE_PREVIEW_ORDER) {
     const config = nextPayload?.cameras?.[imagePreviewId];
 
-    if (!config?.enabled) continue;
-
     if (config.device_index === null || config.device_index === undefined) {
+      if (!config?.enabled) continue;
+
       const cameraLabel = IMAGE_PREVIEW_META[imagePreviewId]?.label || imagePreviewId;
       throw new Error(`${cameraLabel}已啟用，請先選擇裝置。`);
     }
@@ -247,7 +218,7 @@ export function serializeImagePreviewSettingsPayload(payload) {
       const previousLabel = IMAGE_PREVIEW_META[previousId]?.label || previousId;
       const currentLabel = IMAGE_PREVIEW_META[imagePreviewId]?.label || imagePreviewId;
       throw new Error(
-        `裝置 ${deviceIndex} 不可同時指派給${previousLabel}與${currentLabel}。`,
+        `裝置 ${deviceIndex} 已指派給${previousLabel}；請先取消其裝置索引，再指派給${currentLabel}。`,
       );
     }
 

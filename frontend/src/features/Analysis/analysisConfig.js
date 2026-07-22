@@ -16,18 +16,22 @@ export const HIGH_REPROJECTION_ERROR_THRESHOLD_PX = 10;
 export const ANALYSIS_SETUP_STEPS = [
   {
     id: 1,
-    label: "影像目錄",
+    label: "選擇紀錄",
   },
   {
     id: 2,
-    label: "分析範圍",
+    label: "配置設定",
   },
   {
     id: 3,
-    label: "方法參數",
+    label: "分析範圍",
   },
   {
     id: 4,
+    label: "方法參數",
+  },
+  {
+    id: 5,
     label: "建立分析",
   },
 ];

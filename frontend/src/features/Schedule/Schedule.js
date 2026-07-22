@@ -10,8 +10,6 @@ import {
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import { Panel, PanelHeader } from "@/components/panels/Panel";
-import SettingsGear from "@/components/panels/SettingsGear";
-import Settings from "@/features/Settings/Settings";
 
 import ScheduleCommonControls from "./components/ScheduleCommonControls";
 import ScheduleModes from "./components/ScheduleModes";
@@ -24,8 +22,6 @@ export default function Schedule({
   isConnected,
   busyActions,
   scheduleActive,
-  open,
-  onToggle,
   onNotify,
   onRunAction,
   onStarted,
@@ -34,8 +30,10 @@ export default function Schedule({
     schedule,
     setSchedule,
     defaultsLoading,
+    defaultsSaving,
     defaultsLoadError,
     loadDefaults,
+    saveDefaults,
     handleSubmit,
   } = useSchedule({
     onNotify,
@@ -56,6 +54,8 @@ export default function Schedule({
   const resetting = busyActions.has("schedule.reset");
   const pauseChanging = busyActions.has("schedule.pause")
     || busyActions.has("schedule.resume");
+  const rotatingMotorUnavailable = Boolean(schedule.rotation_enabled)
+    && !Boolean(motor.connected);
 
   return (
     <>
@@ -66,19 +66,10 @@ export default function Schedule({
       />
       <Panel
         id="schedule"
-        className="min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
+        className="min-[981px]:col-start-1 min-[981px]:row-start-4 scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
         aria-label="排程"
       >
-        <PanelHeader
-          title="排程"
-          action={(
-            <SettingsGear
-              label="排程"
-              open={open}
-              onClick={onToggle}
-            />
-          )}
-        />
+        <PanelHeader title="排程" />
         <form
           className="grid gap-4 p-5 max-sm:p-4"
           onSubmit={handleSubmit}
@@ -88,14 +79,16 @@ export default function Schedule({
               grid gap-4 border-0 p-0
               ${scheduleActive ? "grayscale opacity-60" : ""}
             `}
-            disabled={!canEdit || defaultsLoading}
+            disabled={!canEdit || defaultsLoading || defaultsSaving}
           >
             <ScheduleCommonControls
               schedule={schedule}
               setSchedule={setSchedule}
               defaultsLoading={defaultsLoading}
+              defaultsSaving={defaultsSaving}
               defaultsLoadError={defaultsLoadError}
               onLoadDefaults={loadDefaults}
+              onSaveDefaults={saveDefaults}
             />
             <hr />
             <ScheduleModes
@@ -146,7 +139,9 @@ export default function Schedule({
                   !isConnected
                   || !canEdit
                   || defaultsLoading
+                  || defaultsSaving
                   || !schedule.modes.length
+                  || rotatingMotorUnavailable
                   || hardwareBusy
                 }
               >
@@ -185,13 +180,6 @@ export default function Schedule({
             </Button>
           </ActionRow>
         </form>
-        <Settings
-          group="schedule"
-          label="排程"
-          onNotify={onNotify}
-          open={open}
-          locked={scheduleActive}
-        />
       </Panel>
     </>
   );

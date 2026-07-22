@@ -20,20 +20,53 @@ class MetadataService:
         self,
         record: MetadataRecord,
         record_path: str | Path | None = None,
+        mode_folder: str | None = None,
     ) -> None:
-        metadata_path = self.storage.metadata_path(record.record_id, record_path)
+        metadata_paths = [
+            self.storage.metadata_path(record.record_id, record_path),
+        ]
+        if mode_folder is not None:
+            self.storage.create_mode_layout(
+                record.record_id,
+                mode_folder,
+                record_path,
+            )
+            metadata_paths.append(
+                self.storage.mode_metadata_path(
+                    record.record_id,
+                    mode_folder,
+                    record_path,
+                )
+            )
         with self._lock:
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            if not metadata_path.exists():
-                with metadata_path.open("w", newline="", encoding="utf-8") as handle:
-                    csv.DictWriter(handle, fieldnames=METADATA_FIELDS).writeheader()
-            previous_size = metadata_path.stat().st_size
-            with metadata_path.open("a", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=METADATA_FIELDS)
-                writer.writerow(record.model_dump())
+            previous_sizes: dict[Path, int] = {}
             try:
+                for metadata_path in metadata_paths:
+                    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+                    if not metadata_path.exists():
+                        with metadata_path.open(
+                            "w",
+                            newline="",
+                            encoding="utf-8-sig",
+                        ) as handle:
+                            csv.DictWriter(
+                                handle,
+                                fieldnames=METADATA_FIELDS,
+                            ).writeheader()
+                    previous_sizes[metadata_path] = metadata_path.stat().st_size
+                    with metadata_path.open(
+                        "a",
+                        newline="",
+                        encoding="utf-8",
+                    ) as handle:
+                        writer = csv.DictWriter(
+                            handle,
+                            fieldnames=METADATA_FIELDS,
+                        )
+                        writer.writerow(record.model_dump())
                 self.repository.insert(record)
             except Exception:
-                with metadata_path.open("r+b") as handle:
-                    handle.truncate(previous_size)
+                for metadata_path, previous_size in previous_sizes.items():
+                    with metadata_path.open("r+b") as handle:
+                        handle.truncate(previous_size)
                 raise

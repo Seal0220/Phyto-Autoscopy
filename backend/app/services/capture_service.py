@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.core.config import AppSettings
 from app.core.exceptions import CameraError, public_error_detail
 from app.models.camera_models import CaptureResult
@@ -34,6 +36,7 @@ class CaptureService:
         angle_deg: float | None = None,
         mode_folder: str | None = None,
         capture_index: int | None = None,
+        continuous: bool = False,
     ) -> CaptureResult:
         record = self.records.get_capture_record(record_id)
         frame = self.camera_manager.capture(camera_id)
@@ -47,6 +50,8 @@ class CaptureService:
                 cycle_id or 1,
                 capture_index or 1,
                 0.0 if angle_deg is None else angle_deg,
+                frame.timestamp,
+                continuous,
                 record.record_path,
             )
         else:
@@ -115,7 +120,8 @@ class CaptureService:
         record_id: str,
         cycle_id: int,
         angle_deg: float,
-        mode_outputs: list[tuple[str, int]],
+        mode_outputs: list[tuple[str, int, bool]],
+        snapshot_at: datetime,
     ) -> dict[str, CaptureResult]:
         """Capture one physical frame and persist a copy for every due schedule mode."""
         record = self.records.get_capture_record(record_id)
@@ -124,14 +130,17 @@ class CaptureService:
         motor_status = self.motor_controller.status()
         results: dict[str, CaptureResult] = {}
 
-        for mode_folder, capture_index in mode_outputs:
+        for mode_folder, capture_index, continuous in mode_outputs:
+            mode_cycle_id = 0 if continuous else cycle_id
             path = self.storage.next_mode_capture_path(
                 record.record_id,
                 mode_folder,
                 camera_id,
-                cycle_id,
+                mode_cycle_id,
                 capture_index,
                 angle_deg,
+                snapshot_at,
+                continuous,
                 record.record_path,
             )
             self.storage.save_bytes(path, frame.data)
@@ -145,7 +154,7 @@ class CaptureService:
                 project_name_zh=self.settings.project.name_zh,
                 device_name=self.settings.project.device_name,
                 record_id=record.record_id,
-                cycle_id=cycle_id,
+                cycle_id=mode_cycle_id,
                 camera_id=camera_id,
                 camera_name=status.camera_name,
                 timestamp=frame.timestamp.isoformat(),
@@ -155,7 +164,11 @@ class CaptureService:
                 status="success",
             )
             try:
-                self.metadata.append(metadata_record, record.record_path)
+                self.metadata.append(
+                    metadata_record,
+                    record.record_path,
+                    mode_folder,
+                )
             except Exception:
                 path.unlink(missing_ok=True)
                 raise

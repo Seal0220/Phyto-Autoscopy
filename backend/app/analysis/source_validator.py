@@ -79,6 +79,7 @@ def _scan_directory(
     *,
     image_probe,
     first_input_id: int,
+    selected_mode_folders: frozenset[str],
 ) -> tuple[list[CaptureFrame], list[RecordValidationIssue]]:
     frames: list[CaptureFrame] = []
     issues: list[RecordValidationIssue] = []
@@ -96,14 +97,40 @@ def _scan_directory(
         }
         for path in candidates
     )
+    camera_filenames_present = any(
+        path.stem.lower() in CANONICAL_CAMERA_IDS
+        or any(
+            path.stem.lower().startswith(f"{role}_")
+            or path.stem.lower().startswith(f"{role}-")
+            for role in CANONICAL_CAMERA_IDS
+        )
+        for path in candidates
+    )
     paths = [
         path
         for path in candidates
-        if not role_directories_present
-        or camera_id in {
-            part.lower()
-            for part in path.relative_to(directory).parts[:-1]
-        }
+        if (
+            not selected_mode_folders
+            or selected_mode_folders.intersection(path.parts)
+        )
+        and (
+            (
+                role_directories_present
+                and camera_id in {
+                    part.lower()
+                    for part in path.relative_to(directory).parts[:-1]
+                }
+            )
+            or (
+                path.stem.lower() == camera_id
+                or path.stem.lower().startswith(f"{camera_id}_")
+                or path.stem.lower().startswith(f"{camera_id}-")
+            )
+            or (
+                not role_directories_present
+                and not camera_filenames_present
+            )
+        )
     ]
     for offset, path in enumerate(paths):
         input_id = first_input_id + offset
@@ -207,6 +234,7 @@ def validate_analysis_sources(
     method: str,
     allowed_roots: Sequence[Path],
     image_probe=None,
+    selected_mode_folders: Sequence[str] = (),
 ) -> CaptureRecordValidation:
     """Normalize explicit camera directories into the Record validation shape."""
 
@@ -222,6 +250,11 @@ def validate_analysis_sources(
     resolutions: dict[str, tuple[int, int]] = {}
     first_input_id = 1
     resolved_directories: list[Path] = []
+    mode_folders = frozenset(
+        str(folder).strip()
+        for folder in selected_mode_folders
+        if str(folder).strip()
+    )
 
     for camera_id in required:
         source = camera_sources.get(camera_id)
@@ -253,6 +286,7 @@ def validate_analysis_sources(
             directory,
             image_probe=validator.image_probe,
             first_input_id=first_input_id,
+            selected_mode_folders=mode_folders,
         )
         frames.extend(camera_frames)
         issues.extend(camera_issues)

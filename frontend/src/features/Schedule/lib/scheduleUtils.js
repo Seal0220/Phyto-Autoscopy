@@ -42,7 +42,7 @@ export function scheduleErrorMessage(value) {
 }
 
 export function scheduleModeTypeFromLabel(label) {
-  return Object.entries(SCHEDULE_MODE_META).find(([, meta]) => meta.label === label)?.[0] || "time_interval";
+  return Object.entries(SCHEDULE_MODE_META).find(([, meta]) => meta.label === label)?.[0] || "continuous_interval";
 }
 
 export function scheduleWithRotationEnabled(
@@ -60,12 +60,12 @@ export function scheduleWithRotationEnabled(
     ...schedule,
     rotation_enabled: false,
     modes: schedule.modes.map((mode) => (
-      mode.type === "time_interval"
+      mode.type === "continuous_interval"
         ? mode
         : {
           id: mode.id,
-          type: "time_interval",
-          ...SCHEDULE_MODE_META.time_interval.initial,
+          type: "continuous_interval",
+          ...SCHEDULE_MODE_META.continuous_interval.initial,
         }
     )),
   };
@@ -93,6 +93,9 @@ export function buildSchedulePayload(schedule) {
   const rotationEnabled = Boolean(schedule.rotation_enabled);
   const payload = {
     rotation_enabled: rotationEnabled,
+    stabilization_delay_ms: Number(schedule.stabilization_delay_ms),
+    capture_on_return: Boolean(schedule.capture_on_return),
+    return_to_origin: Boolean(schedule.return_to_origin),
     modes: schedule.modes.map((mode) => {
       if (mode.type === "specific_angles") {
         const parts = mode.angles
@@ -112,7 +115,7 @@ export function buildSchedulePayload(schedule) {
         };
       }
 
-      if (mode.type === "time_interval") {
+      if (["continuous_interval", "time_interval"].includes(mode.type)) {
         return {
           id: mode.id,
           type: mode.type,
@@ -161,6 +164,8 @@ export function buildSchedulePayload(schedule) {
     .filter(([key]) => ![
       "modes",
       "rotation_enabled",
+      "capture_on_return",
+      "return_to_origin",
     ].includes(key))
     .some(([, value]) => !Number.isFinite(value));
 
@@ -191,10 +196,11 @@ export function buildSchedulePayload(schedule) {
       payload.cycle_duration_seconds <= 0
       || payload.cycle_interval_seconds < 0
       || payload.angle_tolerance_deg < 0
+      || payload.stabilization_delay_ms < 0
     )
   ) {
     throw new Error(
-      "每輪時長必須大於 0，每輪間隔與角度誤差不可小於 0。",
+      "每輪時長必須大於 0，每輪間隔、角度誤差與穩定等待不可小於 0。",
     );
   }
 
@@ -211,9 +217,9 @@ export function buildSchedulePayload(schedule) {
 
   if (
     !rotationEnabled
-    && payload.modes.some((mode) => mode.type !== "time_interval")
+    && payload.modes.some((mode) => mode.type !== "continuous_interval")
   ) {
-    throw new Error("未啟用旋臂時只能使用時間間隔擷取模式。");
+    throw new Error("未啟用旋臂時只能使用連續間隔擷取模式。");
   }
 
   return payload;

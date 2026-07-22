@@ -14,6 +14,7 @@ import {
 
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
+import InformationGrid from "@/components/data/InformationGrid";
 import { SelectInput } from "@/components/inputs/Input";
 import CameraStream from "@/components/media/CameraStream";
 import InnerPanel from "@/components/panels/InnerPanel";
@@ -111,6 +112,30 @@ function CalibrationIntrinsicCard({
     || startDisabled
     || pendingAction,
   );
+  const intrinsicInformation = [
+    {
+      label: "模型",
+      value: intrinsics?.camera_model || "尚無資料",
+      tone: intrinsics ? "success" : "neutral",
+      truncate: true,
+    },
+    {
+      label: "解析度",
+      value: intrinsics?.width && intrinsics?.height
+        ? `${intrinsics.width} × ${intrinsics.height}`
+        : "尚無資料",
+      tone: intrinsics ? "success" : "neutral",
+      truncate: true,
+    },
+    {
+      label: "誤差",
+      value: intrinsics
+        ? displayError(intrinsics.reprojection_error_px)
+        : "尚無資料",
+      tone: intrinsics ? "success" : "neutral",
+      truncate: true,
+    },
+  ];
 
   async function runAction(
     action,
@@ -264,7 +289,7 @@ function CalibrationIntrinsicCard({
         onNotify={onNotify}
       />
 
-      <div className="grid gap-6 border-t border-white/10 p-4">
+      <div className="grid gap-6 border-t border-white/15 p-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusPill tone={connected ? "success" : "offline"}>
             {connected ? "已連線" : "離線"}
@@ -290,47 +315,11 @@ function CalibrationIntrinsicCard({
         </div>
 
 
-        <dl className="relative grid grid-cols-3 gap-x-2 border-white/10 px-2 before:pointer-events-none before:absolute before:top-3 before:bottom-0 before:left-[33.333%] before:w-px before:bg-white/10 before:content-[''] after:pointer-events-none after:absolute after:top-3 after:bottom-0 after:left-[66.666%] after:w-px after:bg-white/10 after:content-['']">
-          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 pr-3">
-            <dt className="shrink-0 text-xs font-bold text-neutral-200">
-              模型
-            </dt>
-            <dd
-              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
-                }`}
-            >
-              {intrinsics?.camera_model || "尚無資料"}
-            </dd>
-          </div>
-          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 px-3">
-            <dt className="shrink-0 text-xs font-bold text-neutral-200">
-              解析度
-            </dt>
-            <dd
-              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
-                }`}
-            >
-              {intrinsics?.width && intrinsics?.height
-                ? `${intrinsics.width} × ${intrinsics.height}`
-                : "尚無資料"
-              }
-            </dd>
-          </div>
-          <div className="flex min-h-6 min-w-0 items-center justify-between gap-2 pl-3">
-            <dt className="shrink-0 text-xs font-bold text-neutral-200">
-              誤差
-            </dt>
-            <dd
-              className={`m-0 min-w-0 truncate text-right text-xs font-black ${intrinsics ? "text-emerald-200" : "text-neutral-500"
-                }`}
-            >
-              {intrinsics
-                ? displayError(intrinsics.reprojection_error_px)
-                : "尚無資料"
-              }
-            </dd>
-          </div>
-        </dl>
+        <InformationGrid
+          items={intrinsicInformation}
+          columns={3}
+          border="none"
+        />
 
         {!run ? (
           <div className="flex flex-col gap-3">

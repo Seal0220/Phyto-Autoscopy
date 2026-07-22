@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useState,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -16,18 +15,14 @@ import {
   Panel,
   PanelHeader,
 } from "@/components/panels/Panel";
-import SettingsGear from "@/components/panels/SettingsGear";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisDashboardRuns from "./components/AnalysisDashboardRuns";
-import ArucoWorldSettings from "./components/ArucoWorldSettings";
 import useAnalysisDashboard from "./hooks/useAnalysisDashboard";
 
 export default function Analysis() {
   const router = useRouter();
   const { showNotification } = useNotificationsContext();
-  const [poseSettingsOpen, setPoseSettingsOpen] = useState(false);
   const {
     sources,
     runs,
@@ -35,7 +30,6 @@ export default function Analysis() {
     loadError,
     exportingIds,
     exportFailure,
-    connection,
     socketError,
     load,
     exportRun,
@@ -88,10 +82,7 @@ export default function Analysis() {
   }
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation isConnected={connection === "connected"} />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="分析總覽">
           <PanelHeader
             title="分析"
@@ -139,23 +130,6 @@ export default function Analysis() {
           </div>
         </Panel>
 
-        <Panel aria-label="ArUco 基準">
-          <PanelHeader
-            title="ArUco 基準"
-            action={(
-              <SettingsGear
-                label="ArUco 基準"
-                open={poseSettingsOpen}
-                onClick={() => setPoseSettingsOpen((current) => !current)}
-              />
-            )}
-          />
-          <ArucoWorldSettings
-            open={poseSettingsOpen}
-            onNotify={showNotification}
-          />
-        </Panel>
-
         {(!loadError || hasData) ? (
           <AnalysisDashboardRuns
             runs={runs}
@@ -174,7 +148,6 @@ export default function Analysis() {
             )}
           />
         ) : null}
-      </div>
-    </main>
+    </div>
   );
 }

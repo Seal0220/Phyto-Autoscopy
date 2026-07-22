@@ -18,7 +18,6 @@ import {
   StatusPill,
 } from "@/components/panels/Panel";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import ReprojectionErrors from "@/features/ReprojectionErrors/ReprojectionErrors";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
@@ -79,10 +78,7 @@ export default function TrajectoryViewer({
   );
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="分析結果">
           <PanelHeader
             title="分析結果"
@@ -100,7 +96,7 @@ export default function TrajectoryViewer({
                     className="size-4 shrink-0"
                     aria-hidden="true"
                   />
-                  返回分析執行
+                  返回分析紀錄
                 </Button>
                 <Button
                   variant="primary"
@@ -128,7 +124,7 @@ export default function TrajectoryViewer({
 
             {loading && !run ? (
               <div
-                className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
+                className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400"
                 role="status"
               >
                 讀取分析結果中…
@@ -179,7 +175,7 @@ export default function TrajectoryViewer({
                 </div>
 
                 {trajectory.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-white/10 bg-black/10 p-5 text-center text-sm font-semibold text-neutral-400">
+                  <div className="rounded-xl border border-dashed border-white/15 bg-black/15 p-5 text-center text-sm font-semibold text-neutral-400">
                     本次分析沒有可顯示的有效三維軌跡。
                   </div>
                 ) : (
@@ -266,7 +262,6 @@ export default function TrajectoryViewer({
 
           </div>
         </Panel>
-      </div>
-    </main>
+    </div>
   );
 }

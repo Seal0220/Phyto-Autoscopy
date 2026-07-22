@@ -69,7 +69,7 @@ export default function TrajectoryViewer2D({
         }
       />
 
-      <div className="relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black/40">
+      <div className="relative aspect-video overflow-hidden rounded-xl border border-white/15 bg-black/40">
         <svg
           className="size-full"
           viewBox={`0 0 ${width} ${height}`}

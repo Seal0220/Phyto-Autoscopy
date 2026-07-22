@@ -116,7 +116,7 @@ export default function TipReviewCanvas({
 
   return (
     <article
-      className={`grid min-w-0 gap-3 rounded-[22px] border bg-white/6 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] transition-[background-color,border-color,filter,opacity] duration-150 ${active ? "border-emerald-200/60 bg-emerald-500/10" : "border-white/10"} ${disabled ? "grayscale opacity-60" : ""}`}
+      className={`grid min-w-0 gap-3 rounded-xl border bg-white/6 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] transition-[background-color,border-color,filter,opacity] duration-150 ${active ? "border-emerald-200/60 bg-emerald-500/10" : "border-white/15"} ${disabled ? "grayscale opacity-60" : ""}`}
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-base font-black text-white">{cameraLabel}</h3>
@@ -131,7 +131,7 @@ export default function TipReviewCanvas({
       </div>
 
       <div
-        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/40 focus-within:border-emerald-200/60"
+        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-white/15 bg-black/40 focus-within:border-emerald-200/60"
         tabIndex={0}
         role="application"
         aria-label={`${cameraLabel}尖端修正畫布；點擊或拖曳可指定位置`}

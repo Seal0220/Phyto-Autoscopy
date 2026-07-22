@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
         if settings.hardware.mock_mode
         else PhidgetStepperController(settings.motor)
     )
+    motor_controller.start()
 
     record_repository = RecordRepository(database)
     capture_repository = CaptureRepository(database)

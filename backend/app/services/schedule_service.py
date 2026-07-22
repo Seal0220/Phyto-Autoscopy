@@ -8,6 +8,10 @@ from pathlib import Path
 from threading import Event, RLock, Thread
 
 from app.core.config import AppSettings
+from app.core.constants import (
+    CAPTURE_MODE_ABBREVIATIONS,
+    CAPTURE_MODE_NAMES,
+)
 from app.core.exceptions import (
     CameraError,
     MotorError,
@@ -18,6 +22,7 @@ from app.core.exceptions import (
 from app.models.schedule_models import (
     AngleIntervalMode,
     CaptureMode,
+    ContinuousIntervalMode,
     EqualDivisionsMode,
     SchedulePlan,
     ScheduleStartRequest,
@@ -41,6 +46,7 @@ class ModeRuntime:
     captured_targets: set[float] = field(default_factory=set)
     next_due_seconds: float = 0.0
     capture_index: int = 0
+    scope_capture_index: int = 0
 
 
 class ScheduleService:
@@ -74,6 +80,7 @@ class ScheduleService:
         self.total_steps = 0
         self._runtimes: list[ModeRuntime] = []
         self._lock = RLock()
+        self._capture_lock = RLock()
         self._stop_event = Event()
         self._pause_event = Event()
         self._worker: Thread | None = None
@@ -134,10 +141,18 @@ class ScheduleService:
             else request.rotation_enabled
         )
         modes = request.modes or [
-            TimeIntervalMode(
-                id="mode-1",
-                type="time_interval",
-                interval_seconds=defaults.capture_interval_seconds,
+            (
+                TimeIntervalMode(
+                    id="mode-1",
+                    type="time_interval",
+                    interval_seconds=defaults.capture_interval_seconds,
+                )
+                if rotation_enabled
+                else ContinuousIntervalMode(
+                    id="mode-1",
+                    type="continuous_interval",
+                    interval_seconds=defaults.capture_interval_seconds,
+                )
             )
         ]
         cycle_interval_seconds = (
@@ -170,6 +185,16 @@ class ScheduleService:
             if request.capture_on_return is None
             else request.capture_on_return
         )
+        stabilization_delay_ms = (
+            defaults.stabilization_delay_ms
+            if request.stabilization_delay_ms is None
+            else request.stabilization_delay_ms
+        )
+        return_to_origin = (
+            defaults.return_to_origin
+            if request.return_to_origin is None
+            else request.return_to_origin
+        )
         total_cycles = None
         cycle_duration_seconds = None
         if rotation_enabled:
@@ -187,10 +212,11 @@ class ScheduleService:
                 rotation_end_deg,
                 cycle_duration_seconds,
                 capture_on_return,
+                stabilization_delay_ms,
             )
         else:
             duration_seconds = (
-                defaults.duration_minutes * 60
+                defaults.duration_seconds
                 if request.duration_seconds is None
                 else request.duration_seconds
             )
@@ -211,7 +237,9 @@ class ScheduleService:
                 if request.angle_tolerance_deg is None
                 else request.angle_tolerance_deg
             ),
+            stabilization_delay_ms=stabilization_delay_ms,
             capture_on_return=capture_on_return,
+            return_to_origin=return_to_origin,
             modes=modes,
         )
         return plan
@@ -222,6 +250,7 @@ class ScheduleService:
         end_deg: float,
         step_deg: float,
         capture_on_return: bool,
+        stabilization_delay_ms: int,
     ) -> float:
         sequence = self.rotation_service.schedule_capture_sequence(
             start_deg,
@@ -234,9 +263,7 @@ class ScheduleService:
             raise PhytoAutoscopyError(
                 "馬達速度限制必須大於 0，才能自動計算步進度數。"
             )
-        stabilization_seconds = (
-            self.settings.schedule.stabilization_delay_ms / 1000
-        )
+        stabilization_seconds = stabilization_delay_ms / 1000
         current_angle = 0.0
         travel_degrees = 0.0
         for target_angle, _ in sequence:
@@ -254,6 +281,7 @@ class ScheduleService:
         end_deg: float,
         cycle_duration_seconds: float,
         capture_on_return: bool,
+        stabilization_delay_ms: int,
     ) -> float:
         angle_range = end_deg - start_deg
         maximum_step = max(0.1, angle_range)
@@ -262,6 +290,7 @@ class ScheduleService:
             end_deg,
             maximum_step,
             capture_on_return,
+            stabilization_delay_ms,
         )
         if cycle_duration_seconds + 1e-9 < minimum_duration:
             raise PhytoAutoscopyError(
@@ -274,6 +303,7 @@ class ScheduleService:
             end_deg,
             minimum_step,
             capture_on_return,
+            stabilization_delay_ms,
         ) <= cycle_duration_seconds + 1e-9:
             return minimum_step
 
@@ -286,14 +316,16 @@ class ScheduleService:
                 end_deg,
                 candidate,
                 capture_on_return,
+                stabilization_delay_ms,
             ) <= cycle_duration_seconds + 1e-9:
                 upper = candidate
             else:
                 lower = candidate
         return round(upper, 6)
 
-    def _mode_folder(self, index: int, mode: CaptureMode) -> str:
-        return f"{index:02d}_{mode.type}_{mode.id}"
+    @staticmethod
+    def _mode_folder(mode: CaptureMode, number: int) -> str:
+        return f"{CAPTURE_MODE_NAMES[mode.type]}.{number:02d}"
 
     def _targets_for_mode(self, mode: CaptureMode, plan: SchedulePlan) -> list[float]:
         start = plan.rotation_start_deg
@@ -315,17 +347,31 @@ class ScheduleService:
         return []
 
     def _build_runtimes(self, plan: SchedulePlan) -> list[ModeRuntime]:
-        return [
-            ModeRuntime(
-                mode=mode,
-                folder=self._mode_folder(index, mode),
-                targets=self._targets_for_mode(mode, plan),
+        mode_counts: dict[str, int] = {}
+        runtimes = []
+        for mode in plan.modes:
+            mode_counts[mode.type] = mode_counts.get(mode.type, 0) + 1
+            runtimes.append(
+                ModeRuntime(
+                    mode=mode,
+                    folder=self._mode_folder(
+                        mode,
+                        mode_counts[mode.type],
+                    ),
+                    targets=self._targets_for_mode(mode, plan),
+                )
             )
-            for index, mode in enumerate(plan.modes, start=1)
-        ]
+        return runtimes
 
     def start(self, request: ScheduleStartRequest | None = None) -> ScheduleStatus:
         plan = self._resolve_plan(request)
+        if (
+            plan.rotation_enabled
+            and not self.motor_controller.status().connected
+        ):
+            raise PhytoAutoscopyError(
+                "馬達控制器尚未連接，無法開始旋臂排程。"
+            )
         runtimes = self._build_runtimes(plan)
         self._selected_cameras(plan)
         with self._lock:
@@ -334,8 +380,42 @@ class ScheduleService:
 
             schedule_payload = plan.model_dump(mode="json")
             for payload, runtime in zip(schedule_payload["modes"], runtimes, strict=True):
-                payload["output_folder"] = f"modes/{runtime.folder}"
-                payload["log_file"] = f"modes/{runtime.folder}/capture_log.csv"
+                continuous = isinstance(runtime.mode, ContinuousIntervalMode)
+                payload["folder"] = runtime.folder
+                payload["name"] = runtime.folder
+                payload["abbreviation"] = CAPTURE_MODE_ABBREVIATIONS[
+                    runtime.mode.type
+                ]
+                payload["storage_scope"] = (
+                    "rounds/round.00"
+                    if continuous
+                    else "rounds"
+                )
+                payload["output_pattern"] = (
+                    f"modes/{runtime.folder}/"
+                    "rounds/round.00/snapshot.{snapshot}_"
+                    "{YYYY.MM.DD-hh.mm.ss.xxxxxx}"
+                    if continuous
+                    else f"modes/{runtime.folder}/"
+                    "rounds/round.{round}/snapshot.{snapshot}_"
+                    "{YYYY.MM.DD-hh.mm.ss.xxxxxx}"
+                )
+                payload["image_pattern"] = (
+                    "{camera}-"
+                    f"{payload['abbreviation']}."
+                    f"{runtime.folder.rsplit('.', 1)[1]}_"
+                    "r.{round}_s.{snapshot}_"
+                    "{YYYY.MM.DD-hh.mm.ss.xxxxxx}.jpg"
+                )
+                payload["log_pattern"] = (
+                    f"modes/{runtime.folder}/mode.log.csv"
+                )
+                payload["metadata_pattern"] = (
+                    f"modes/{runtime.folder}/metadata.csv"
+                )
+                payload["config_pattern"] = (
+                    f"modes/{runtime.folder}/config.json"
+                )
 
             record = None
             try:
@@ -343,8 +423,6 @@ class ScheduleService:
                     status="running",
                     schedule=schedule_payload,
                 )
-                for runtime in runtimes:
-                    self.storage.create_mode_layout(record.record_id, runtime.folder)
             except Exception:
                 if record is not None:
                     try:
@@ -536,7 +614,7 @@ class ScheduleService:
         tolerance: float,
     ) -> tuple[bool, list[float], str]:
         mode = runtime.mode
-        if isinstance(mode, TimeIntervalMode):
+        if isinstance(mode, (ContinuousIntervalMode, TimeIntervalMode)):
             if elapsed_seconds + 1e-9 < runtime.next_due_seconds:
                 return False, [], ""
             due_at = runtime.next_due_seconds
@@ -566,11 +644,40 @@ class ScheduleService:
         motion_direction: str,
         camera_ids: list[str],
     ) -> None:
+        with self._capture_lock:
+            self._capture_modes_locked(
+                record_id,
+                due_modes,
+                cycle_id,
+                elapsed_seconds,
+                commanded_angle,
+                actual_angle,
+                motion_direction,
+                camera_ids,
+            )
+
+    def _capture_modes_locked(
+        self,
+        record_id: str,
+        due_modes: list[tuple[ModeRuntime, list[float], str]],
+        cycle_id: int,
+        elapsed_seconds: float,
+        commanded_angle: float,
+        actual_angle: float,
+        motion_direction: str,
+        camera_ids: list[str],
+    ) -> None:
+        snapshot_at = datetime.now(timezone.utc)
         for runtime, _, _ in due_modes:
             runtime.capture_index += 1
+            runtime.scope_capture_index += 1
 
         mode_outputs = [
-            (runtime.folder, runtime.capture_index)
+            (
+                runtime.folder,
+                runtime.scope_capture_index,
+                isinstance(runtime.mode, ContinuousIntervalMode),
+            )
             for runtime, _, _ in due_modes
         ]
 
@@ -585,6 +692,7 @@ class ScheduleService:
                     cycle_id=cycle_id,
                     angle_deg=actual_angle,
                     mode_outputs=mode_outputs,
+                    snapshot_at=snapshot_at,
                 )
             except Exception as exc:
                 capture_error = public_error_detail(exc)
@@ -597,6 +705,10 @@ class ScheduleService:
                 )
 
             for runtime, targets, trigger_value in due_modes:
+                continuous = isinstance(
+                    runtime.mode,
+                    ContinuousIntervalMode,
+                )
                 target_text = ",".join(f"{target:g}" for target in targets)
                 reference_angle = (
                     min(targets, key=lambda target: abs(actual_angle - target))
@@ -607,9 +719,9 @@ class ScheduleService:
                 log_record = {
                     "mode_id": runtime.mode.id,
                     "mode_type": runtime.mode.type,
-                    "cycle_id": cycle_id,
+                    "cycle_id": 0 if continuous else cycle_id,
                     "motion_direction": motion_direction,
-                    "capture_index": runtime.capture_index,
+                    "capture_index": runtime.scope_capture_index,
                     "elapsed_seconds": round(elapsed_seconds, 3),
                     "trigger_value": trigger_value,
                     "target_angle_deg": target_text,
@@ -627,12 +739,81 @@ class ScheduleService:
                     "status": "success" if result else "error",
                     "error_message": "" if result else capture_error,
                 }
-                self.storage.append_mode_log(record_id, runtime.folder, log_record)
+                self.storage.append_mode_log(
+                    record_id,
+                    runtime.folder,
+                    log_record,
+                )
 
         if failed_cameras:
             raise CameraError(
                 f"排程擷取失敗，相機：{', '.join(failed_cameras)}"
             )
+
+    def _run_continuous_capture(
+        self,
+        record_id: str,
+        plan: SchedulePlan,
+        runtimes: list[ModeRuntime],
+        camera_ids: list[str],
+        started_at: float,
+        done_event: Event,
+        errors: list[Exception],
+    ) -> None:
+        paused_seconds = 0.0
+        for runtime in runtimes:
+            runtime.next_due_seconds = 0.0
+
+        try:
+            while (
+                not done_event.is_set()
+                and not self._stop_event.is_set()
+            ):
+                paused_seconds += self._wait_while_paused()
+                if done_event.is_set() or self._stop_event.is_set():
+                    break
+
+                elapsed_seconds = time.monotonic() - started_at - paused_seconds
+                if elapsed_seconds >= plan.duration_seconds:
+                    break
+
+                due_modes: list[tuple[ModeRuntime, list[float], str]] = []
+                for runtime in runtimes:
+                    due, targets, trigger_value = self._due_targets(
+                        runtime,
+                        elapsed_seconds,
+                        0.0,
+                        plan.angle_tolerance_deg,
+                    )
+                    if due:
+                        due_modes.append((runtime, targets, trigger_value))
+
+                if due_modes:
+                    with self._lock:
+                        cycle_id = max(1, self.cycle_count)
+                        current_angle = self.current_angle_deg
+                    actual_angle = (
+                        float(current_angle)
+                        if current_angle is not None
+                        else float(
+                            self.motor_controller.status().command_position_deg
+                        )
+                    )
+                    self._capture_modes(
+                        record_id,
+                        due_modes,
+                        cycle_id,
+                        elapsed_seconds,
+                        actual_angle,
+                        actual_angle,
+                        "continuous",
+                        camera_ids,
+                    )
+
+                done_event.wait(0.05)
+        except Exception as exc:
+            errors.append(exc)
+            self._stop_event.set()
 
     def _run_stationary_capture(
         self,
@@ -714,6 +895,7 @@ class ScheduleService:
             )
             for runtime in runtimes:
                 runtime.captured_targets.clear()
+                runtime.scope_capture_index = 0
                 if isinstance(runtime.mode, TimeIntervalMode):
                     runtime.next_due_seconds = cycle_started_seconds
             previous_direction: str | None = None
@@ -746,9 +928,7 @@ class ScheduleService:
                     self.current_step_index = step_index
 
                 self.motor_controller.move_to_angle(commanded_angle)
-                stabilization_seconds = (
-                    self.settings.schedule.stabilization_delay_ms / 1000
-                )
+                stabilization_seconds = plan.stabilization_delay_ms / 1000
                 if (
                     stabilization_seconds > 0
                     and self._stop_event.wait(stabilization_seconds)
@@ -834,16 +1014,45 @@ class ScheduleService:
         paused_seconds = 0.0
         duration_seconds = plan.duration_seconds
         camera_ids: list[str] = []
+        continuous_runtimes = [
+            runtime
+            for runtime in runtimes
+            if isinstance(runtime.mode, ContinuousIntervalMode)
+        ]
+        cycle_runtimes = [
+            runtime
+            for runtime in runtimes
+            if not isinstance(runtime.mode, ContinuousIntervalMode)
+        ]
+        continuous_done = Event()
+        continuous_errors: list[Exception] = []
+        continuous_worker: Thread | None = None
         final_status = "completed"
         background_error: BaseException | None = None
         try:
             camera_ids = self._selected_cameras(plan)
+            if continuous_runtimes:
+                continuous_worker = Thread(
+                    target=self._run_continuous_capture,
+                    args=(
+                        record_id,
+                        plan,
+                        continuous_runtimes,
+                        camera_ids,
+                        started_at,
+                        continuous_done,
+                        continuous_errors,
+                    ),
+                    name=f"continuous-capture-{record_id}",
+                    daemon=True,
+                )
+                continuous_worker.start()
             if plan.rotation_enabled:
                 self.motor_controller.engage()
                 paused_seconds = self._run_rotation_cycles(
                     record_id,
                     plan,
-                    runtimes,
+                    cycle_runtimes,
                     camera_ids,
                     started_at,
                 )
@@ -851,11 +1060,16 @@ class ScheduleService:
                 paused_seconds = self._run_stationary_capture(
                     record_id,
                     plan,
-                    runtimes,
+                    cycle_runtimes,
                     camera_ids,
                     started_at,
                 )
 
+            continuous_done.set()
+            if continuous_worker is not None:
+                continuous_worker.join(timeout=5)
+            if continuous_errors:
+                raise continuous_errors[0]
             if self._stop_event.is_set():
                 final_status = "stopped"
         except OperationCancelledError as exc:
@@ -873,11 +1087,17 @@ class ScheduleService:
                 self.last_error = public_error_detail(exc)
             logger.exception("Schedule failed: %s", record_id)
         finally:
+            continuous_done.set()
+            if (
+                continuous_worker is not None
+                and continuous_worker.is_alive()
+            ):
+                continuous_worker.join(timeout=5)
             cleanup_error: BaseException | None = None
             try:
                 if (
                     plan.rotation_enabled
-                    and self.settings.schedule.return_to_origin
+                    and plan.return_to_origin
                     and self.motor_controller.status().engaged
                 ):
                     self.motor_controller.return_origin()

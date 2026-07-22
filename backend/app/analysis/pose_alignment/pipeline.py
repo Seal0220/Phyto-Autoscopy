@@ -61,9 +61,9 @@ def _unresolved_without_intrinsics(frame: object) -> CameraPoseResult:
     )
 
 
-def _fixed_prior_warnings(
+def _fixed_installation_warnings(
     pose: CameraPoseResult,
-    prior: object,
+    parameters: object,
 ) -> list[str]:
     if pose.camera_to_world_matrix is None:
         return []
@@ -73,28 +73,28 @@ def _fixed_prior_warnings(
     ).reshape(4, 4)
     center = matrix[:3, 3]
     warnings: list[str] = []
-    height = _value(prior, "height_mm")
+    height = _value(parameters, "height_mm")
     if height is not None:
         observed_height = abs(float(center[2]))
         tolerance = max(25.0, abs(float(height)) * 0.05)
         if abs(observed_height - float(height)) > tolerance:
             warnings.append(
-                "ArUco 求得高度與安裝先驗差異較大："
+                "ArUco 求得高度與安裝參數差異較大："
                 f"{observed_height:.1f}/{float(height):.1f} mm。"
             )
     horizontal_distance = _value(
-        prior,
-        "horizontal_distance_to_center_mm",
+        parameters,
+        "horizontal_distance_to_origin_mm",
     )
     if horizontal_distance is not None:
         observed = float(np.linalg.norm(center[:2]))
         tolerance = max(25.0, abs(float(horizontal_distance)) * 0.05)
         if abs(observed - float(horizontal_distance)) > tolerance:
             warnings.append(
-                "ArUco 求得水平距離與安裝先驗差異較大："
+                "ArUco 求得至原點水平距離與安裝參數差異較大："
                 f"{observed:.1f}/{float(horizontal_distance):.1f} mm。"
             )
-    facing_angle = _value(prior, "facing_center_angle_deg")
+    facing_angle = _value(parameters, "facing_origin_angle_deg")
     if facing_angle is not None:
         optical_axis = matrix[:3, 2]
         observed = abs(math.degrees(
@@ -105,44 +105,61 @@ def _fixed_prior_warnings(
         ))
         if abs(observed - abs(float(facing_angle))) > 20.0:
             warnings.append(
-                "ArUco 求得朝向角與安裝先驗差異較大："
+                "ArUco 求得朝向角與安裝參數差異較大："
                 f"{observed:.1f}/{float(facing_angle):.1f}°。"
             )
     return warnings
 
 
-def _rotating_prior_warnings(
+def _rotating_installation_warnings(
     pose: CameraPoseResult,
-    prior: object,
+    parameters: object,
 ) -> list[str]:
-    arm_height = _value(prior, "arm_height_mm")
-    if arm_height is None or pose.camera_to_world_matrix is None:
+    if pose.camera_to_world_matrix is None:
         return []
     matrix = np.asarray(
         pose.camera_to_world_matrix,
         dtype=np.float64,
     ).reshape(4, 4)
-    observed = abs(float(matrix[2, 3]))
-    tolerance = max(25.0, abs(float(arm_height)) * 0.05)
-    if abs(observed - float(arm_height)) <= tolerance:
-        return []
-    return [
-        "環繞相機高度與安裝先驗差異較大："
-        f"{observed:.1f}/{float(arm_height):.1f} mm。"
-    ]
+    warnings: list[str] = []
+    arm_height = _value(parameters, "arm_height_mm")
+    if arm_height is not None:
+        observed_height = abs(float(matrix[2, 3]))
+        tolerance = max(25.0, abs(float(arm_height)) * 0.05)
+        if abs(observed_height - float(arm_height)) > tolerance:
+            warnings.append(
+                "環繞相機高度與安裝參數差異較大："
+                f"{observed_height:.1f}/{float(arm_height):.1f} mm。"
+            )
+    horizontal_distance = _value(
+        parameters,
+        "horizontal_distance_to_origin_mm",
+    )
+    if horizontal_distance is not None:
+        observed_distance = float(np.linalg.norm(matrix[:2, 3]))
+        tolerance = max(
+            25.0,
+            abs(float(horizontal_distance)) * 0.05,
+        )
+        if abs(observed_distance - float(horizontal_distance)) > tolerance:
+            warnings.append(
+                "環繞相機至原點水平距離與安裝參數差異較大："
+                f"{observed_distance:.1f}/{float(horizontal_distance):.1f} mm。"
+            )
+    return warnings
 
 
-def _append_prior_warnings(
+def _append_installation_warnings(
     poses: Sequence[CameraPoseResult],
-    camera_priors: object,
+    camera_parameters: object,
 ) -> list[CameraPoseResult]:
     updated: list[CameraPoseResult] = []
     for pose in poses:
-        prior = _value(camera_priors, pose.camera_id)
+        parameters = _value(camera_parameters, pose.camera_id)
         warnings = (
-            _rotating_prior_warnings(pose, prior)
+            _rotating_installation_warnings(pose, parameters)
             if pose.camera_id == "rotating"
-            else _fixed_prior_warnings(pose, prior)
+            else _fixed_installation_warnings(pose, parameters)
         )
         if not warnings:
             updated.append(pose)
@@ -378,9 +395,9 @@ def align_dataset_camera_poses(
         for camera_id in CAMERA_IDS
         for pose in grouped_poses[camera_id]
     ]
-    poses = _append_prior_warnings(
+    poses = _append_installation_warnings(
         poses,
-        _value(settings, "camera_priors"),
+        _value(settings, "camera_installation_parameters"),
     )
     quality = _quality_summary(
         poses,

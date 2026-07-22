@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import shutil
+from collections import Counter
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from threading import RLock
@@ -46,14 +48,13 @@ class RecordService:
         except ZoneInfoNotFoundError:
             return timezone(timedelta(hours=8), name="Asia/Taipei")
 
-    def _next_record_id(self, date_label: str) -> str:
-        candidate = self.storage.next_record_id(date_label)
-        prefix, suffix = candidate.rsplit("_", 1)
-        index = int(suffix)
-        while self.repository.get(candidate) is not None:
-            index += 1
-            candidate = f"{prefix}_{index:03d}"
-        return candidate
+    def _next_record_id(self, captured_at: datetime) -> str:
+        candidate_time = captured_at.astimezone(timezone.utc)
+        while True:
+            candidate = self.storage.next_record_id(candidate_time)
+            if self.repository.get(candidate) is None:
+                return candidate
+            candidate_time += timedelta(microseconds=1)
 
     def _record_payload(
         self,
@@ -72,6 +73,7 @@ class RecordService:
             "created_at": created_at,
             "ended_at": ended_at,
             "status": status,
+            "record_scope": "parent",
             "schedule": (
                 schedule
                 if schedule is not None
@@ -85,6 +87,139 @@ class RecordService:
                 "mock_mode": self.settings.hardware.mock_mode,
             },
         }
+
+    @staticmethod
+    def _mode_record_payload(
+        parent_payload: dict,
+        mode: dict,
+    ) -> dict:
+        schedule = parent_payload.get("schedule")
+        mode_schedule = (
+            {
+                **schedule,
+                "modes": [mode],
+            }
+            if isinstance(schedule, dict)
+            else {"modes": [mode]}
+        )
+        mode_folder = str(mode.get("folder") or "").strip()
+        summaries = parent_payload.get("mode_summaries")
+        mode_summary = next(
+            (
+                summary
+                for summary in summaries
+                if isinstance(summary, dict)
+                and summary.get("folder") == mode_folder
+            ),
+            None,
+        ) if isinstance(summaries, list) else None
+        payload = {
+            **parent_payload,
+            "record_scope": "mode",
+            "parent_record_id": parent_payload["record_id"],
+            "mode": mode,
+            "schedule": mode_schedule,
+        }
+        payload.pop("mode_summaries", None)
+        if mode_summary is not None:
+            payload["capture_summary"] = mode_summary
+            payload["rounds"] = mode_summary.get("rounds", [])
+        return payload
+
+    @staticmethod
+    def _capture_summary(
+        metadata_path: Path,
+        scope_path: Path,
+    ) -> dict:
+        try:
+            with metadata_path.open(
+                encoding="utf-8-sig",
+                newline="",
+            ) as handle:
+                rows = list(csv.DictReader(handle))
+        except (OSError, UnicodeError, csv.Error) as exc:
+            return {
+                "capture_count": 0,
+                "snapshot_count": 0,
+                "camera_counts": {},
+                "status_counts": {},
+                "rounds": [],
+                "error": f"無法讀取擷取索引：{exc}",
+            }
+
+        snapshot_paths = {
+            Path(str(row.get("file_path") or "")).parent.as_posix()
+            for row in rows
+            if str(row.get("file_path") or "").strip()
+        }
+        rounds = []
+        for round_path in sorted((scope_path / "rounds").glob("round.*")):
+            if not round_path.is_dir():
+                continue
+            snapshots = [
+                path
+                for path in round_path.glob("snapshot.*")
+                if path.is_dir()
+            ]
+            rounds.append(
+                {
+                    "name": round_path.name,
+                    "snapshot_count": len(snapshots),
+                    "capture_count": sum(
+                        len(list(snapshot.glob("*.jpg")))
+                        for snapshot in snapshots
+                    ),
+                }
+            )
+        return {
+            "capture_count": len(rows),
+            "snapshot_count": len(snapshot_paths),
+            "camera_counts": dict(Counter(
+                str(row.get("camera_id") or "")
+                for row in rows
+                if str(row.get("camera_id") or "").strip()
+            )),
+            "status_counts": dict(Counter(
+                str(row.get("status") or "")
+                for row in rows
+                if str(row.get("status") or "").strip()
+            )),
+            "rounds": rounds,
+        }
+
+    def _with_capture_summaries(
+        self,
+        record_path: Path,
+        payload: dict,
+    ) -> dict:
+        updated = dict(payload)
+        updated["capture_summary"] = self._capture_summary(
+            record_path / "metadata.csv",
+            record_path,
+        )
+        schedule = payload.get("schedule")
+        modes = schedule.get("modes", []) if isinstance(schedule, dict) else []
+        mode_summaries = []
+        for mode in modes:
+            if not isinstance(mode, dict):
+                continue
+            mode_folder = str(mode.get("folder") or "").strip()
+            if not mode_folder:
+                continue
+            mode_path = record_path / "modes" / mode_folder
+            mode_summaries.append(
+                {
+                    "id": mode.get("id"),
+                    "type": mode.get("type"),
+                    "folder": mode_folder,
+                    **self._capture_summary(
+                        mode_path / "metadata.csv",
+                        mode_path,
+                    ),
+                }
+            )
+        updated["mode_summaries"] = mode_summaries
+        return updated
 
     def _write_record_payload(
         self,
@@ -104,23 +239,50 @@ class RecordService:
         finally:
             temporary_path.unlink(missing_ok=True)
 
+    def _write_record_bundle(
+        self,
+        record_path: Path,
+        parent_payload: dict,
+    ) -> None:
+        self._write_record_payload(
+            record_path / "config.json",
+            parent_payload,
+        )
+        schedule = parent_payload.get("schedule")
+        modes = schedule.get("modes", []) if isinstance(schedule, dict) else []
+        for mode in modes:
+            if not isinstance(mode, dict):
+                continue
+            mode_folder = str(mode.get("folder") or "").strip()
+            if not mode_folder:
+                continue
+            mode_dir = self.storage.create_mode_layout(
+                parent_payload["record_id"],
+                mode_folder,
+                record_path,
+            )
+            self._write_record_payload(
+                mode_dir / "config.json",
+                self._mode_record_payload(parent_payload, mode),
+            )
+
     def _read_record_payload(
         self,
         summary: RecordSummary,
     ) -> dict:
-        record_path = self._record_metadata_path(summary)
+        record_path = self._record_config_path(summary)
         try:
             payload = json.loads(record_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
-                raise ValueError("record.json 根節點必須是物件。")
+                raise ValueError("config.json 根節點必須是物件。")
             legacy_id = payload.pop("session_id", None)
             payload.setdefault("record_id", legacy_id or summary.record_id)
             legacy_schedule = payload.pop(LEGACY_SCHEDULE_KEY, None)
             if "schedule" not in payload and legacy_schedule is not None:
                 payload["schedule"] = legacy_schedule
-            if record_path.name == "session.json":
-                self._write_record_payload(
-                    Path(summary.record_path) / "record.json",
+            if record_path.name != "config.json":
+                self._write_record_bundle(
+                    Path(summary.record_path),
                     payload,
                 )
             return payload
@@ -136,20 +298,23 @@ class RecordService:
                 status=summary.status,
                 ended_at=summary.ended_at,
             )
-            self._write_record_payload(
-                Path(summary.record_path) / "record.json",
+            self._write_record_bundle(
+                Path(summary.record_path),
                 payload,
             )
             return payload
 
     @staticmethod
-    def _record_metadata_path(summary: RecordSummary) -> Path:
+    def _record_config_path(summary: RecordSummary) -> Path:
         directory = Path(summary.record_path)
-        record_path = directory / "record.json"
-        if record_path.exists():
-            return record_path
-        legacy_path = directory / "session.json"
-        return legacy_path if legacy_path.exists() else record_path
+        config_path = directory / "config.json"
+        if config_path.exists():
+            return config_path
+        for legacy_name in ("record.json", "session.json"):
+            legacy_path = directory / legacy_name
+            if legacy_path.exists():
+                return legacy_path
+        return config_path
 
     def create_record(
         self,
@@ -166,7 +331,7 @@ class RecordService:
                 else:
                     self.active_record_id = None
             now = datetime.now(self._local_timezone())
-            record_id = self._next_record_id(now.strftime("%Y-%m-%d"))
+            record_id = self._next_record_id(now)
             record_dir = self.storage.record_dir(record_id)
             try:
                 record_dir = self.storage.create_record_layout(
@@ -179,8 +344,8 @@ class RecordService:
                     status=status,
                     schedule=schedule,
                 )
-                self._write_record_payload(
-                    self.storage.record_json_path(record_id),
+                self._write_record_bundle(
+                    record_dir,
                     payload,
                 )
                 summary = RecordSummary(
@@ -248,27 +413,37 @@ class RecordService:
                     else None
                 )
             previous_payload = self._read_record_payload(summary)
-            metadata_path = self._record_metadata_path(summary)
             updated_payload = dict(previous_payload)
             updated_payload["status"] = effective_status
             updated_payload["ended_at"] = ended_at
-            self._write_record_payload(metadata_path, updated_payload)
-            if summary.status not in TERMINAL_RECORD_STATUSES:
-                try:
+            if effective_status in TERMINAL_RECORD_STATUSES:
+                updated_payload = self._with_capture_summaries(
+                    Path(summary.record_path),
+                    updated_payload,
+                )
+            try:
+                self._write_record_bundle(
+                    Path(summary.record_path),
+                    updated_payload,
+                )
+                if summary.status not in TERMINAL_RECORD_STATUSES:
                     self.repository.update_status(
                         record_id,
                         effective_status,
                         ended_at,
                     )
+            except Exception:
+                try:
+                    self._write_record_bundle(
+                        Path(summary.record_path),
+                        previous_payload,
+                    )
                 except Exception:
-                    try:
-                        self._write_record_payload(metadata_path, previous_payload)
-                    except Exception:
-                        logger.exception(
-                            "Failed to restore record metadata after database failure: %s",
-                            record_id,
-                        )
-                    raise
+                    logger.exception(
+                        "Failed to restore record metadata after update failure: %s",
+                        record_id,
+                    )
+                raise
             if (
                 effective_status in TERMINAL_RECORD_STATUSES
                 and self.active_record_id == record_id
@@ -300,7 +475,7 @@ class RecordService:
             if summary is None:
                 raise RecordError(f"找不到紀錄：{record_id}")
             payload = self._read_record_payload(summary)
-            return RecordDetail(**summary.model_dump(), record_json=payload)
+            return RecordDetail(**summary.model_dump(), config=payload)
 
     def get_record_file(self, record_id: str, file_name: str) -> Path:
         with self._lock:
@@ -310,11 +485,11 @@ class RecordService:
             record_path = Path(summary.record_path).resolve()
             if record_path.name != record_id:
                 raise RecordError("紀錄儲存位置無效。")
-            if file_name not in {"metadata.csv", "record.json"}:
+            if file_name not in {"metadata.csv", "config.json"}:
                 raise RecordError("不支援的紀錄檔案。")
             file_path = (
-                self._record_metadata_path(summary)
-                if file_name == "record.json"
+                self._record_config_path(summary)
+                if file_name == "config.json"
                 else record_path / file_name
             )
             if not file_path.is_file():

@@ -12,4 +12,4 @@ class RecordSummary(BaseModel):
 
 
 class RecordDetail(RecordSummary):
-    record_json: dict
+    config: dict

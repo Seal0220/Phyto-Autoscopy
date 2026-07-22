@@ -36,11 +36,11 @@ def create_record_service(tmp_path) -> tuple[
     return service, repository, storage, database
 
 
-def test_update_status_recovers_empty_record_json(tmp_path) -> None:
+def test_update_status_recovers_empty_config_json(tmp_path) -> None:
     service, repository, storage, database = create_record_service(tmp_path)
     try:
         summary = service.create_record()
-        record_path = storage.record_json_path(summary.record_id)
+        record_path = storage.config_path(summary.record_id)
         record_path.write_text("", encoding="utf-8")
 
         service.update_status(summary.record_id, "completed")
@@ -69,7 +69,7 @@ def test_terminal_record_status_cannot_regress(tmp_path) -> None:
 
         stored = repository.get(summary.record_id)
         payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         assert stored is not None
         assert stored.status == "stopped"
@@ -80,7 +80,7 @@ def test_terminal_record_status_cannot_regress(tmp_path) -> None:
         database.close()
 
 
-def test_concurrent_status_updates_keep_record_json_valid(tmp_path) -> None:
+def test_concurrent_status_updates_keep_config_json_valid(tmp_path) -> None:
     service, _, storage, database = create_record_service(tmp_path)
     try:
         summary = service.create_record()
@@ -95,7 +95,7 @@ def test_concurrent_status_updates_keep_record_json_valid(tmp_path) -> None:
                 future.result()
 
         payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         assert payload["status"] in {"paused", "running"}
         assert not list(storage.record_dir(summary.record_id).glob(".*.tmp"))
@@ -109,7 +109,7 @@ def test_old_record_remains_available_after_capture_root_changes(tmp_path) -> No
         old_summary = service.create_record(status="manual")
         old_record_path = service.get_record_file(
             old_summary.record_id,
-            "record.json",
+            "config.json",
         )
         service.update_status(old_summary.record_id, "completed")
 
@@ -122,7 +122,7 @@ def test_old_record_remains_available_after_capture_root_changes(tmp_path) -> No
         assert service.get_record(old_summary.record_id).status == "completed"
         assert service.get_record_file(
             old_summary.record_id,
-            "record.json",
+            "config.json",
         ) == old_record_path
         assert repository.get(old_summary.record_id) is not None
     finally:
@@ -155,7 +155,7 @@ def test_status_file_failure_does_not_change_database(tmp_path, monkeypatch) -> 
     try:
         summary = service.create_record()
         original_payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         monkeypatch.setattr(
             service,
@@ -168,7 +168,7 @@ def test_status_file_failure_does_not_change_database(tmp_path, monkeypatch) -> 
 
         stored = repository.get(summary.record_id)
         payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         assert stored is not None
         assert stored.status == "running"
@@ -177,12 +177,12 @@ def test_status_file_failure_does_not_change_database(tmp_path, monkeypatch) -> 
         database.close()
 
 
-def test_status_database_failure_restores_record_json(tmp_path, monkeypatch) -> None:
+def test_status_database_failure_restores_config_json(tmp_path, monkeypatch) -> None:
     service, repository, storage, database = create_record_service(tmp_path)
     try:
         summary = service.create_record()
         original_payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         monkeypatch.setattr(
             repository,
@@ -195,7 +195,7 @@ def test_status_database_failure_restores_record_json(tmp_path, monkeypatch) -> 
 
         stored = repository.get(summary.record_id)
         payload = json.loads(
-            storage.record_json_path(summary.record_id).read_text(encoding="utf-8")
+            storage.config_path(summary.record_id).read_text(encoding="utf-8")
         )
         assert stored is not None
         assert stored.status == "running"
@@ -228,12 +228,12 @@ def test_legacy_metadata_is_normalized_without_overwriting_source(tmp_path) -> N
 
         detail = service.get_record(record_id)
 
-        assert detail.record_json["record_id"] == record_id
-        assert detail.record_json["schedule"] == {"duration_seconds": 60}
-        assert "session_id" not in detail.record_json
-        assert "experiment" not in detail.record_json
+        assert detail.config["record_id"] == record_id
+        assert detail.config["schedule"] == {"duration_seconds": 60}
+        assert "session_id" not in detail.config
+        assert "experiment" not in detail.config
         assert legacy_path.read_text(encoding="utf-8") == legacy_text
-        assert (record_dir / "record.json").is_file()
+        assert (record_dir / "config.json").is_file()
     finally:
         database.close()
 
@@ -255,9 +255,9 @@ def test_corrupt_legacy_metadata_is_preserved_during_recovery(tmp_path) -> None:
 
         detail = service.get_record(record_id)
 
-        assert detail.record_json["record_id"] == record_id
+        assert detail.config["record_id"] == record_id
         assert legacy_path.read_text(encoding="utf-8") == "{"
-        assert (record_dir / "record.json").is_file()
+        assert (record_dir / "config.json").is_file()
     finally:
         database.close()
 import pytest

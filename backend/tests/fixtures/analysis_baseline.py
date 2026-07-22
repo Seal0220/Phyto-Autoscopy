@@ -220,7 +220,7 @@ def create_analysis_baseline(root: Path) -> dict:
         writer.writerows(metadata_rows)
 
     _write_json(
-        record_path / "record.json",
+        record_path / "config.json",
         {
             "record_id": BASELINE_RECORD_ID,
             "status": "completed",

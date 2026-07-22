@@ -17,21 +17,6 @@
       "advanced_mode": false,
       "marker_centers_world_mm": {}
     },
-    "camera_priors": {
-      "top": {
-        "height_mm": null,
-        "horizontal_distance_to_center_mm": null,
-        "facing_center_angle_deg": null
-      },
-      "side": {
-        "height_mm": null,
-        "horizontal_distance_to_center_mm": null,
-        "facing_center_angle_deg": null
-      },
-      "rotating": {
-        "arm_height_mm": null
-      }
-    },
     "minimum_pnp_inliers": 4,
     "maximum_aruco_reprojection_error_px": 5,
     "minimum_sfm_matches": 16,

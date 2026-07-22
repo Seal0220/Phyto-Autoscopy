@@ -1841,7 +1841,7 @@ GET  /api/calibrations/{calibration_id}/report
 
 ---
 
-## 34. 分析執行方式
+## 34. 分析紀錄方式
 
 分析數千張影像可能需要較長時間，不應在單一 HTTP Request 中同步完成。
 

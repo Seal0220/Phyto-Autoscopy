@@ -23,10 +23,12 @@ export default function MotorControls({
   onRunAction,
 }) {
   const [targetAngle, setTargetAngle] = useState(String(motor.command_position_deg ?? 0));
+  const motorConnected = Boolean(motor.connected);
+  const connectionUnavailable = !isConnected || !motorConnected;
   const engaged = Boolean(motor.engaged);
   const changingEngagement = busyActions.has("motor.engage")
     || busyActions.has("motor.disengage");
-  const baseDisabled = scheduleActive || !isConnected;
+  const baseDisabled = scheduleActive || connectionUnavailable;
   const motorActionInProgress = [...busyActions].some((action) => (
     action.startsWith("motor.") && action !== "motor.stop"
   ));
@@ -50,15 +52,39 @@ export default function MotorControls({
     <fieldset
       className={`
         grid min-w-0 gap-5 border-0 p-0
-        ${scheduleActive ? "grayscale opacity-60" : ""}
+        ${scheduleActive || connectionUnavailable ? "grayscale opacity-60" : ""}
       `}
     >
       <SubsectionHeader
         title="馬達控制"
-        description={scheduleActive ? "排程進行中，馬達控制已停用。" : "移動、原點與保持扭力等即時操作。"}
+        description={
+          !isConnected
+            ? "即時通訊離線，馬達操作已停用。"
+            : !motorConnected
+              ? "後端正在自動偵測並連接馬達控制器。"
+              : scheduleActive
+                ? "排程進行中，馬達控制已停用。"
+                : "移動、原點與保持扭力等即時操作。"
+        }
       >
-        <StatusPill tone={scheduleActive ? "warning" : isConnected ? "success" : "offline"}>
-          {scheduleActive ? "排程中" : isConnected ? "可操作" : "離線"}
+        <StatusPill
+          tone={
+            connectionUnavailable
+              ? "offline"
+              : scheduleActive
+                ? "warning"
+                : "success"
+          }
+        >
+          {
+            !isConnected
+              ? "即時連線離線"
+              : !motorConnected
+                ? "馬達未連接"
+                : scheduleActive
+                  ? "排程中"
+                  : "可操作"
+          }
         </StatusPill>
       </SubsectionHeader>
 
@@ -94,7 +120,7 @@ export default function MotorControls({
           </Button>
           <Button
             variant="danger"
-            disabled={scheduleActive || busyActions.has("motor.stop")}
+            disabled={baseDisabled || busyActions.has("motor.stop")}
             onClick={() => void onRunAction(
               "motor.stop",
               {},
@@ -114,8 +140,16 @@ export default function MotorControls({
           label="鎖定馬達位置"
           description="啟用後持續提供保持電流，讓轉盤停在目前角度；關閉後即可手動轉動。"
           status={(
-            <StatusPill tone={!isConnected ? "offline" : engaged ? "success" : "neutral"}>
-              {changingEngagement ? "切換中" : !isConnected ? "離線" : engaged ? "保持中" : "已釋放"}
+            <StatusPill tone={connectionUnavailable ? "offline" : engaged ? "success" : "neutral"}>
+              {
+                connectionUnavailable
+                  ? "未連接"
+                  : changingEngagement
+                    ? "切換中"
+                    : engaged
+                      ? "保持中"
+                      : "已釋放"
+              }
             </StatusPill>
           )}
           disabled={controlsDisabled || changingEngagement}

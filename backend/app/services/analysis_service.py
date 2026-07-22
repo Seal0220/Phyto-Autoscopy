@@ -73,6 +73,7 @@ from app.core.config import (
     BACKEND_ROOT,
     PoseAlignmentSettings,
 )
+from app.core.constants import CAPTURE_MODE_NAMES
 from app.core.exceptions import (
     AnalysisError,
     OperationCancelledError,
@@ -85,6 +86,7 @@ from app.models.analysis_models import (
     AnalysisProgress,
     AnalysisRun,
     AnalysisSourceSummary,
+    AnalysisSourceMode,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
     DetectionSummary,
@@ -133,6 +135,39 @@ STATUS_LABELS = {
     "cancelled": "已取消",
 }
 
+CAPTURE_MODE_LABELS = {
+    "continuous_interval": "連續間隔擷取",
+    "time_interval": "時間間隔擷取",
+    "seconds_interval": "時間間隔擷取",
+    "angle_interval": "角度間隔擷取",
+    "specific_angles": "特定角度擷取",
+    "equal_divisions": "等分擷取",
+}
+
+CAPTURE_MODE_CONFIGURATION_FIELDS = {
+    "continuous_interval": ("interval_seconds",),
+    "time_interval": ("interval_seconds",),
+    "angle_interval": ("interval_degrees",),
+    "specific_angles": ("angles",),
+    "equal_divisions": ("points",),
+}
+
+CAPTURE_CONFIGURATION_FIELDS = (
+    "rotation_enabled",
+    "duration_seconds",
+    "total_cycles",
+    "cycle_duration_seconds",
+    "cycle_interval_seconds",
+    "rotation_start_deg",
+    "rotation_end_deg",
+    "rotation_step_deg",
+    "angle_tolerance_deg",
+    "stabilization_delay_ms",
+    "capture_on_return",
+    "return_to_origin",
+    "arm_height_mm",
+)
+
 _REQUIRED_ANALYSIS_PARAMETERS = (
     "segmentation.history",
     "segmentation.variance_threshold",
@@ -163,6 +198,22 @@ def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = deepcopy(value)
     return merged
+
+
+def _matches_record_source_path(
+    validation: CaptureRecordValidation,
+    camera_id: str,
+    path: object,
+) -> bool:
+    path_text = str(path or "").strip()
+    if not path_text:
+        return True
+    requested = Path(path_text).expanduser().resolve()
+    allowed = {validation.record_path.resolve()}
+    camera_directory = validation.camera_directories.get(camera_id)
+    if camera_directory:
+        allowed.add(Path(camera_directory).resolve())
+    return requested in allowed
 
 
 def _sha256(path: Path) -> str:
@@ -395,11 +446,149 @@ class AnalysisService:
             or path.parent.name != (run.record_id or "custom")
             or path.parent.parent != root
         ):
-            raise AnalysisError("分析執行的儲存位置無效。")
+            raise AnalysisError("分析紀錄的儲存位置無效。")
         return path
 
     def _artifacts(self, run: AnalysisRun) -> AnalysisArtifacts:
         return AnalysisArtifacts.create(self._output_dir(run))
+
+    def _record_payload(self, record_id: str) -> dict[str, Any]:
+        record = self._require_record(record_id)
+        record_path = Path(record.record_path)
+        metadata_path = record_path / "config.json"
+        if not metadata_path.exists():
+            metadata_path = record_path / "record.json"
+        if not metadata_path.exists():
+            metadata_path = record_path / "session.json"
+        if not metadata_path.exists():
+            return {}
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, json.JSONDecodeError) as error:
+            logger.warning(
+                "Unable to read capture metadata for %s: %s",
+                record_id,
+                error,
+            )
+            return {}
+
+    @staticmethod
+    def _capture_configuration(payload: Mapping[str, Any]) -> dict[str, Any]:
+        schedule = payload.get("schedule") or payload.get("experiment") or {}
+        if not isinstance(schedule, Mapping):
+            return {}
+        return {
+            key: schedule[key]
+            for key in CAPTURE_CONFIGURATION_FIELDS
+            if key in schedule
+        }
+
+    @staticmethod
+    def _capture_image_count(payload: Mapping[str, Any]) -> int:
+        summary = payload.get("capture_summary")
+        if isinstance(summary, Mapping):
+            try:
+                count = max(0, int(summary.get("capture_count", 0)))
+                if count > 0:
+                    return count
+            except (TypeError, ValueError):
+                pass
+        mode_summaries = payload.get("mode_summaries")
+        if not isinstance(mode_summaries, list):
+            return 0
+        total = 0
+        for mode_summary in mode_summaries:
+            if not isinstance(mode_summary, Mapping):
+                continue
+            try:
+                total += max(0, int(mode_summary.get("capture_count", 0)))
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    def _record_modes(
+        self,
+        record_id: str,
+        payload: Mapping[str, Any] | None = None,
+    ) -> list[AnalysisSourceMode]:
+        record_payload = payload or self._record_payload(record_id)
+        schedule = (
+            record_payload.get("schedule")
+            or record_payload.get("experiment")
+            or {}
+        )
+        raw_modes = schedule.get("modes", []) if isinstance(schedule, dict) else []
+        raw_summaries = record_payload.get("mode_summaries", [])
+        summaries_by_folder = {
+            str(summary.get("folder") or "").strip(): summary
+            for summary in raw_summaries
+            if isinstance(summary, dict)
+            and str(summary.get("folder") or "").strip()
+        } if isinstance(raw_summaries, list) else {}
+        modes = []
+        seen_ids = set()
+        mode_counts: dict[str, int] = {}
+        for index, raw_mode in enumerate(raw_modes, start=1):
+            if not isinstance(raw_mode, dict):
+                continue
+            mode_id = str(raw_mode.get("id") or f"capture-{index:02d}").strip()
+            mode_type = str(raw_mode.get("type") or "unknown").strip()
+            if not mode_id or mode_id in seen_ids:
+                continue
+            mode_counts[mode_type] = mode_counts.get(mode_type, 0) + 1
+            folder = str(raw_mode.get("folder") or "").strip()
+            if not folder and raw_mode.get("output_folder"):
+                folder = Path(str(raw_mode["output_folder"])).name
+            if not folder:
+                mode_name = CAPTURE_MODE_NAMES.get(mode_type, "CaptureMode")
+                folder = f"{mode_name}.{mode_counts[mode_type]:02d}"
+            storage_scope = str(raw_mode.get("storage_scope") or "").strip()
+            if not storage_scope:
+                storage_scope = (
+                    "rounds/round.00"
+                    if mode_type == "continuous_interval"
+                    else "rounds"
+                )
+            configuration = {
+                key: raw_mode[key]
+                for key in CAPTURE_MODE_CONFIGURATION_FIELDS.get(mode_type, ())
+                if key in raw_mode
+            }
+            summary = summaries_by_folder.get(folder, {})
+            try:
+                image_count = max(0, int(summary.get("capture_count", 0)))
+            except (TypeError, ValueError):
+                image_count = 0
+            modes.append(
+                AnalysisSourceMode(
+                    id=mode_id,
+                    type=mode_type,
+                    label=CAPTURE_MODE_LABELS.get(mode_type, "擷取模式"),
+                    folder=folder,
+                    storage_scope=storage_scope,
+                    configuration=configuration,
+                    image_count=image_count,
+                )
+            )
+            seen_ids.add(mode_id)
+        return modes
+
+    def _selected_mode_folders(
+        self,
+        record_id: str,
+        mode_ids: Iterable[str],
+    ) -> tuple[str, ...]:
+        selected_ids = tuple(mode_ids)
+        if not selected_ids:
+            return ()
+        available = {mode.id: mode for mode in self._record_modes(record_id)}
+        unknown = [mode_id for mode_id in selected_ids if mode_id not in available]
+        if unknown:
+            raise AnalysisError(
+                "選取的擷取模式不存在：" + "、".join(unknown)
+            )
+        return tuple(available[mode_id].folder for mode_id in selected_ids)
 
     def _validation_for_record(
         self,
@@ -408,6 +597,7 @@ class AnalysisService:
         timestamp_tolerance_ms: float,
         manual_frame_offset: int,
         method: str = "top_side",
+        mode_ids: Iterable[str] = (),
     ) -> CaptureRecordValidation:
         record = self._require_record(record_id)
         captures = self.capture_repository.list_by_record(record_id)
@@ -421,6 +611,10 @@ class AnalysisService:
                 if method == "top_side_rotating"
                 else ("top", "side")
             ),
+            selected_mode_folders=self._selected_mode_folders(
+                record_id,
+                mode_ids,
+            ),
         )
 
     def _validation_for_sources(
@@ -428,16 +622,21 @@ class AnalysisService:
         camera_sources: Mapping[str, object],
         *,
         method: str,
+        selected_mode_folders: Iterable[str] = (),
     ) -> CaptureRecordValidation:
         return validate_analysis_sources(
             camera_sources,
             method=method,
             allowed_roots=(self.settings.paths.captures_dir,),
             image_probe=self._validator.image_probe,
+            selected_mode_folders=selected_mode_folders,
         )
 
     def _validation_for_run(self, run: AnalysisRun) -> CaptureRecordValidation:
         sources = run.parameters.get("camera_sources")
+        mode_ids = run.parameters.get("mode_ids", [])
+        if not isinstance(mode_ids, list):
+            mode_ids = []
         synchronization = self._analysis_settings(run).synchronization
         if isinstance(sources, Mapping):
             if run.record_id:
@@ -448,16 +647,15 @@ class AnalysisService:
                     ),
                     manual_frame_offset=synchronization.manual_frame_offset,
                     method=run.method_name,
+                    mode_ids=mode_ids,
                 )
                 matches_automatic = all(
                     not isinstance(value, Mapping)
                     or not value.get("enabled")
-                    or (
-                        automatic.camera_directories.get(camera_id) is not None
-                        and Path(str(value.get("path", ""))).expanduser().resolve()
-                        == Path(
-                            automatic.camera_directories[camera_id]
-                        ).resolve()
+                    or _matches_record_source_path(
+                        automatic,
+                        camera_id,
+                        value.get("path", ""),
                     )
                     for camera_id, value in sources.items()
                 )
@@ -475,6 +673,11 @@ class AnalysisService:
             return self._validation_for_sources(
                 normalized,
                 method=run.method_name,
+                selected_mode_folders=(
+                    self._selected_mode_folders(run.record_id, mode_ids)
+                    if run.record_id
+                    else ()
+                ),
             )
         if not run.record_id:
             raise AnalysisError("分析缺少影像目錄。")
@@ -483,6 +686,7 @@ class AnalysisService:
             timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
             manual_frame_offset=synchronization.manual_frame_offset,
             method=run.method_name,
+            mode_ids=mode_ids,
         )
 
     @staticmethod
@@ -513,7 +717,7 @@ class AnalysisService:
         try:
             return AnalysisSettings.model_validate(run.parameters["analysis"])
         except (KeyError, ValidationError) as error:
-            raise AnalysisError(f"分析執行設定無效：{error}") from error
+            raise AnalysisError(f"分析紀錄設定無效：{error}") from error
 
     @staticmethod
     def _camera_resolutions(run: AnalysisRun) -> dict[str, tuple[int, int]]:
@@ -575,7 +779,7 @@ class AnalysisService:
         ]
         if missing:
             raise AnalysisError(
-                "分析執行缺少固定的影像解析度：" + ", ".join(missing)
+                "分析紀錄缺少固定的影像解析度：" + ", ".join(missing)
             )
         return resolutions
 
@@ -743,6 +947,13 @@ class AnalysisService:
         results = []
         synchronization = self.settings.analysis.synchronization
         for record in self.record_repository.list():
+            record_payload = self._record_payload(record.record_id)
+            available_modes = self._record_modes(
+                record.record_id,
+                record_payload,
+            )
+            capture_configuration = self._capture_configuration(record_payload)
+            total_image_count = self._capture_image_count(record_payload)
             try:
                 validation = self._validation_for_record(
                     record.record_id,
@@ -779,6 +990,7 @@ class AnalysisService:
                 AnalysisSourceSummary(
                     record_id=record.record_id,
                     created_at=record.created_at,
+                    ended_at=record.ended_at,
                     status=record.status,
                     record_path=record.record_path,
                     top_frame_count=top_count,
@@ -786,10 +998,13 @@ class AnalysisService:
                     rotating_frame_count=rotating_count,
                     pairable_frame_count=pair_count,
                     total_frame_count=total_frame_count,
+                    total_image_count=total_image_count,
                     camera_resolutions=camera_resolutions,
                     camera_directories=camera_directories,
+                    capture_configuration=capture_configuration,
                     ready=ready,
                     not_ready_reasons=list(dict.fromkeys(reasons)),
+                    available_modes=available_modes,
                     analysis_runs=self.repository.list(record.record_id),
                 )
             )
@@ -807,28 +1022,33 @@ class AnalysisService:
             for camera_id, source in request.camera_sources.items()
         }
         validation = None
+        selected_mode_folders = ()
         if request.record_id:
+            selected_mode_folders = self._selected_mode_folders(
+                request.record_id,
+                request.mode_ids,
+            )
             synchronization = self.settings.analysis.synchronization
             automatic = self._validation_for_record(
                 request.record_id,
                 timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
                 manual_frame_offset=synchronization.manual_frame_offset,
                 method=request.method,
+                mode_ids=request.mode_ids,
             )
             uses_automatic_paths = True
             for camera_id, source in camera_sources.items():
                 if not source["enabled"]:
                     continue
-                automatic_path = automatic.camera_directories.get(camera_id)
                 requested_path = source["path"]
-                if requested_path and (
-                    automatic_path is None
-                    or Path(requested_path).expanduser().resolve()
-                    != Path(automatic_path).resolve()
+                if not _matches_record_source_path(
+                    automatic,
+                    camera_id,
+                    requested_path,
                 ):
                     uses_automatic_paths = False
                     break
-                source["path"] = automatic_path or str(automatic.record_path)
+                source["path"] = str(automatic.record_path)
             if uses_automatic_paths:
                 validation = automatic
         if validation is None:
@@ -843,6 +1063,7 @@ class AnalysisService:
                     if source["enabled"]
                 },
                 method=request.method,
+                selected_mode_folders=selected_mode_folders,
             )
         return AnalysisSourcePreview(
             ready=validation.ready,
@@ -905,27 +1126,30 @@ class AnalysisService:
                 }
                 for camera_id, source in request.camera_sources.items()
             }
+            if request.mode_ids and not request.record_id:
+                raise AnalysisError("手動影像目錄不可選取紀錄擷取模式。")
+            selected_mode_folders = ()
             if request.record_id:
+                selected_mode_folders = self._selected_mode_folders(
+                    request.record_id,
+                    request.mode_ids,
+                )
                 automatic = self._validation_for_record(
                     request.record_id,
                     timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
                     manual_frame_offset=synchronization.manual_frame_offset,
                     method=request.method,
+                    mode_ids=request.mode_ids,
                 )
                 for camera_id, source in selected_sources.items():
                     if source["enabled"] and not source["path"]:
-                        source["path"] = automatic.camera_directories.get(
-                            camera_id,
-                            str(automatic.record_path),
-                        )
+                        source["path"] = str(automatic.record_path)
                 uses_automatic_paths = all(
                     not source["enabled"]
-                    or (
-                        automatic.camera_directories.get(camera_id) is not None
-                        and Path(source["path"]).expanduser().resolve()
-                        == Path(
-                            automatic.camera_directories[camera_id]
-                        ).resolve()
+                    or _matches_record_source_path(
+                        automatic,
+                        camera_id,
+                        source["path"],
                     )
                     for camera_id, source in selected_sources.items()
                 )
@@ -946,6 +1170,7 @@ class AnalysisService:
                         if source["enabled"]
                     },
                     method=request.method,
+                    selected_mode_folders=selected_mode_folders,
                 )
             )
             if not validation.ready:
@@ -955,6 +1180,31 @@ class AnalysisService:
                 )
             intrinsics_snapshot = self._snapshot_intrinsics(request.method)
             pose_settings = self.settings.pose_alignment.model_dump(mode="json")
+            top_camera = self.settings.cameras["top"]
+            side_camera = self.settings.cameras["side"]
+            rotating_camera = self.settings.cameras["rotating"]
+            pose_settings["camera_installation_parameters"] = {
+                "top": {
+                    "height_mm": top_camera.installation_height_mm,
+                    "horizontal_distance_to_origin_mm": (
+                        top_camera.horizontal_distance_to_origin_mm
+                    ),
+                    "facing_origin_angle_deg": 90.0,
+                },
+                "side": {
+                    "height_mm": side_camera.installation_height_mm,
+                    "horizontal_distance_to_origin_mm": (
+                        side_camera.horizontal_distance_to_origin_mm
+                    ),
+                    "facing_origin_angle_deg": 0.0,
+                },
+                "rotating": {
+                    "arm_height_mm": rotating_camera.arm_height_mm,
+                    "horizontal_distance_to_origin_mm": (
+                        rotating_camera.horizontal_distance_to_origin_mm
+                    ),
+                },
+            }
             layout_snapshot = aruco_layout_snapshot(
                 self.settings.pose_alignment.aruco_world
             )
@@ -982,6 +1232,7 @@ class AnalysisService:
                     "end_frame": request.end_frame,
                 },
                 "manual_review_required": request.manual_review_required,
+                "mode_ids": list(request.mode_ids),
                 "camera_sources": selected_sources,
                 "input_manifest": input_manifest,
                 "source_validation": {
@@ -1025,7 +1276,7 @@ class AnalysisService:
             except Exception:
                 shutil.rmtree(output_dir, ignore_errors=True)
                 raise
-            self._log(run, "INFO", "分析執行已建立；輸入清單與參數已固化。")
+            self._log(run, "INFO", "分析紀錄已建立；輸入清單與參數已固化。")
             return run
 
     def _validate_required_parameters(
@@ -1079,7 +1330,7 @@ class AnalysisService:
         frozen = run.parameters.get("input_manifest", [])
         if current != frozen:
             raise AnalysisError(
-                "捕捉資料輸入在分析執行建立後已變更；"
+                "捕捉資料輸入在分析紀錄建立後已變更；"
                 "請建立新的分析，原始資料未被修改。"
             )
 
@@ -1302,7 +1553,7 @@ class AnalysisService:
         with self._lock:
             run = self._require_run(analysis_id)
             if run.status != "ready":
-                raise AnalysisError("只有狀態為「就緒」的分析執行可以開始。")
+                raise AnalysisError("只有狀態為「就緒」的分析紀錄可以開始。")
             if self._runner.is_active(analysis_id):
                 raise AnalysisError("分析工作已在執行。")
             try:
@@ -1348,7 +1599,7 @@ class AnalysisService:
     def retry(self, analysis_id: str) -> AnalysisRun:
         run = self._require_run(analysis_id)
         if run.status not in {"failed", "cancelled"}:
-            raise AnalysisError("只有狀態為「失敗」或「已取消」的分析執行可以重試。")
+            raise AnalysisError("只有狀態為「失敗」或「已取消」的分析紀錄可以重試。")
         if self._runner.is_active(analysis_id) and not self._runner.wait_until_idle(
             analysis_id
         ):
@@ -1405,7 +1656,7 @@ class AnalysisService:
                 self._runner.is_active(analysis_id)
                 and not self._runner.wait_until_idle(analysis_id)
             ) or run.status in PROCESSING_STATUSES:
-                raise AnalysisError("分析執行中，請先取消並等待背景工作停止。")
+                raise AnalysisError("分析紀錄中，請先取消並等待背景工作停止。")
             self.repository.clear_results(
                 analysis_id,
                 include_frame_pairs=True,
@@ -1454,7 +1705,7 @@ class AnalysisService:
         with self._lock:
             run = self._require_run(analysis_id)
             if self._runner.is_active(analysis_id) or run.status in PROCESSING_STATUSES:
-                raise AnalysisError("分析執行中，不能刪除。")
+                raise AnalysisError("分析紀錄中，不能刪除。")
             directory = self._output_dir(run)
             tombstone = directory.with_name(
                 f".{directory.name}.{uuid4().hex}.deleting"
@@ -1762,7 +2013,7 @@ class AnalysisService:
             raise AnalysisError("輸入影像已不存在。")
         stat = path.stat()
         if stat.st_size != item["size_bytes"] or stat.st_mtime_ns != item["modified_ns"]:
-            raise AnalysisError("輸入影像在分析執行建立後已變更。")
+            raise AnalysisError("輸入影像在分析紀錄建立後已變更。")
         if _sha256(path) != item.get("sha256"):
             raise AnalysisError("輸入影像內容與固化的 SHA-256 不一致。")
         return path
@@ -2052,7 +2303,7 @@ class AnalysisService:
             self._record_failure(
                 current,
                 error,
-                context="分析執行失敗",
+                context="分析紀錄失敗",
                 report_error=True,
             )
 
@@ -2380,7 +2631,7 @@ class AnalysisService:
         geometry = self._geometry_for_run(run)
         pairs = self.repository.list_frame_pairs(run.analysis_id)
         if not pairs:
-            raise AnalysisError("分析執行沒有已驗證的影格配對。")
+            raise AnalysisError("分析紀錄沒有已驗證的影格配對。")
         camera_resolutions = self._camera_resolutions(run)
         adaptation = self._adapted_geometry(
             geometry,

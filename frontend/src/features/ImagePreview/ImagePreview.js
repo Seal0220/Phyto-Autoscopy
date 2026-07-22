@@ -81,12 +81,12 @@ export default function ImagePreview({
 
   return (
     <Panel
-      id="image-preview"
+      id="camera"
       className="col-span-full scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
-      aria-label="影像預覽"
+      aria-label="攝影機"
     >
       <PanelHeader
-        title="影像預覽"
+        title="攝影機"
         action={(
           <div className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full">
             <Button
@@ -122,14 +122,14 @@ export default function ImagePreview({
               重新連線全部
             </Button>
             <SettingsGear
-              label="影像預覽"
+              label="攝影機"
               open={open}
               onClick={onToggle}
             />
           </div>
         )}
       />
-      <div className="grid grid-cols-1 overflow-hidden border-y border-white/10 bg-black/10 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3">
+      <div className="grid grid-cols-1 overflow-hidden border-y border-white/15 bg-black/15 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3">
         {Object.entries(IMAGE_PREVIEW_META).map(([
           imagePreviewId,
           meta,
@@ -141,7 +141,7 @@ export default function ImagePreview({
           return (
             <article
               className={`
-                grid min-w-0 overflow-hidden border-b border-white/10 bg-black/10 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0
+                grid min-w-0 overflow-hidden border-b border-white/15 bg-black/15 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0
                 ${enabled ? "" : "grayscale opacity-60"}
               `}
               key={imagePreviewId}
@@ -156,7 +156,7 @@ export default function ImagePreview({
                 calibrated={calibratedCameraIds.has(imagePreviewId)}
                 onNotify={onNotify}
               />
-              <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/10 bg-white/[0.035] px-3 py-2">
+              <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/15 bg-white/[0.035] px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <StatusPill tone={enabled ? "success" : "offline"}>
                     {enabled ? "已啟用" : "未啟用"}

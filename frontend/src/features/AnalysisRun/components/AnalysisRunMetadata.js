@@ -33,7 +33,7 @@ export default function AnalysisRunMetadata({
       <InnerPanel>
         <SubsectionHeader
           title="輸入與方法"
-          description="分析執行建立時固化的輸入與重現資訊。"
+          description="分析紀錄建立時固化的輸入與重現資訊。"
         />
         <dl className="grid gap-4 min-[520px]:grid-cols-2">
           <MetadataItem

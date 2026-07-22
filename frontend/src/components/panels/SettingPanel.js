@@ -19,7 +19,7 @@ export default function SettingPanel({
       aria-hidden={!open}
     >
       <div className={`min-h-0 ${open ? "overflow-visible" : "overflow-hidden"}`}>
-        <div className={`rounded-b-[27px] border-t border-white/10 bg-black/20 ${contentClassName || "px-6 pt-6 max-sm:px-4"}`}>
+        <div className={`rounded-b-[27px] border-t border-white/15 bg-black/20 ${contentClassName || "px-6 pt-6 max-sm:px-4"}`}>
           <fieldset
             className={`grid min-w-0 border-0 p-0 ${fieldsetClassName || "gap-4"} ${locked ? "grayscale opacity-60" : ""}`}
             disabled={locked}

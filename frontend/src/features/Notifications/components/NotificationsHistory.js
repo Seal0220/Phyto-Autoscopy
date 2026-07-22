@@ -21,7 +21,7 @@ export default function NotificationsHistory({
       className={`grid max-h-[min(32rem,calc(100vh-8rem))] w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/15 bg-[#08140f]/95 text-slate-100 shadow-2xl backdrop-blur-2xl transition-opacity duration-200 ease-in-out will-change-[opacity] motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}
       aria-label="歷史通知"
     >
-      <header className="flex min-h-13 items-center gap-3 border-b border-white/10 px-4 py-3">
+      <header className="flex min-h-13 items-center gap-3 border-b border-white/15 px-4 py-3">
         <FiBell
           className="size-4 text-emerald-300"
           aria-hidden="true"

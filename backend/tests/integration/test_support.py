@@ -96,7 +96,7 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
             {
                 "schedule": {
                     "capture_interval_seconds": 60,
-                    "duration_minutes": 240,
+                    "duration_seconds": 14400,
                     "rotation_start_deg": 0,
                     "rotation_end_deg": 15,
                     "rotation_step_deg": 15,

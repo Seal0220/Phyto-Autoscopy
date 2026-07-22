@@ -12,7 +12,7 @@ import {
   messageFromError,
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
-import usePhytoSocket from "@/hooks/usePhytoSocket";
+import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
 
 import {
   loadUnifiedCalibrationWorkspace,
@@ -39,7 +39,7 @@ export default function useUnifiedCalibration({
     connection,
     socketError,
     resetSocketError,
-  } = usePhytoSocket();
+  } = usePhytoSocketContext();
   const [status, setStatus] = useState(null);
   const [boards, setBoards] = useState([]);
   const [runs, setRuns] = useState({});

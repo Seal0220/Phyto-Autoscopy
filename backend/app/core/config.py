@@ -61,6 +61,21 @@ class CameraConfig(BaseModel):
     capture_fps: int = Field(default=10, ge=1, le=60)
     jpeg_quality: int = 95
     enabled: bool = True
+    installation_height_mm: float | None = Field(
+        default=None,
+        ge=0,
+        le=10000,
+    )
+    horizontal_distance_to_origin_mm: float | None = Field(
+        default=None,
+        ge=0,
+        le=10000,
+    )
+    arm_height_mm: float | None = Field(
+        default=None,
+        ge=0,
+        le=10000,
+    )
 
 
 def default_camera_configs() -> dict[str, CameraConfig]:
@@ -114,8 +129,8 @@ class ScheduleSettings(BaseModel):
     project_name: str = "Phyto-Autoscopy"
     project_name_zh: str = "綠色自視症"
     device_name: str = "CHLOROCULUS"
-    capture_interval_seconds: int = 60
-    duration_minutes: int = 240
+    capture_interval_seconds: float = Field(default=60.0, gt=0)
+    duration_seconds: float = Field(default=14400.0, gt=0)
     total_cycles: int = Field(default=48, ge=1)
     cycle_duration_seconds: float = Field(default=300.0, gt=0)
     cycle_interval_seconds: float = Field(default=0.0, ge=0)
@@ -335,50 +350,11 @@ class ArucoWorldReferenceSettings(BaseModel):
         return self
 
 
-class FixedCameraInstallationPriorSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    height_mm: float | None = Field(default=None, ge=0, le=10000)
-    horizontal_distance_to_center_mm: float | None = Field(
-        default=None,
-        ge=0,
-        le=10000,
-    )
-    facing_center_angle_deg: float | None = Field(
-        default=None,
-        ge=-360,
-        le=360,
-    )
-
-
-class RotatingCameraInstallationPriorSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    arm_height_mm: float | None = Field(default=None, ge=0, le=10000)
-
-
-class CameraInstallationPriorsSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    top: FixedCameraInstallationPriorSettings = Field(
-        default_factory=FixedCameraInstallationPriorSettings
-    )
-    side: FixedCameraInstallationPriorSettings = Field(
-        default_factory=FixedCameraInstallationPriorSettings
-    )
-    rotating: RotatingCameraInstallationPriorSettings = Field(
-        default_factory=RotatingCameraInstallationPriorSettings
-    )
-
-
 class PoseAlignmentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     aruco_world: ArucoWorldReferenceSettings = Field(
         default_factory=ArucoWorldReferenceSettings
-    )
-    camera_priors: CameraInstallationPriorsSettings = Field(
-        default_factory=CameraInstallationPriorsSettings
     )
     minimum_pnp_inliers: int = Field(default=4, ge=4, le=10000)
     maximum_aruco_reprojection_error_px: float = Field(
@@ -427,16 +403,16 @@ class AppSettings(BaseModel):
             raise ValueError(f"缺少必要相機設定：{', '.join(missing)}")
         enabled_indices: dict[int, str] = {}
         for camera_id, config in value.items():
-            if not config.enabled:
-                continue
             if config.device_index is None:
+                if not config.enabled:
+                    continue
                 raise ValueError(
                     f"已啟用相機必須選擇裝置：{camera_id}"
                 )
             previous = enabled_indices.get(config.device_index)
             if previous is not None:
                 raise ValueError(
-                    "已啟用相機不可共用裝置索引："
+                    "相機不可共用裝置索引："
                     f"{previous} 與 {camera_id} 都使用 {config.device_index}"
                 )
             enabled_indices[config.device_index] = camera_id

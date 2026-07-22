@@ -89,6 +89,7 @@ class AnalysisCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     record_id: str | None = Field(default=None, min_length=1, max_length=160)
+    mode_ids: list[str] = Field(default_factory=list, max_length=20)
     method: AnalysisMethod = "top_side"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource] = Field(
         default_factory=lambda: {
@@ -107,6 +108,8 @@ class AnalysisCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_frame_range(self) -> "AnalysisCreateRequest":
+        if len(self.mode_ids) != len(set(self.mode_ids)):
+            raise ValueError("分析擷取模式不可重複。")
         if (
             self.start_frame is not None
             and self.end_frame is not None
@@ -150,6 +153,7 @@ class AnalysisSourcePreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     record_id: str | None = Field(default=None, min_length=1, max_length=160)
+    mode_ids: list[str] = Field(default_factory=list, max_length=20)
     method: AnalysisMethod = "top_side"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource]
 
@@ -197,9 +201,20 @@ class AnalysisRun(BaseModel):
     last_error: str | None = None
 
 
+class AnalysisSourceMode(BaseModel):
+    id: str
+    type: str
+    label: str
+    folder: str
+    storage_scope: str
+    configuration: dict[str, Any] = Field(default_factory=dict)
+    image_count: int = Field(default=0, ge=0)
+
+
 class AnalysisSourceSummary(BaseModel):
     record_id: str
     created_at: str
+    ended_at: str | None = None
     status: str
     record_path: str
     top_frame_count: int
@@ -207,10 +222,13 @@ class AnalysisSourceSummary(BaseModel):
     rotating_frame_count: int = 0
     pairable_frame_count: int
     total_frame_count: int
+    total_image_count: int = Field(default=0, ge=0)
     camera_resolutions: dict[str, tuple[int, int]] = Field(default_factory=dict)
     camera_directories: dict[str, str] = Field(default_factory=dict)
+    capture_configuration: dict[str, Any] = Field(default_factory=dict)
     ready: bool
     not_ready_reasons: list[str] = Field(default_factory=list)
+    available_modes: list[AnalysisSourceMode] = Field(default_factory=list)
     analysis_runs: list[AnalysisRun] = Field(default_factory=list)
 
 

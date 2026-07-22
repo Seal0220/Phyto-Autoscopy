@@ -4,11 +4,17 @@ import logging
 from copy import deepcopy
 
 from fastapi import APIRouter, Depends
+from pydantic import ValidationError
 
-from app.core.config import get_config_dir, read_json_file, save_settings_group
+from app.core.config import (
+    AppSettings,
+    get_config_dir,
+    read_json_file,
+    save_settings_group,
+)
 from app.core.exceptions import ConfigError
 from app.core.state import AppContext, get_context
-from app.models.settings_models import SettingsGroupUpdate
+from app.models.settings_models import SettingsBatchUpdate, SettingsGroupUpdate
 from app.repositories.settings_repository import SettingsRepository
 from app.services.runtime_settings_service import apply_runtime_settings, build_candidate_settings
 from app.services.schedule_lock import ensure_manual_changes_allowed
@@ -50,6 +56,56 @@ def get_settings_group(group: str, context: AppContext = Depends(get_context)) -
 @router.post("/reset")
 def reset_settings() -> dict:
     return {"detail": "為了硬體安全，重設必須手動執行。"}
+
+
+@router.post("/batch")
+def update_settings_batch(
+    update: SettingsBatchUpdate,
+    context: AppContext = Depends(get_context),
+) -> dict:
+    groups = set(update.payloads)
+    if groups != {"cameras", "schedule"}:
+        raise ConfigError("批次設定只接受攝影機與排程設定。")
+
+    ensure_manual_changes_allowed(context)
+    with context._settings_lock:
+        previous_payloads = {
+            group: read_json_file(get_config_dir() / SETTINGS_FILES[group])
+            for group in groups
+        }
+        candidate_data = context.settings.model_dump(mode="python")
+        for group, payload in update.payloads.items():
+            candidate_data[group] = payload.get(group, {})
+
+        try:
+            candidate = AppSettings.model_validate(candidate_data)
+        except ValidationError as exc:
+            raise ConfigError("設定內容格式錯誤，請檢查欄位與數值範圍。") from exc
+
+        saved_groups: list[str] = []
+        try:
+            for group, payload in update.payloads.items():
+                save_settings_group(group, payload)
+                saved_groups.append(group)
+            apply_runtime_settings(context, candidate, "schedule")
+        except Exception:
+            for group in reversed(saved_groups):
+                try:
+                    save_settings_group(group, previous_payloads[group])
+                except Exception:
+                    logger.exception("Failed to restore settings group: %s", group)
+            raise
+
+        for group, payload in update.payloads.items():
+            try:
+                SettingsRepository(context.database).snapshot(group, payload)
+            except Exception:
+                logger.exception("Failed to record settings snapshot: %s", group)
+
+    return {
+        "updated": sorted(groups),
+        "applied": True,
+    }
 
 
 @router.post("/{group}")

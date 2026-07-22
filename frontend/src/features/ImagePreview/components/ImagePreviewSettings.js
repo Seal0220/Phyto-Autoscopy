@@ -11,13 +11,18 @@ import {
 
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
+import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
 import useImagePreviewDevices from "@/features/ImagePreview/hooks/useImagePreviewDevices";
 import {
+  emitCameraSettingsUpdated,
+  subscribeCameraSettingsUpdated,
+} from "@/lib/settingsEvents";
+import {
+  imagePreviewFieldMeta,
   imagePreviewSettingsSections,
   serializeImagePreviewSettingsPayload,
-  unavailableImagePreviewAssignments,
 } from "@/features/ImagePreview/lib/imagePreviewUtils";
 
 import ImagePreviewField from "./ImagePreviewField";
@@ -45,7 +50,6 @@ export default function ImagePreviewSettings({
   const sections = payload ? imagePreviewSettingsSections(payload) : [];
   const {
     scanResults,
-    scanRevision,
     scanning,
     scanDevices,
   } = useImagePreviewDevices({
@@ -68,29 +72,6 @@ export default function ImagePreviewSettings({
     onNotify,
   ]);
 
-  useEffect(() => {
-    if (!payload || scanRevision === 0) return;
-
-    for (const imagePreviewId of unavailableImagePreviewAssignments(
-      payload,
-      scanResults,
-    )) {
-      updateField(
-        ["cameras", imagePreviewId, "device_index"],
-        null,
-      );
-      updateField(
-        ["cameras", imagePreviewId, "enabled"],
-        false,
-      );
-    }
-  }, [
-    payload,
-    scanResults,
-    scanRevision,
-    updateField,
-  ]);
-
   function updateImagePreviewField(
     path,
     value,
@@ -110,9 +91,31 @@ export default function ImagePreviewSettings({
     }
   }
 
+  useEffect(() => subscribeCameraSettingsUpdated((event) => {
+    if (event.detail?.cameraId !== "rotating") return;
+    if (!Object.hasOwn(event.detail, "armHeightMm")) return;
+
+    updateField(
+      ["cameras", "rotating", "arm_height_mm"],
+      event.detail.armHeightMm,
+    );
+  }), [updateField]);
+
+  async function saveCameraSettings() {
+    const armHeightMm = payload?.cameras?.rotating?.arm_height_mm ?? null;
+    const saved = await saveGroup();
+
+    if (saved) {
+      emitCameraSettingsUpdated({
+        cameraId: "rotating",
+        armHeightMm,
+      });
+    }
+  }
+
   return (
     <SettingPanel
-      label="影像預覽"
+      label="攝影機"
       open={open}
       locked={locked || saving}
       contentClassName="p-0"
@@ -135,14 +138,14 @@ export default function ImagePreviewSettings({
           </Button>
           <Button
             variant="primary"
-            onClick={() => void saveGroup()}
+            onClick={() => void saveCameraSettings()}
             disabled={!payload || saving || loading}
           >
             <FiSave
               className="size-4 shrink-0"
               aria-hidden="true"
             />
-            {saving ? "儲存中…" : "儲存影像預覽設定"}
+            {saving ? "儲存中…" : "儲存攝影機設定"}
           </Button>
         </>
       )}
@@ -154,7 +157,7 @@ export default function ImagePreviewSettings({
       ) : null}
       {!loading && !payload && loadFailed ? (
         <RetryMessage
-          message={loadError || "讀取影像預覽設定失敗。"}
+          message={loadError || "讀取攝影機設定失敗。"}
           onRetry={() => void loadGroup()}
           retrying={loading}
         />
@@ -176,10 +179,16 @@ export default function ImagePreviewSettings({
             const inputLeaves = leaves.filter(
               (leaf) => leaf.path.at(-1) !== "enabled",
             );
+            const installationLeaves = inputLeaves.filter(
+              (leaf) => imagePreviewFieldMeta(leaf).group === "installation",
+            );
+            const cameraLeaves = inputLeaves.filter(
+              (leaf) => imagePreviewFieldMeta(leaf).group !== "installation",
+            );
 
             return (
               <section
-                className="grid min-w-0 content-start gap-3 border-b border-white/10 px-3 py-5 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0"
+                className="grid min-w-0 content-start gap-3 border-b border-white/15 px-3 py-5 last:border-b-0 min-[720px]:border-r min-[720px]:nth-[2n]:border-r-0 min-[1180px]:border-b-0 min-[1180px]:nth-[2n]:border-r min-[1180px]:nth-[3n]:border-r-0"
                 key={imagePreviewId}
               >
                 {enabledLeaves.map((leaf) => (
@@ -192,7 +201,7 @@ export default function ImagePreviewSettings({
                   />
                 ))}
                 <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
-                  {inputLeaves.map((leaf) => (
+                  {cameraLeaves.map((leaf) => (
                     <ImagePreviewField
                       key={leaf.path.join(".")}
                       leaf={leaf}
@@ -202,6 +211,27 @@ export default function ImagePreviewSettings({
                     />
                   ))}
                 </div>
+                {installationLeaves.length ? (
+                  <>
+                    {/* <SubsectionHeader
+                      title="相機安裝參數"
+                      description="作為分析姿態估計的初始值與合理性檢查依據。"
+                      titleMode={1}
+                    /> */}
+                    <hr className="my-1!"/>
+                    <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
+                      {installationLeaves.map((leaf) => (
+                        <ImagePreviewField
+                          key={leaf.path.join(".")}
+                          leaf={leaf}
+                          onChange={updateImagePreviewField}
+                          scanResults={scanResults}
+                          cameraDrafts={payload.cameras}
+                        />
+                      ))}
+                    </div>
+                  </>
+                ) : null}
               </section>
             );
           })}

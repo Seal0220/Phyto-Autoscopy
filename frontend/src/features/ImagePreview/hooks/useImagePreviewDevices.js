@@ -24,7 +24,6 @@ export default function useImagePreviewDevices({
   onNotify,
 }) {
   const [scanResults, setScanResults] = useState([]);
-  const [scanRevision, setScanRevision] = useState(0);
   const [scanning, setScanning] = useState(false);
   const mountedRef = useRef(false);
   const scanningRef = useRef(false);
@@ -88,7 +87,6 @@ export default function useImagePreviewDevices({
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setScanResults(result);
-      setScanRevision((current) => current + 1);
       return true;
     } catch (error) {
       if (error?.name === "AbortError") return false;
@@ -128,7 +126,6 @@ export default function useImagePreviewDevices({
 
   return {
     scanResults,
-    scanRevision,
     scanning,
     scanDevices,
   };

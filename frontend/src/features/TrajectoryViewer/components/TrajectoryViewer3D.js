@@ -97,7 +97,7 @@ export default function TrajectoryViewer3D({
       </SubsectionHeader>
 
       <div className="grid gap-3 min-[980px]:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="aspect-[3/2] min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+        <div className="aspect-[3/2] min-w-0 overflow-hidden rounded-xl border border-white/15 bg-black/30">
           <svg
             className="size-full"
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}

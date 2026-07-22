@@ -33,7 +33,7 @@ function MatrixBlock({
       <h5 className="m-0 text-xs font-black text-neutral-300">
         {label}
       </h5>
-      <pre className="m-0 max-w-full overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-3 text-xs leading-5 text-neutral-300">
+      <pre className="m-0 max-w-full overflow-x-auto rounded-xl border border-white/15 bg-black/20 p-3 text-xs leading-5 text-neutral-300">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>
@@ -130,7 +130,7 @@ export default function CalibrationQuality({ profile }) {
 
       <CalibrationVisualization profile={profile} />
 
-      <details className="group rounded-xl border border-white/10 bg-black/10">
+      <details className="group rounded-xl border border-white/15 bg-black/15">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-black text-neutral-200 focus-visible:outline-2 focus-visible:outline-emerald-300">
           <FiCode
             className="size-4 text-emerald-200"
@@ -138,7 +138,7 @@ export default function CalibrationQuality({ profile }) {
           />
           進階資料（唯讀矩陣）
         </summary>
-        <div className="grid gap-3 border-t border-white/10 p-4">
+        <div className="grid gap-3 border-t border-white/15 p-4">
           {(profile?.cameras || []).map((camera) => (
             <div
               className="grid gap-3 min-[900px]:grid-cols-2"

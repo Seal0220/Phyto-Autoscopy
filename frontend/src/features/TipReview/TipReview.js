@@ -25,7 +25,6 @@ import {
   PanelHeader,
   StatusPill,
 } from "@/components/panels/Panel";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
@@ -146,10 +145,7 @@ export default function TipReview({
   ]);
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="植物尖端人工修正">
           <PanelHeader
             title="人工修正"
@@ -170,7 +166,7 @@ export default function TipReview({
                     className="size-4 shrink-0"
                     aria-hidden="true"
                   />
-                  返回分析執行
+                  返回分析紀錄
                 </Button>
               </div>
             )}
@@ -187,7 +183,7 @@ export default function TipReview({
 
             {loading && frameIds.length === 0 ? (
               <div
-                className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
+                className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400"
                 role="status"
               >
                 讀取人工修正資料中…
@@ -195,8 +191,8 @@ export default function TipReview({
             ) : null}
 
             {!loading && !loadError && frameIds.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-black/10 p-5 text-center text-sm font-semibold text-neutral-400">
-                此分析執行尚無可檢查影格。
+              <div className="rounded-xl border border-dashed border-white/15 bg-black/15 p-5 text-center text-sm font-semibold text-neutral-400">
+                此分析紀錄尚無可檢查影格。
               </div>
             ) : null}
 
@@ -418,7 +414,6 @@ export default function TipReview({
             ) : null}
           </div>
         </Panel>
-      </div>
-    </main>
+    </div>
   );
 }

@@ -41,7 +41,7 @@ export default function TipReviewCorrectionHistory({
       />
 
       {ordered.length === 0 ? (
-        <p className="m-0 rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-center text-sm font-semibold text-neutral-500">
+        <p className="m-0 rounded-xl border border-dashed border-white/15 bg-black/15 p-4 text-center text-sm font-semibold text-neutral-500">
           本影格尚無人工修正
         </p>
       ) : (
@@ -49,7 +49,7 @@ export default function TipReviewCorrectionHistory({
           {ordered.map((correction) => (
             <li
               key={correction.correction_id}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-white/10 bg-black/10 p-3"
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-white/15 bg-black/15 p-3"
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">

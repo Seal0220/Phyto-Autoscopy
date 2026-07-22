@@ -5,6 +5,7 @@ import {
   ANALYSIS_STATUS_META,
   HIGH_REPROJECTION_ERROR_THRESHOLD_PX,
 } from "../analysisConfig.js";
+import { formatDateTime } from "@/lib/formatUtils";
 
 const REQUIRED_PARAMETER_FIELDS = [
   ["segmentationHistory", "背景歷史影格數"],
@@ -163,11 +164,18 @@ export function analysisSourcesFromPayload(payload) {
   return arrayFromPayload(
     payload,
     ["sources", "records", "items"],
-    "可分析紀錄",
+    "紀錄選項",
   ).map((source) => ({
     ...source,
     record_id: stringOrEmpty(source?.record_id),
+    record_path: stringOrEmpty(source?.record_path),
+    capture_configuration: source?.capture_configuration
+      && typeof source.capture_configuration === "object"
+      && !Array.isArray(source.capture_configuration)
+      ? source.capture_configuration
+      : {},
     created_at: stringOrEmpty(source?.created_at),
+    ended_at: stringOrEmpty(source?.ended_at),
     status: stringOrEmpty(source?.status),
     top_frame_count: Math.max(0, numberOrZero(source?.top_frame_count)),
     side_frame_count: Math.max(0, numberOrZero(source?.side_frame_count)),
@@ -176,20 +184,34 @@ export function analysisSourcesFromPayload(payload) {
       numberOrZero(source?.rotating_frame_count),
     ),
     total_frame_count: Math.max(0, numberOrZero(source?.total_frame_count)),
+    total_image_count: Math.max(0, numberOrZero(source?.total_image_count)),
     pairable_frame_count: Math.max(0, numberOrZero(source?.pairable_frame_count)),
     camera_resolutions: {
       top: normalizeResolution(source?.camera_resolutions?.top),
       side: normalizeResolution(source?.camera_resolutions?.side),
       rotating: normalizeResolution(source?.camera_resolutions?.rotating),
     },
-    camera_directories: {
-      top: stringOrEmpty(source?.camera_directories?.top),
-      side: stringOrEmpty(source?.camera_directories?.side),
-      rotating: stringOrEmpty(source?.camera_directories?.rotating),
-    },
     ready: Boolean(source?.ready),
     not_ready_reasons: Array.isArray(source?.not_ready_reasons)
       ? source.not_ready_reasons.filter((reason) => typeof reason === "string")
+      : [],
+    available_modes: Array.isArray(source?.available_modes)
+      ? source.available_modes
+        .filter((mode) => mode && typeof mode === "object")
+        .map((mode) => ({
+          id: stringOrEmpty(mode.id),
+          type: stringOrEmpty(mode.type),
+          label: stringOrEmpty(mode.label) || stringOrEmpty(mode.type),
+          folder: stringOrEmpty(mode.folder),
+          storage_scope: stringOrEmpty(mode.storage_scope),
+          configuration: mode.configuration
+            && typeof mode.configuration === "object"
+            && !Array.isArray(mode.configuration)
+            ? mode.configuration
+            : {},
+          image_count: Math.max(0, numberOrZero(mode.image_count)),
+        }))
+        .filter((mode) => mode.id && mode.folder)
       : [],
     analysis_runs: Array.isArray(source?.analysis_runs)
       ? source.analysis_runs.map(normalizeAnalysisRun)
@@ -197,11 +219,63 @@ export function analysisSourcesFromPayload(payload) {
   }));
 }
 
+function displayModeNumber(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return "—";
+  return Number.isInteger(number)
+    ? String(number)
+    : String(Number(number.toFixed(3)));
+}
+
+export function analysisModePillLabel(mode) {
+  const folder = stringOrEmpty(mode?.folder);
+  const label = stringOrEmpty(mode?.label) || folder;
+  const modeNumber = folder.match(/\.(\d+)$/)?.[1];
+
+  return modeNumber
+    ? `${label} ${modeNumber}`
+    : label;
+}
+
+export function analysisModeConfigurationLabel(mode) {
+  const configuration = mode?.configuration || {};
+
+  if (["continuous_interval", "time_interval"].includes(mode?.type)) {
+    return `間隔 ${displayModeNumber(configuration.interval_seconds)} 秒`;
+  }
+  if (mode?.type === "angle_interval") {
+    return `間隔 ${displayModeNumber(configuration.interval_degrees)} 度`;
+  }
+  if (mode?.type === "specific_angles") {
+    const angles = Array.isArray(configuration.angles)
+      ? configuration.angles
+      : String(configuration.angles || "")
+        .split(",")
+        .map((angle) => angle.trim())
+        .filter(Boolean);
+
+    return angles.length > 0
+      ? `角度 ${angles.map(displayModeNumber).join("、")} 度`
+      : "角度尚無資料";
+  }
+  if (mode?.type === "equal_divisions") {
+    return `等分 ${displayModeNumber(configuration.points)} 點`;
+  }
+  return "配置尚無資料";
+}
+
+export function analysisDefaultSelectedModeIds(modes) {
+  return (Array.isArray(modes) ? modes : [])
+    .filter((mode) => mode?.type !== "continuous_interval")
+    .map((mode) => mode.id);
+}
+
 export function analysisRunsFromPayload(payload) {
   return arrayFromPayload(
     payload,
     ["analysis_runs", "runs", "items"],
-    "分析執行",
+    "分析紀錄",
   ).map(normalizeAnalysisRun);
 }
 
@@ -262,6 +336,37 @@ export function analysisStageLabel(stage) {
   return ANALYSIS_STAGE_LABELS[stage] || stage || "尚未開始";
 }
 
+export function analysisRecordSummaryItems(source) {
+  const modeCount = Array.isArray(source?.available_modes)
+    ? source.available_modes.length
+    : 0;
+  const totalImageCount = Math.max(
+    0,
+    numberOrZero(source?.total_image_count),
+  );
+
+  return [
+    {
+      label: "開始時間",
+      value: formatDateTime(source?.created_at),
+    },
+    {
+      label: "結束時間",
+      value: source?.ended_at
+        ? formatDateTime(source.ended_at)
+        : "尚未結束",
+    },
+    {
+      label: "模式數量",
+      value: `${modeCount} 種`,
+    },
+    {
+      label: "總張數",
+      value: `${totalImageCount} 張`,
+    },
+  ];
+}
+
 export function analysisProgressPercent(progress) {
   return Math.round(Math.min(1, Math.max(0, numberOrZero(progress))) * 100);
 }
@@ -269,19 +374,20 @@ export function analysisProgressPercent(progress) {
 export function createInitialAnalysisSetup(recordId = "") {
   return {
     recordId,
-    method: "top_side",
+    recordPath: "",
+    captureConfiguration: {},
+    availableModes: [],
+    selectedModeIds: [],
+    method: "top_side_rotating",
     cameraSources: {
       top: {
         enabled: true,
-        path: "",
       },
       side: {
         enabled: true,
-        path: "",
       },
       rotating: {
-        enabled: false,
-        path: "",
+        enabled: true,
       },
     },
     startFrame: "1",
@@ -319,34 +425,58 @@ export function analysisMethodFromCameraSources(cameraSources) {
     : "top_side";
 }
 
+export function analysisCameraSourceRequired(cameraId) {
+  return cameraId === "top" || cameraId === "side";
+}
+
 export function analysisSetupFromRecord(
   setup,
   source,
 ) {
-  const directories = source?.camera_directories || {};
   const cameraSources = {
     top: {
       enabled: true,
-      path: stringOrEmpty(directories.top),
     },
     side: {
       enabled: true,
-      path: stringOrEmpty(directories.side),
     },
     rotating: {
-      enabled: Boolean(stringOrEmpty(directories.rotating)),
-      path: stringOrEmpty(directories.rotating),
+      enabled: true,
     },
   };
+  const availableModes = Array.isArray(source?.available_modes)
+    ? source.available_modes
+    : [];
 
   return {
     ...setup,
     recordId: stringOrEmpty(source?.record_id),
+    recordPath: stringOrEmpty(source?.record_path),
+    captureConfiguration: source?.capture_configuration
+      && typeof source.capture_configuration === "object"
+      && !Array.isArray(source.capture_configuration)
+      ? source.capture_configuration
+      : {},
     method: analysisMethodFromCameraSources(cameraSources),
     endFrame: analysisDefaultEndFrame(source),
+    availableModes,
+    selectedModeIds: analysisDefaultSelectedModeIds(availableModes),
     cameraSources,
     sourcePreview: null,
   };
+}
+
+export function analysisCameraSourcesPayload(setup) {
+  return Object.fromEntries(
+    Object.entries(setup.cameraSources).map(([cameraId, source]) => [
+      cameraId,
+      {
+        enabled: analysisCameraSourceRequired(cameraId)
+          || Boolean(source.enabled),
+        path: setup.recordPath,
+      },
+    ]),
+  );
 }
 
 function parseRequiredNumber(
@@ -431,6 +561,23 @@ export function validateAnalysisSetupStep(
   step,
 ) {
   if (step === 1) {
+    if (!setup.recordId) {
+      throw new Error("請先選擇一筆紀錄。");
+    }
+    if (!String(setup.recordPath || "").trim()) {
+      throw new Error("所選紀錄缺少根目錄。");
+    }
+    return true;
+  }
+
+  if (step === 2) {
+    if (
+      setup.recordId
+      && setup.availableModes.length > 0
+      && setup.selectedModeIds.length === 0
+    ) {
+      throw new Error("請至少選擇一個擷取模式。");
+    }
     const required = setup.method === "top_side_rotating"
       ? ["top", "side", "rotating"]
       : ["top", "side"];
@@ -439,14 +586,11 @@ export function validateAnalysisSetupStep(
       if (!source?.enabled) {
         throw new Error(`${ANALYSIS_METHODS[setup.method].label}必須啟用 ${cameraId}。`);
       }
-      if (!String(source.path || "").trim()) {
-        throw new Error(`請填寫 ${cameraId} 影像目錄。`);
-      }
     }
     if (!setup.sourcePreview?.ready) {
       throw new Error(
         setup.sourcePreview?.errors?.[0]
-        || "請先掃描影像目錄並確認配對有效。",
+        || "請先掃描捕捉配置並確認配對有效。",
       );
     }
     if (
@@ -458,7 +602,7 @@ export function validateAnalysisSetupStep(
     return true;
   }
 
-  if (step === 2) {
+  if (step === 3) {
     const source = setup.sourcePreview;
     const startFrame = parseRequiredNumber(setup.startFrame, "起始影格", {
       integer: true,
@@ -494,7 +638,7 @@ export function validateAnalysisSetupStep(
     return true;
   }
 
-  if (step === 3) {
+  if (step === 4) {
     for (const [key, label] of REQUIRED_PARAMETER_FIELDS) {
       const value = setup.parameters[key];
       const minimum = NON_NEGATIVE_PARAMETER_FIELDS.has(key)
@@ -560,7 +704,7 @@ export function validateAnalysisSetupStep(
     return true;
   }
 
-  for (const prerequisite of [1, 2, 3]) {
+  for (const prerequisite of [1, 2, 3, 4]) {
     validateAnalysisSetupStep(
       setup,
       prerequisite,
@@ -576,8 +720,9 @@ export function buildAnalysisCreatePayload(setup) {
 
   return {
     record_id: setup.recordId || null,
+    mode_ids: setup.selectedModeIds,
     method: setup.method,
-    camera_sources: setup.cameraSources,
+    camera_sources: analysisCameraSourcesPayload(setup),
     start_frame: Number(setup.startFrame),
     end_frame: Number(setup.endFrame),
     top_roi: topRoi,

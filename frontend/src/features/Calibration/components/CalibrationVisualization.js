@@ -66,7 +66,7 @@ export default function CalibrationVisualization({ profile }) {
       </h4>
       {points.length ? (
         <svg
-          className="aspect-[8/5] w-full rounded-xl border border-white/10 bg-black/20"
+          className="aspect-[8/5] w-full rounded-xl border border-white/15 bg-black/20"
           viewBox="0 0 400 250"
           role="img"
           aria-label="外參校正的相機位置、世界原點與旋臂軌跡俯視圖"
@@ -139,7 +139,7 @@ export default function CalibrationVisualization({ profile }) {
           ))}
         </svg>
       ) : (
-        <div className="grid min-h-40 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-center text-sm font-semibold text-neutral-400">
+        <div className="grid min-h-40 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-center text-sm font-semibold text-neutral-400">
           完成外參求解後，這裡會顯示相機視點、世界座標與旋臂軌跡。
         </div>
       )}

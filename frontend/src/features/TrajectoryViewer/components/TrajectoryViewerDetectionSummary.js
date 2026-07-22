@@ -19,7 +19,7 @@ export default function TrajectoryViewerDetectionSummary({
         title="偵測類型統計"
         description="統計包含俯視、側視與兩者合計；缺失與無效亦完整列出。"
       />
-      <div className="max-h-[28rem] overflow-auto rounded-xl border border-white/10">
+      <div className="max-h-[28rem] overflow-auto rounded-xl border border-white/15">
         <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
           <thead className="sticky top-0 z-10 bg-[#13201a] text-xs font-black text-neutral-300">
             <tr>
@@ -36,7 +36,7 @@ export default function TrajectoryViewerDetectionSummary({
             {DETECTION_CATEGORIES.map((category) => (
               <tr
                 key={category}
-                className="border-t border-white/10 bg-black/10"
+                className="border-t border-white/15 bg-black/15"
               >
                 <th className="p-3 font-black text-neutral-100">
                   <span

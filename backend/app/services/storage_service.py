@@ -1,13 +1,39 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import AppSettings
-from app.core.constants import CAMERA_ROLES, METADATA_FIELDS, MODE_CAPTURE_LOG_FIELDS
+from app.core.constants import (
+    CAMERA_ROLES,
+    CAPTURE_MODE_ABBREVIATIONS,
+    CAPTURE_MODE_NAMES,
+    METADATA_FIELDS,
+    MODE_CAPTURE_LOG_FIELDS,
+)
+
+
+CAPTURE_MODE_TYPES_BY_NAME = {
+    name: mode_type
+    for mode_type, name in CAPTURE_MODE_NAMES.items()
+}
+
+
+def _storage_timezone() -> tzinfo:
+    try:
+        return ZoneInfo("Asia/Taipei")
+    except ZoneInfoNotFoundError:
+        return timezone(timedelta(hours=8), name="Asia/Taipei")
+
+
+def format_storage_timestamp(value: datetime) -> str:
+    return value.astimezone(_storage_timezone()).strftime(
+        "%Y.%m.%d-%H.%M.%S.%f"
+    )
 
 
 class StorageService:
@@ -27,17 +53,16 @@ class StorageService:
         ):
             path.mkdir(parents=True, exist_ok=True)
 
-    def next_record_id(self, date_label: str) -> str:
+    def next_record_id(self, captured_at: datetime) -> str:
         captures_dir = self.settings.paths.captures_dir
         captures_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"record_{date_label}_"
-        existing = sorted(path.name for path in captures_dir.glob(f"{prefix}*") if path.is_dir())
-        next_index = 1
-        if existing:
-            last = existing[-1].rsplit("_", 1)[-1]
-            if last.isdigit():
-                next_index = int(last) + 1
-        return f"{prefix}{next_index:03d}"
+        candidate_time = captured_at
+        while True:
+            timestamp = format_storage_timestamp(candidate_time)
+            record_id = f"record_{timestamp}"
+            if not (captures_dir / record_id).exists():
+                return record_id
+            candidate_time += timedelta(microseconds=1)
 
     def record_dir(self, record_id: str) -> Path:
         return self.settings.paths.captures_dir / record_id
@@ -61,30 +86,119 @@ class StorageService:
             with metadata_path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=METADATA_FIELDS)
                 writer.writeheader()
+        log_path = record_dir / "record.log.csv"
+        if not log_path.exists():
+            with log_path.open("w", newline="", encoding="utf-8-sig") as handle:
+                csv.DictWriter(
+                    handle,
+                    fieldnames=MODE_CAPTURE_LOG_FIELDS,
+                ).writeheader()
         return record_dir
 
-    def record_json_path(self, record_id: str) -> Path:
-        return self.record_dir(record_id) / "record.json"
+    def config_path(self, record_id: str) -> Path:
+        return self.record_dir(record_id) / "config.json"
 
-    def create_mode_layout(self, record_id: str, mode_folder: str) -> Path:
-        mode_dir = self.record_dir(record_id) / "modes" / mode_folder
-        for camera_id in CAMERA_ROLES:
-            (mode_dir / camera_id).mkdir(parents=True, exist_ok=True)
-        log_path = mode_dir / "capture_log.csv"
+    def mode_dir(
+        self,
+        record_id: str,
+        mode_folder: str,
+        record_path: str | Path | None = None,
+    ) -> Path:
+        record_dir = self._record_directory(record_id, record_path)
+        return record_dir / "modes" / mode_folder
+
+    def create_mode_layout(
+        self,
+        record_id: str,
+        mode_folder: str,
+        record_path: str | Path | None = None,
+    ) -> Path:
+        mode_dir = self.mode_dir(
+            record_id,
+            mode_folder,
+            record_path,
+        )
+        mode_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = mode_dir / "metadata.csv"
+        if not metadata_path.exists():
+            with metadata_path.open("w", newline="", encoding="utf-8-sig") as handle:
+                csv.DictWriter(handle, fieldnames=METADATA_FIELDS).writeheader()
+        log_path = mode_dir / "mode.log.csv"
         if not log_path.exists():
             with log_path.open("w", newline="", encoding="utf-8-sig") as handle:
                 csv.DictWriter(handle, fieldnames=MODE_CAPTURE_LOG_FIELDS).writeheader()
         return mode_dir
 
-    def mode_log_path(self, record_id: str, mode_folder: str) -> Path:
-        return self.record_dir(record_id) / "modes" / mode_folder / "capture_log.csv"
+    def mode_log_path(
+        self,
+        record_id: str,
+        mode_folder: str,
+        record_path: str | Path | None = None,
+    ) -> Path:
+        mode_dir = self.mode_dir(
+            record_id,
+            mode_folder,
+            record_path,
+        )
+        return mode_dir / "mode.log.csv"
 
-    def append_mode_log(self, record_id: str, mode_folder: str, record: dict) -> None:
-        log_path = self.mode_log_path(record_id, mode_folder)
+    def mode_metadata_path(
+        self,
+        record_id: str,
+        mode_folder: str,
+        record_path: str | Path | None = None,
+    ) -> Path:
+        return self.mode_dir(
+            record_id,
+            mode_folder,
+            record_path,
+        ) / "metadata.csv"
+
+    def _append_csv_rows(
+        self,
+        paths: tuple[Path, ...],
+        fieldnames: tuple[str, ...],
+        record: dict,
+    ) -> None:
+        previous_sizes: dict[Path, int] = {}
+        try:
+            for path in paths:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    with path.open("w", newline="", encoding="utf-8-sig") as handle:
+                        csv.DictWriter(handle, fieldnames=fieldnames).writeheader()
+                previous_sizes[path] = path.stat().st_size
+                with path.open("a", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                    writer.writerow({field: record.get(field) for field in fieldnames})
+        except Exception:
+            for path, previous_size in previous_sizes.items():
+                with path.open("r+b") as handle:
+                    handle.truncate(previous_size)
+            raise
+
+    def append_mode_log(
+        self,
+        record_id: str,
+        mode_folder: str,
+        record: dict,
+        record_path: str | Path | None = None,
+    ) -> None:
+        self.create_mode_layout(
+            record_id,
+            mode_folder,
+            record_path,
+        )
         with self._lock:
-            with log_path.open("a", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=MODE_CAPTURE_LOG_FIELDS)
-                writer.writerow({field: record.get(field) for field in MODE_CAPTURE_LOG_FIELDS})
+            self._append_csv_rows(
+                (
+                    self._record_directory(record_id, record_path)
+                    / "record.log.csv",
+                    self.mode_log_path(record_id, mode_folder, record_path),
+                ),
+                MODE_CAPTURE_LOG_FIELDS,
+                record,
+            )
 
     def metadata_path(
         self,
@@ -92,6 +206,25 @@ class StorageService:
         record_path: str | Path | None = None,
     ) -> Path:
         return self._record_directory(record_id, record_path) / "metadata.csv"
+
+    @staticmethod
+    def _mode_filename_parts(mode_folder: str) -> tuple[str, str]:
+        try:
+            mode_name, mode_number = mode_folder.rsplit(".", 1)
+            mode_type = CAPTURE_MODE_TYPES_BY_NAME[mode_name]
+            number = int(mode_number)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid capture mode folder: {mode_folder}") from exc
+        return CAPTURE_MODE_ABBREVIATIONS[mode_type], f"{number:02d}"
+
+    def _round_dir(
+        self,
+        mode_dir: Path,
+        round_number: int,
+    ) -> Path:
+        path = mode_dir / "rounds" / f"round.{round_number:02d}"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def next_capture_path(
         self,
@@ -122,18 +255,29 @@ class StorageService:
         cycle_id: int,
         capture_index: int,
         angle_deg: float,
+        captured_at: datetime,
+        continuous: bool,
         record_path: str | Path | None = None,
     ) -> Path:
-        folder = (
-            self._record_directory(record_id, record_path)
-            / "modes"
-            / mode_folder
-            / camera_id
+        mode_dir = self.create_mode_layout(
+            record_id,
+            mode_folder,
+            record_path,
         )
+        timestamp = format_storage_timestamp(captured_at)
+        round_number = 0 if continuous else cycle_id
+        round_dir = self._round_dir(
+            mode_dir,
+            round_number,
+        )
+        folder = round_dir / f"snapshot.{capture_index:02d}_{timestamp}"
         folder.mkdir(parents=True, exist_ok=True)
-        return folder / (
-            f"cycle_{cycle_id:06d}_capture_{capture_index:06d}_angle_{angle_deg:06.2f}.jpg"
+        abbreviation, mode_number = self._mode_filename_parts(mode_folder)
+        filename = (
+            f"{camera_id}-{abbreviation}.{mode_number}_"
+            f"r.{round_number:02d}_s.{capture_index:02d}_{timestamp}.jpg"
         )
+        return folder / filename
 
     def relative_to_record(
         self,
@@ -157,9 +301,9 @@ class StorageService:
             raise ValueError(f"Unsupported snapshot camera: {camera_id}")
         directory = self.settings.paths.snapshots_dir
         directory.mkdir(parents=True, exist_ok=True)
-        candidate_time = captured_at.astimezone(timezone.utc)
+        candidate_time = captured_at
         while True:
-            timestamp = candidate_time.strftime("%Y%m%dT%H%M%S%fZ")
+            timestamp = format_storage_timestamp(candidate_time)
             path = directory / f"{camera_id}_{timestamp}.jpg"
             if not path.exists():
                 return path

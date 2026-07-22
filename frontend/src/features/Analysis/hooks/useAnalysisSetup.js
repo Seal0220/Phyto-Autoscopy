@@ -14,6 +14,7 @@ import {
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
 
+import { ANALYSIS_SETUP_STEPS } from "../analysisConfig";
 import {
   analysisMutationErrorMessage,
   createAnalysisRun,
@@ -23,6 +24,8 @@ import {
   validateAnalysisRun,
 } from "../lib/analysisApiUtils";
 import {
+  analysisCameraSourcesPayload,
+  analysisCameraSourceRequired,
   analysisMethodFromCameraSources,
   analysisSetupFromRecord,
   analysisSourcesFromPayload,
@@ -36,15 +39,19 @@ function mutationOutcomeUnknown(error) {
   return error instanceof UnknownMutationOutcomeError;
 }
 
-function sourceLocationsMatch(
+function sourceConfigurationsMatch(
   left,
   right,
 ) {
   return left?.recordId === right?.recordId
-    && ["top", "side", "rotating"].every((cameraId) => (
-      left?.cameraSources?.[cameraId]?.path
-      === right?.cameraSources?.[cameraId]?.path
-    ));
+    && left?.recordPath === right?.recordPath
+    && left?.method === right?.method
+    && [...(left?.selectedModeIds || [])].sort().join("|")
+      === [...(right?.selectedModeIds || [])].sort().join("|")
+    && ["top", "side", "rotating"].every(
+      (cameraId) => Boolean(left?.cameraSources?.[cameraId]?.enabled)
+        === Boolean(right?.cameraSources?.[cameraId]?.enabled),
+    );
 }
 
 export default function useAnalysisSetup({
@@ -98,7 +105,7 @@ export default function useAnalysisSetup({
   const performSourceScan = useCallback(async (sourceSetup) => {
     abortRequest(
       sourceScanControllerRef.current,
-      "已由新的影像目錄掃描取代。",
+      "已由新的捕捉配置掃描取代。",
     );
     const controller = new AbortController();
     sourceScanControllerRef.current = controller;
@@ -109,15 +116,16 @@ export default function useAnalysisSetup({
       const preview = await previewAnalysisSources(
         {
           record_id: sourceSetup.recordId || null,
+          mode_ids: sourceSetup.selectedModeIds,
           method: sourceSetup.method,
-          camera_sources: sourceSetup.cameraSources,
+          camera_sources: analysisCameraSourcesPayload(sourceSetup),
         },
         controller.signal,
       );
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setSetup((previous) => {
-        if (!sourceLocationsMatch(previous, sourceSetup)) return previous;
+        if (!sourceConfigurationsMatch(previous, sourceSetup)) return previous;
 
         const next = {
           ...previous,
@@ -135,7 +143,7 @@ export default function useAnalysisSetup({
       if (mountedRef.current) {
         setStepError(messageFromError(
           error,
-          "掃描影像目錄失敗。",
+          "掃描捕捉配置失敗。",
         ));
       }
       return false;
@@ -175,7 +183,7 @@ export default function useAnalysisSetup({
         : setupRef.current;
       setupRef.current = nextSetup;
       setSetup(nextSetup);
-      if (selectedSource) {
+      if (selectedSource && nextSetup.selectedModeIds.length > 0) {
         void performSourceScan(nextSetup);
       }
       setLoadError("");
@@ -217,9 +225,17 @@ export default function useAnalysisSetup({
     );
     setupRef.current = nextSetup;
     setSetup(nextSetup);
+    setHighestStep(1);
     setStepError("");
 
     if (!source) {
+      abortRequest(sourceScanControllerRef.current);
+      sourceScanControllerRef.current = null;
+      setSourceScanning(false);
+      return false;
+    }
+
+    if (nextSetup.selectedModeIds.length === 0) {
       abortRequest(sourceScanControllerRef.current);
       sourceScanControllerRef.current = null;
       setSourceScanning(false);
@@ -245,10 +261,10 @@ export default function useAnalysisSetup({
     cameraId,
     patch,
   ) {
+    if (analysisCameraSourceRequired(cameraId)) return;
+
     const previous = setupRef.current;
     const currentSource = previous.cameraSources[cameraId];
-    const pathChanged = Object.hasOwn(patch, "path")
-      && patch.path !== currentSource.path;
     const cameraSources = {
       ...previous.cameraSources,
       [cameraId]: {
@@ -260,22 +276,54 @@ export default function useAnalysisSetup({
       ...previous,
       cameraSources,
       method: analysisMethodFromCameraSources(cameraSources),
-      sourcePreview: pathChanged ? null : previous.sourcePreview,
+      sourcePreview: null,
     };
     setupRef.current = next;
     setSetup(next);
 
-    if (pathChanged) {
-      window.clearTimeout(sourceScanTimerRef.current);
-      abortRequest(sourceScanControllerRef.current);
+    window.clearTimeout(sourceScanTimerRef.current);
+    sourceScanTimerRef.current = null;
+    setStepError("");
+
+    if (!next.recordPath || next.selectedModeIds.length === 0) {
+      abortRequest(
+        sourceScanControllerRef.current,
+        "已由新的分析視角選擇取代。",
+      );
       sourceScanControllerRef.current = null;
       setSourceScanning(false);
-      sourceScanTimerRef.current = window.setTimeout(() => {
-        sourceScanTimerRef.current = null;
-        void performSourceScan(setupRef.current);
-      }, 400);
+      return false;
+    }
+
+    return performSourceScan(next);
+  }
+
+  function updateModeSelection(modeId) {
+    const previous = setupRef.current;
+    const selectedModeIds = previous.selectedModeIds.includes(modeId)
+      ? previous.selectedModeIds.filter((id) => id !== modeId)
+      : [...previous.selectedModeIds, modeId];
+    const next = {
+      ...previous,
+      selectedModeIds,
+      sourcePreview: null,
+    };
+    setupRef.current = next;
+    setSetup(next);
+    window.clearTimeout(sourceScanTimerRef.current);
+    sourceScanTimerRef.current = null;
+    abortRequest(
+      sourceScanControllerRef.current,
+      "已由新的擷取模式選擇取代。",
+    );
+    sourceScanControllerRef.current = null;
+    setSourceScanning(false);
+    if (selectedModeIds.length === 0) {
+      setStepError("請至少選擇一個擷取模式。")
+      return false;
     }
     setStepError("");
+    return performSourceScan(next);
   }
 
   function scanSources() {
@@ -321,7 +369,10 @@ export default function useAnalysisSetup({
         setup,
         currentStep,
       );
-      const next = Math.min(4, currentStep + 1);
+      const next = Math.min(
+        ANALYSIS_SETUP_STEPS.length,
+        currentStep + 1,
+      );
       setCurrentStep(next);
       setHighestStep((previous) => Math.max(previous, next));
       setStepError("");
@@ -387,7 +438,7 @@ export default function useAnalysisSetup({
     try {
       validateAnalysisSetupStep(
         setup,
-        4,
+        ANALYSIS_SETUP_STEPS.length,
       );
     } catch (error) {
       setStepError(messageFromError(
@@ -490,6 +541,7 @@ export default function useAnalysisSetup({
     selectRecord,
     updateSetup,
     updateCameraSource,
+    updateModeSelection,
     scanSources,
     updateRoi,
     updateParameter,

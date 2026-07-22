@@ -138,7 +138,7 @@ export default function AnalysisSetupParametersStep({
             options={MINIMUM_PATH_CONNECTIVITY_OPTIONS}
             description="選擇骨架圖中每個像素可連接的相鄰方向。"
           />
-          <div className="grid min-h-11.5 content-center rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+          <div className="grid min-h-11.5 content-center rounded-xl border border-white/15 bg-black/15 px-3 py-2">
             <span className="text-xs font-black text-neutral-500">Minimum Path 邊權重</span>
             <span className="mt-1 text-sm font-bold text-neutral-200">
               距離轉換反比（固定）
@@ -175,7 +175,7 @@ export default function AnalysisSetupParametersStep({
             description="超過此時間的缺失區段不進行線性插值。"
             required
           />
-          <div className="grid min-h-11.5 content-center rounded-xl border border-white/10 bg-black/10 px-3 py-2">
+          <div className="grid min-h-11.5 content-center rounded-xl border border-white/15 bg-black/15 px-3 py-2">
             <span className="text-xs font-black text-neutral-500">
               高重投影誤差門檻
             </span>

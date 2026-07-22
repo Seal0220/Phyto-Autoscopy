@@ -18,9 +18,10 @@ import {
   Panel,
   PanelHeader,
 } from "@/components/panels/Panel";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
+import { ANALYSIS_SETUP_STEPS } from "./analysisConfig";
+import AnalysisAvailableRecords from "./components/AnalysisAvailableRecords";
 import AnalysisSetupParametersStep from "./components/AnalysisSetupParametersStep";
 import AnalysisSetupProgress from "./components/AnalysisSetupProgress";
 import AnalysisSetupRangeStep from "./components/AnalysisSetupRangeStep";
@@ -50,6 +51,7 @@ export default function AnalysisNew({
     selectRecord,
     updateSetup,
     updateCameraSource,
+    updateModeSelection,
     scanSources,
     updateRoi,
     updateParameter,
@@ -111,17 +113,26 @@ export default function AnalysisNew({
   function renderStep() {
     if (currentStep === 1) {
       return (
-        <AnalysisSetupSourcesStep
+        <AnalysisAvailableRecords
+          selectedRecordId={setup.recordId}
           sources={sources}
-          setup={setup}
-          scanning={sourceScanning}
-          onRecordSelect={selectRecord}
-          onCameraSourceChange={updateCameraSource}
-          onScan={scanSources}
+          onSelect={selectRecord}
         />
       );
     }
     if (currentStep === 2) {
+      return (
+        <AnalysisSetupSourcesStep
+          record={selectedSource}
+          setup={setup}
+          scanning={sourceScanning}
+          onCameraSourceChange={updateCameraSource}
+          onModeSelectionChange={updateModeSelection}
+          onScan={scanSources}
+        />
+      );
+    }
+    if (currentStep === 3) {
       return (
         <AnalysisSetupRangeStep
           setup={setup}
@@ -130,7 +141,7 @@ export default function AnalysisNew({
         />
       );
     }
-    if (currentStep === 3) {
+    if (currentStep === 4) {
       return (
         <AnalysisSetupParametersStep
           method={setup.method}
@@ -221,10 +232,7 @@ export default function AnalysisNew({
   }
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
+    <div className="mx-auto grid w-full max-w-7xl gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="新增分析">
           <PanelHeader
             title="新增分析"
@@ -243,7 +251,7 @@ export default function AnalysisNew({
                   </Button>
                 ) : null}
                 <Button onClick={() => router.push("/analysis")}>
-                  <FiArrowLeft
+                  <FiHome
                     className="size-4 shrink-0"
                     aria-hidden="true"
                   />
@@ -256,7 +264,7 @@ export default function AnalysisNew({
           <div className="grid gap-5 p-5 max-sm:p-4">
             {loading && !hasOptions ? (
               <div
-                className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
+                className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400"
                 role="status"
               >
                 讀取分析選項中…
@@ -302,7 +310,7 @@ export default function AnalysisNew({
                         </Button>
                       ) : null}
 
-                      {currentStep < 4 ? (
+                      {currentStep < ANALYSIS_SETUP_STEPS.length ? (
                         <Button
                           className="ml-auto"
                           variant="primary"
@@ -322,7 +330,6 @@ export default function AnalysisNew({
             ) : null}
           </div>
         </Panel>
-      </div>
-    </main>
+    </div>
   );
 }

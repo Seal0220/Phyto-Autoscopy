@@ -19,6 +19,9 @@ class MockMotorController:
     def connect(self) -> None:
         self.state.connected = True
 
+    def start(self) -> None:
+        self.connect()
+
     def close(self) -> None:
         self.state.connected = False
         self.state.engaged = False

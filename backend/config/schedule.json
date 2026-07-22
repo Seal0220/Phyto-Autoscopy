@@ -4,7 +4,7 @@
     "project_name_zh": "綠色自視症",
     "device_name": "CHLOROCULUS",
     "capture_interval_seconds": 60,
-    "duration_minutes": 240,
+    "duration_seconds": 14400,
     "total_cycles": 48,
     "cycle_duration_seconds": 300,
     "cycle_interval_seconds": 0,

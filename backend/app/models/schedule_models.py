@@ -13,6 +13,14 @@ class TimeIntervalMode(BaseModel):
     interval_seconds: float = Field(gt=0)
 
 
+class ContinuousIntervalMode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    type: Literal["continuous_interval"]
+    interval_seconds: float = Field(gt=0)
+
+
 class AngleIntervalMode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -45,7 +53,11 @@ class EqualDivisionsMode(BaseModel):
 
 
 CaptureMode = Annotated[
-    TimeIntervalMode | AngleIntervalMode | SpecificAnglesMode | EqualDivisionsMode,
+    ContinuousIntervalMode
+    | TimeIntervalMode
+    | AngleIntervalMode
+    | SpecificAnglesMode
+    | EqualDivisionsMode,
     Field(discriminator="type"),
 ]
 
@@ -60,7 +72,9 @@ class SchedulePlan(BaseModel):
     rotation_end_deg: float
     rotation_step_deg: float = Field(gt=0)
     angle_tolerance_deg: float = Field(ge=0)
+    stabilization_delay_ms: int = Field(default=800, ge=0, le=60000)
     capture_on_return: bool
+    return_to_origin: bool = True
     modes: list[CaptureMode] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -69,10 +83,10 @@ class SchedulePlan(BaseModel):
             if self.total_cycles is None or self.cycle_duration_seconds is None:
                 raise ValueError("啟用旋臂時必須設定總輪數與每輪時長。")
         elif any(
-            not isinstance(mode, TimeIntervalMode)
+            not isinstance(mode, ContinuousIntervalMode)
             for mode in self.modes
         ):
-            raise ValueError("未啟用旋臂時只能使用時間間隔擷取模式。")
+            raise ValueError("未啟用旋臂時只能使用連續間隔擷取模式。")
         if self.rotation_end_deg < self.rotation_start_deg:
             raise ValueError("結束角度不可小於起始角度。")
         mode_ids = [mode.id for mode in self.modes]
@@ -103,7 +117,13 @@ class ScheduleStartRequest(BaseModel):
     rotation_start_deg: float | None = None
     rotation_end_deg: float | None = None
     angle_tolerance_deg: float | None = Field(default=None, ge=0)
+    stabilization_delay_ms: int | None = Field(
+        default=None,
+        ge=0,
+        le=60000,
+    )
     capture_on_return: bool | None = None
+    return_to_origin: bool | None = None
     modes: list[CaptureMode] = Field(default_factory=list, max_length=20)
 
 

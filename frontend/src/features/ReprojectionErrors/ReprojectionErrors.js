@@ -119,7 +119,7 @@ export default function ReprojectionErrors({
             title="每影格重投影誤差"
             description="同圖顯示俯視、側視、環繞、頂+側基準與多視角精修誤差；紅色虛線為 10 px 參考線。"
           />
-          <div className="aspect-[19/9] min-w-0 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+          <div className="aspect-[19/9] min-w-0 overflow-hidden rounded-xl border border-white/15 bg-black/20">
             <svg
               className="size-full"
               viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
@@ -212,7 +212,7 @@ export default function ReprojectionErrors({
             title="誤差分布"
             description={`最大誤差 ${statistics.maximum.toFixed(2)} px。`}
           />
-          <div className="grid h-56 grid-cols-8 items-end gap-1 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="grid h-56 grid-cols-8 items-end gap-1 rounded-xl border border-white/15 bg-black/20 p-3">
             {histogram.map((
               bin,
               index,

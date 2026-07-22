@@ -10,7 +10,7 @@ export default function ScheduleModeFields({
 }) {
   const fieldId = `schedule-${mode.id}-value`;
 
-  if (mode.type === "time_interval") {
+  if (["continuous_interval", "time_interval"].includes(mode.type)) {
     return (
       <DurationInput
         id={fieldId}

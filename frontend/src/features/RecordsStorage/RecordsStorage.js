@@ -71,7 +71,7 @@ export default function RecordsStorage({
           <div className="max-h-96 overflow-auto">
           <table className="w-full min-w-256 border-collapse text-left text-sm">
             <thead className="sticky top-0 z-10 bg-[#07130f]/95 backdrop-blur-xl">
-              <tr className="border-b border-white/10 bg-white/[0.03] text-[11px] font-black tracking-[0.12em] text-neutral-400">
+              <tr className="border-b border-white/15 bg-white/[0.03] text-[11px] font-black tracking-[0.12em] text-neutral-400">
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">狀態</th>
                 <th className="px-4 py-3">儲存位置</th>
@@ -83,7 +83,7 @@ export default function RecordsStorage({
             <tbody>
               {records.length ? records.map((record) => (
                 <tr
-                  className="border-b border-white/10 text-neutral-200 last:border-b-0"
+                  className="border-b border-white/15 text-neutral-200 last:border-b-0"
                   key={record.record_id}
                 >
                   <td className="px-4 py-3.5">{record.record_id}</td>

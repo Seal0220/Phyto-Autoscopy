@@ -1,6 +1,5 @@
 export const SETTINGS_GROUPS = [
   ["motor", "馬達"],
-  ["schedule", "排程"],
   ["logging", "系統日誌"],
 ];
 
@@ -10,13 +9,6 @@ export const SETTINGS_CONFIG = {
       velocity_limit_deg_s: true,
       acceleration_deg_s2: true,
       movement_timeout_seconds: true,
-    },
-  },
-  schedule: {
-    schedule: {
-      stabilization_delay_ms: true,
-      capture_on_return: true,
-      return_to_origin: true,
     },
   },
   logging: {
@@ -35,23 +27,12 @@ export const FIELD_META = {
     step: 0.1,
     suffix: "度/秒²",
   },
-  capture_on_return: {
-    label: "往返皆擷取",
-    description: "關閉時，抵達結束角度後會直接回到原點並開始下一輪；開啟時，會依正向相同的步進與擷取配置返回原點，並在回程擷取。",
-  },
   capture_interval_seconds: {
     label: "擷取間隔",
     type: "duration",
     unit: "seconds",
     min: 1,
     max: 86400,
-  },
-  duration_minutes: {
-    label: "總時長",
-    type: "duration",
-    unit: "minutes",
-    min: 1,
-    max: 10080,
   },
   level: {
     label: "日誌層級",
@@ -66,10 +47,6 @@ export const FIELD_META = {
     max: 300,
     className: "col-span-2",
     description: "超過時間仍未完成移動時中止命令。",
-  },
-  return_to_origin: {
-    label: "排程結束後回到原點",
-    description: "整個排程完成、停止或失敗後，自動讓旋臂回到原點。",
   },
   rotation_enabled: {
     label: "啟用旋轉",
@@ -99,14 +76,6 @@ export const FIELD_META = {
     step: 0.1,
     suffix: "度",
   },
-  stabilization_delay_ms: {
-    label: "穩定等待",
-    type: "duration",
-    unit: "milliseconds",
-    min: 0,
-    max: 60000,
-    description: "旋臂停止後，等待植物晃動減弱再拍攝。",
-  },
   velocity_limit_deg_s: {
     label: "速度限制",
     type: "number",
@@ -125,12 +94,6 @@ export const SECTION_META = {
       fieldsClassName: "grid-cols-2",
     },
   },
-  schedule: {
-    execution: {
-      title: "執行行為",
-      description: "排程拍攝前後的共用硬體行為。",
-    },
-  },
   logging: {
     root: {
       title: "系統日誌",
@@ -140,6 +103,5 @@ export const SECTION_META = {
 
 export const SECTION_ORDER = {
   motor: ["movement"],
-  schedule: ["execution"],
   logging: ["root"],
 };

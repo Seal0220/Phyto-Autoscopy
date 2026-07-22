@@ -28,8 +28,14 @@ export default function ScheduleModes({
         ...previous.modes,
         {
           id: `mode-${index}`,
-          type: "time_interval",
-          ...SCHEDULE_MODE_META.time_interval.initial,
+          type: rotationEnabled
+            ? "time_interval"
+            : "continuous_interval",
+          ...SCHEDULE_MODE_META[
+            rotationEnabled
+              ? "time_interval"
+              : "continuous_interval"
+          ].initial,
         },
       ],
     }));
@@ -86,8 +92,8 @@ export default function ScheduleModes({
         titleId="capture-modes-title"
         title="擷取模式"
         description={rotationEnabled
-          ? "共四種擷取模式，每一模式將獨立產生紀錄檔。"
-          : "未啟用旋臂時固定使用雙鏡頭時間間隔擷取。"
+          ? "共五種擷取模式，每一模式將獨立產生紀錄檔。"
+          : "未啟用旋臂時固定使用雙鏡頭連續間隔擷取。"
         }
       >
         <Button
@@ -110,7 +116,7 @@ export default function ScheduleModes({
               mode={mode}
               index={index}
               canEdit={canEdit}
-              fixedTimeInterval={!rotationEnabled}
+              fixedContinuousInterval={!rotationEnabled}
               onChangeType={(label) => changeModeType(mode.id, label)}
               onRemove={() => removeMode(mode.id)}
               onUpdate={(patch) => updateMode(mode.id, patch)}
@@ -118,7 +124,7 @@ export default function ScheduleModes({
           ))}
         </div>
       ) : (
-        <div className="grid min-h-28 place-items-center rounded-2xl border border-dashed border-white/15 bg-black/10 px-4 text-center text-sm font-semibold text-neutral-500">
+        <div className="grid min-h-28 place-items-center rounded-2xl border border-dashed border-white/15 bg-black/15 px-4 text-center text-sm font-semibold text-neutral-500">
           尚未加入擷取模式，請至少新增一個模式後再開始排程。
         </div>
       )}

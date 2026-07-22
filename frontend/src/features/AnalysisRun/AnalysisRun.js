@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FiArrowLeft,
+  FiHome,
   FiRefreshCw,
   FiX,
 } from "react-icons/fi";
@@ -16,7 +16,6 @@ import {
   PanelHeader,
   StatusPill,
 } from "@/components/panels/Panel";
-import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
@@ -115,19 +114,16 @@ export default function AnalysisRun({
   const locked = Boolean(pendingAction) || mutationOutcomeUnknown;
 
   return (
-    <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-      <MainNavigation />
-
-      <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-[5.6rem] max-[980px]:pt-[8.8rem]">
-        <Panel aria-label="分析執行詳情">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
+        <Panel aria-label="分析紀錄詳情">
           <PanelHeader
-            title="分析執行"
+            title="分析紀錄"
             action={(
               <Button
                 disabled={Boolean(pendingAction)}
                 onClick={() => router.push("/analysis")}
               >
-                <FiArrowLeft
+                <FiHome
                   className="size-4 shrink-0"
                   aria-hidden="true"
                 />
@@ -165,10 +161,10 @@ export default function AnalysisRun({
 
             {loading && !effectiveRun ? (
               <div
-                className="grid min-h-36 place-items-center rounded-xl border border-white/10 bg-black/10 p-4 text-sm font-semibold text-neutral-400"
+                className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400"
                 role="status"
               >
-                讀取分析執行中…
+                讀取分析紀錄中…
               </div>
             ) : null}
 
@@ -193,7 +189,7 @@ export default function AnalysisRun({
                   <StatusCard
                     title="人工檢查"
                     content={effectiveRun.manual_review_completed ? "已完成" : "未完成"}
-                    note={effectiveRun.status === "needs_review" ? "等待修正" : "分析執行"}
+                    note={effectiveRun.status === "needs_review" ? "等待修正" : "分析紀錄"}
                   />
                 </div>
 
@@ -205,7 +201,7 @@ export default function AnalysisRun({
                     </StatusPill>
                   </div>
                   <div
-                    className="h-2 overflow-hidden rounded-full border border-white/10 bg-black/20"
+                    className="h-2 overflow-hidden rounded-full border border-white/15 bg-black/20"
                     role="progressbar"
                     aria-label="分析進度"
                     aria-valuemin={0}
@@ -310,7 +306,6 @@ export default function AnalysisRun({
             ) : null}
           </div>
         </Panel>
-      </div>
-    </main>
+    </div>
   );
 }

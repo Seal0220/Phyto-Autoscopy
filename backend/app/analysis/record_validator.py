@@ -24,6 +24,11 @@ _CAMERA_FILE_PREFIX_PATTERN = re.compile(
     r"^(?:top|side|rotating)[_-]",
     re.IGNORECASE,
 )
+_MODE_CAPTURE_FILE_PATTERN = re.compile(
+    r"^[A-Z]{2}\.\d+_r\.\d+_s\.\d+_"
+    r"\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}\.\d{6}$",
+    re.IGNORECASE,
+)
 
 ImageProbe = Callable[[Path], tuple[int, int] | None]
 
@@ -152,6 +157,10 @@ def extract_capture_group(file_path: str | Path, camera_id: object) -> str | Non
         if part.lower() != camera_name
     ]
     stem = _CAMERA_FILE_PREFIX_PATTERN.sub("", pure_path.stem)
+    if _MODE_CAPTURE_FILE_PATTERN.match(stem):
+        stem = ""
+    if stem.lower() == camera_name:
+        stem = ""
     capture_match = _CAPTURE_FILE_PATTERN.match(stem)
     if capture_match:
         stem = (
@@ -234,13 +243,17 @@ def _load_record_metadata(record_path: Path) -> tuple[dict[str, Any], Path | Non
     metadata_path = next(
         (
             candidate
-            for candidate in (record_path / "record.json", record_path / "session.json")
+            for candidate in (
+                record_path / "config.json",
+                record_path / "record.json",
+                record_path / "session.json",
+            )
             if candidate.is_file()
         ),
         None,
     )
     if metadata_path is None:
-        return {}, None, "找不到紀錄 Metadata（record.json 或 session.json）。"
+        return {}, None, "找不到紀錄設定（config.json）。"
     try:
         payload = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -287,8 +300,14 @@ class CaptureRecordValidator:
         timestamp_tolerance_ms: float = 1000.0,
         manual_frame_offset: int = 0,
         required_camera_ids: Iterable[str] = ("top", "side"),
+        selected_mode_folders: Iterable[str] | None = None,
     ) -> CaptureRecordValidation:
         required_cameras = frozenset(required_camera_ids)
+        mode_folders = frozenset(
+            str(folder).strip()
+            for folder in (selected_mode_folders or ())
+            if str(folder).strip()
+        )
         if not required_cameras or not required_cameras.issubset(CANONICAL_CAMERA_IDS):
             raise ValueError("必要相機只能使用 top、side、rotating。")
         record_id = str(
@@ -358,6 +377,12 @@ class CaptureRecordValidator:
             camera_id = str(_get_value(capture, "camera_id", "")).strip().lower()
             if camera_id not in CANONICAL_CAMERA_IDS or camera_id not in required_cameras:
                 continue
+            raw_file_path = _get_value(capture, "file_path", "")
+            path_parts = PurePosixPath(
+                str(raw_file_path).replace("\\", "/")
+            ).parts
+            if mode_folders and not mode_folders.intersection(path_parts):
+                continue
             original_camera_id = camera_id
             source_frame_count += 1
             raw_capture_id = _get_value(capture, "id", source_index)
@@ -374,7 +399,6 @@ class CaptureRecordValidator:
                 )
 
             capture_status = str(_get_value(capture, "status", "")).strip().lower()
-            raw_file_path = _get_value(capture, "file_path", "")
             if capture_status not in SUCCESS_CAPTURE_STATUSES:
                 issues.append(
                     RecordValidationIssue(
@@ -639,6 +663,7 @@ def validate_capture_record(
     timestamp_tolerance_ms: float = 1000.0,
     manual_frame_offset: int = 0,
     required_camera_ids: Iterable[str] = ("top", "side"),
+    selected_mode_folders: Iterable[str] | None = None,
 ) -> CaptureRecordValidation:
     return CaptureRecordValidator(image_probe=image_probe).validate(
         record,
@@ -646,4 +671,5 @@ def validate_capture_record(
         timestamp_tolerance_ms=timestamp_tolerance_ms,
         manual_frame_offset=manual_frame_offset,
         required_camera_ids=required_camera_ids,
+        selected_mode_folders=selected_mode_folders,
     )

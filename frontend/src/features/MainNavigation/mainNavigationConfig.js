@@ -19,8 +19,8 @@ export const MAIN_NAVIGATION_ITEMS = [
 
 export const CAPTURE_SECONDARY_NAVIGATION_ITEMS = [
   {
-    href: "/capture#image-preview",
-    label: "影像預覽",
+    href: "/capture#camera",
+    label: "攝影機",
   },
   {
     href: "/capture#system-status",

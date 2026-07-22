@@ -11,7 +11,7 @@ export default function AnalysisSetupProgress({
       className="min-w-0 overflow-x-auto"
       aria-label="新增分析步驟"
     >
-      <ol className="grid min-w-144 grid-cols-4 gap-2">
+      <ol className="grid min-w-180 grid-cols-5 gap-2">
         {ANALYSIS_SETUP_STEPS.map((step) => {
           const current = step.id === currentStep;
           const reached = step.id <= highestStep;
@@ -25,7 +25,7 @@ export default function AnalysisSetupProgress({
                     ? "border-emerald-200/75 bg-emerald-500/20 text-emerald-100"
                     : reached
                       ? "cursor-pointer border-white/15 bg-white/[0.07] text-neutral-200 hover:border-emerald-200/45 hover:bg-white/[0.12]"
-                      : "border-white/10 bg-black/10 text-neutral-500"
+                      : "border-white/15 bg-black/15 text-neutral-500"
                 }`}
                 aria-current={current ? "step" : undefined}
                 disabled={locked || !reached}

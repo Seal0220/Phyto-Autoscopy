@@ -146,7 +146,7 @@ def test_validator_reads_three_canonical_camera_roles(tmp_path) -> None:
     assert result.side_frames[0].original_camera_id == "side"
     assert result.pairable_frame_count == 1
     assert (record_path / "session.json").read_bytes() == original_metadata
-    assert not (record_path / "record.json").exists()
+    assert not (record_path / "config.json").exists()
 
 
 def test_validator_loads_capture_index_from_csv_read_only(tmp_path) -> None:

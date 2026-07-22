@@ -75,7 +75,7 @@ function PoseSummary({
   if (!metrics || Object.keys(metrics).length === 0) return null;
 
   return (
-    <div className="grid gap-2 border-t border-white/10 pt-3">
+    <div className="grid gap-2 border-t border-white/15 pt-3">
       <h5 className="m-0 text-xs font-black text-neutral-300">
         {title}
       </h5>
@@ -102,7 +102,7 @@ function PoseRow({ pose }) {
   ].filter(Boolean);
 
   return (
-    <li className="grid min-w-0 gap-2 border-b border-white/10 py-3 last:border-b-0">
+    <li className="grid min-w-0 gap-2 border-b border-white/15 py-3 last:border-b-0">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-xs font-black text-neutral-200">
           {CAMERA_LABELS[pose.camera_id] || pose.camera_id || "未知相機"}
@@ -175,7 +175,7 @@ export default function AnalysisPoseQuality({
 
   return (
     <section
-      className="grid gap-3 border-t border-white/10 pt-3"
+      className="grid gap-3 border-t border-white/15 pt-3"
       aria-label="相機姿態品質"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -298,11 +298,11 @@ export default function AnalysisPoseQuality({
       ) : null}
 
       {problemPoses.length ? (
-        <details className="group border-t border-white/10 pt-3">
+        <details className="group border-t border-white/15 pt-3">
           <summary className="cursor-pointer text-sm font-black text-neutral-300 transition-colors duration-200 hover:text-white">
             失敗與警告影像（{problemPoses.length} 張）
           </summary>
-          <ul className="mt-2 mb-0 max-h-80 list-none overflow-y-auto overscroll-contain border-y border-white/10 px-1">
+          <ul className="mt-2 mb-0 max-h-80 list-none overflow-y-auto overscroll-contain border-y border-white/15 px-1">
             {problemPoses.map((pose, index) => (
               <PoseRow
                 key={`${pose.camera_id}-${pose.input_id}-${index}`}

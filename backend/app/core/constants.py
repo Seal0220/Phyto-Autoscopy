@@ -8,6 +8,22 @@ CAMERA_NAMES = {
     "rotating": "CHLOROCULUS EYE-ARM",
 }
 
+CAPTURE_MODE_NAMES = {
+    "continuous_interval": "ContinuousInterval",
+    "time_interval": "TimeInterval",
+    "angle_interval": "AngleInterval",
+    "specific_angles": "SpecificAngles",
+    "equal_divisions": "EqualDivisions",
+}
+
+CAPTURE_MODE_ABBREVIATIONS = {
+    "continuous_interval": "CI",
+    "time_interval": "TI",
+    "angle_interval": "AI",
+    "specific_angles": "SA",
+    "equal_divisions": "ED",
+}
+
 METADATA_FIELDS = (
     "project_name",
     "project_name_zh",

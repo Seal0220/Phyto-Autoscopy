@@ -235,7 +235,7 @@ def test_capture_root_change_preserves_old_records_and_avoids_id_collision(
         assert updated.status_code == 200
 
         old_detail = client.get(f"/api/records/{first_record_id}")
-        old_file = client.get(f"/api/records/{first_record_id}/record-json")
+        old_file = client.get(f"/api/records/{first_record_id}/config-json")
         assert old_detail.status_code == 200
         assert old_file.status_code == 200
 
