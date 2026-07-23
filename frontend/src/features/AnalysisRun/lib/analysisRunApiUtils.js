@@ -91,23 +91,51 @@ export async function requestAnalysisResource(
   }
 }
 
-export function loadAnalysisRunBundle(
+function analysisPath(
+  analysisId,
+  suffix = "",
+) {
+  return `/api/analysis/${encodeURIComponent(analysisId)}${suffix}`;
+}
+
+export async function loadAnalysisRunBundle(
   analysisId,
   signal,
 ) {
-  const encodedId = encodeURIComponent(analysisId);
-
-  return Promise.all([
-    requestAnalysisResource(`/api/analysis/${encodedId}`, {
+  const [run, progress] = await Promise.all([
+    requestAnalysisResource(analysisPath(analysisId), {
       signal,
     }),
-    requestAnalysisResource(`/api/analysis/${encodedId}/progress`, {
-      signal,
-    }),
-    requestAnalysisResource(`/api/analysis/${encodedId}/frame-pairs`, {
+    requestAnalysisResource(analysisPath(analysisId, "/progress"), {
       signal,
     }),
   ]);
+
+  const [rounds, models, landmarks, trajectory] = await Promise.all([
+    requestAnalysisResource(analysisPath(analysisId, "/rounds"), {
+      signal,
+    }),
+    requestAnalysisResource(analysisPath(analysisId, "/round-models"), {
+      signal,
+    }),
+    requestAnalysisResource(analysisPath(analysisId, "/tip-landmarks"), {
+      signal,
+    }),
+    requestAnalysisResource(analysisPath(analysisId, "/tip-trajectory"), {
+      signal,
+    }),
+  ]);
+
+  return {
+    run,
+    progress,
+    formalData: {
+      rounds: Array.isArray(rounds) ? rounds : [],
+      models: Array.isArray(models) ? models : [],
+      landmarks: Array.isArray(landmarks) ? landmarks : [],
+      trajectory: Array.isArray(trajectory) ? trajectory : [],
+    },
+  };
 }
 
 function analysisActionTimeout(action) {

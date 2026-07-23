@@ -5,6 +5,18 @@ import sqlite3
 from app.database.connection import Database
 
 
+ANALYSIS_BACKUP_FILE_NAME = "phyto_autoscopy-backup.sqlite3"
+SUPPORTED_ANALYSIS_METHODS = (
+    "round_multiview",
+    "top_side_tip_only",
+)
+LEGACY_ANALYSIS_TABLES = (
+    "analysis_frame_pairs",
+    "analysis_detections",
+    "manual_corrections",
+)
+
+
 def _table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
     return connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -17,6 +29,70 @@ def _columns(connection: sqlite3.Connection, table_name: str) -> set[str]:
         row["name"]
         for row in connection.execute(f'PRAGMA table_info("{table_name}")').fetchall()
     }
+
+
+def _analysis_cleanup_required(connection: sqlite3.Connection) -> bool:
+    if any(
+        _table_exists(connection, table_name)
+        for table_name in LEGACY_ANALYSIS_TABLES
+    ):
+        return True
+    if not _table_exists(connection, "analysis_runs"):
+        return False
+    row = connection.execute(
+        """
+        SELECT
+            COUNT(*) AS total_count,
+            SUM(
+                CASE WHEN method_name NOT IN (?, ?) THEN 1 ELSE 0 END
+            ) AS unsupported_count
+        FROM analysis_runs
+        """,
+        SUPPORTED_ANALYSIS_METHODS,
+    ).fetchone()
+    return bool(
+        row
+        and (
+            int(row["total_count"] or 0) > 1
+            or int(row["unsupported_count"] or 0) > 0
+        )
+    )
+
+
+def _backup_database_before_analysis_cleanup(database: Database) -> None:
+    connection = database.connection
+    if not _analysis_cleanup_required(connection):
+        return
+    backup_path = database.path.with_name(ANALYSIS_BACKUP_FILE_NAME)
+    if backup_path.exists():
+        return
+    with sqlite3.connect(backup_path) as backup_connection:
+        connection.backup(backup_connection)
+
+
+def _cleanup_analysis_history(connection: sqlite3.Connection) -> None:
+    for table_name in LEGACY_ANALYSIS_TABLES:
+        connection.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    if not _table_exists(connection, "analysis_runs"):
+        return
+    connection.execute(
+        """
+        DELETE FROM analysis_runs
+        WHERE method_name NOT IN (?, ?)
+        """,
+        SUPPORTED_ANALYSIS_METHODS,
+    )
+    connection.execute(
+        """
+        DELETE FROM analysis_runs
+        WHERE analysis_id NOT IN (
+            SELECT analysis_id
+            FROM analysis_runs
+            ORDER BY created_at DESC, analysis_id DESC
+            LIMIT 1
+        )
+        """
+    )
 
 
 def _migrate_legacy_record_schema(connection: sqlite3.Connection) -> None:
@@ -42,57 +118,6 @@ def _migrate_legacy_record_schema(connection: sqlite3.Connection) -> None:
             connection.execute(
                 "ALTER TABLE captures RENAME COLUMN session_id TO record_id"
             )
-
-
-def _migrate_manual_correction_history(connection: sqlite3.Connection) -> None:
-    """Remove the legacy one-correction-per-frame UNIQUE constraint safely."""
-
-    row = connection.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='manual_corrections'"
-    ).fetchone()
-    if row is None:
-        return
-    normalized_sql = "".join(str(row["sql"] or "").lower().split())
-    if "unique(analysis_id,frame_id,camera_id)" not in normalized_sql:
-        return
-    connection.execute("DROP TABLE IF EXISTS manual_corrections_history_new")
-    connection.execute(
-        """
-        CREATE TABLE manual_corrections_history_new (
-            correction_id TEXT PRIMARY KEY,
-            analysis_id TEXT NOT NULL,
-            frame_id INTEGER NOT NULL,
-            camera_id TEXT NOT NULL,
-            automatic_x_px REAL,
-            automatic_y_px REAL,
-            corrected_x_px REAL,
-            corrected_y_px REAL,
-            operator_id TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            reason TEXT,
-            invalid INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
-        )
-        """
-    )
-    connection.execute(
-        """
-        INSERT INTO manual_corrections_history_new(
-            correction_id, analysis_id, frame_id, camera_id,
-            automatic_x_px, automatic_y_px, corrected_x_px,
-            corrected_y_px, operator_id, created_at, reason, invalid
-        )
-        SELECT
-            correction_id, analysis_id, frame_id, camera_id,
-            automatic_x_px, automatic_y_px, corrected_x_px,
-            corrected_y_px, operator_id, created_at, reason, invalid
-        FROM manual_corrections
-        """
-    )
-    connection.execute("DROP TABLE manual_corrections")
-    connection.execute(
-        "ALTER TABLE manual_corrections_history_new RENAME TO manual_corrections"
-    )
 
 
 def _analysis_runs_require_rebuild(connection: sqlite3.Connection) -> bool:
@@ -221,6 +246,7 @@ def _migrate_calibration_runs_intrinsic_only(
 
 
 def initialize_schema(database: Database) -> None:
+    _backup_database_before_analysis_cleanup(database)
     connection = database.connection
     connection.commit()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -357,6 +383,8 @@ def initialize_schema(database: Database) -> None:
                     camera_pose_results_json TEXT NOT NULL DEFAULT '[]',
                     pose_estimation_version TEXT,
                     pose_quality_json TEXT NOT NULL DEFAULT '{}',
+                    cancel_requested_at TEXT,
+                    cancel_requested_by TEXT,
                     FOREIGN KEY(record_id) REFERENCES records(record_id)
                 )
                 """
@@ -381,6 +409,23 @@ def initialize_schema(database: Database) -> None:
                         f"ALTER TABLE analysis_runs ADD COLUMN {name} {definition}"
                     )
             _migrate_analysis_runs_nullable_record(connection)
+            analysis_run_columns = _columns(connection, "analysis_runs")
+            for name, definition in (
+                ("reconstruction_backend", "TEXT"),
+                ("reconstruction_backend_version", "TEXT"),
+                ("reconstruction_environment_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("round_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("completed_round_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("failed_round_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("tip_marker_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("trajectory_status", "TEXT"),
+                ("cancel_requested_at", "TEXT"),
+                ("cancel_requested_by", "TEXT"),
+            ):
+                if name not in analysis_run_columns:
+                    connection.execute(
+                        f"ALTER TABLE analysis_runs ADD COLUMN {name} {definition}"
+                    )
             connection.execute("DROP TABLE IF EXISTS calibration_profiles")
             connection.execute("DROP TABLE IF EXISTS calibration_observations")
             connection.execute("DROP TABLE IF EXISTS extrinsic_profile_cameras")
@@ -388,82 +433,159 @@ def initialize_schema(database: Database) -> None:
 
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS analysis_frame_pairs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                CREATE TABLE IF NOT EXISTS analysis_rounds (
                     analysis_id TEXT NOT NULL,
-                    pair_id TEXT NOT NULL,
-                    frame_id INTEGER NOT NULL,
-                    cycle_id INTEGER,
-                    top_capture_id INTEGER,
-                    side_capture_id INTEGER,
-                    top_input_id INTEGER,
-                    side_input_id INTEGER,
-                    rotating_input_id INTEGER,
-                    top_timestamp TEXT,
-                    side_timestamp TEXT,
-                    rotating_timestamp TEXT,
-                    rotating_angle_deg REAL,
-                    timestamp_delta_ms REAL,
-                    rotating_timestamp_delta_ms REAL,
-                    frame_offset INTEGER NOT NULL DEFAULT 0,
-                    pair_status TEXT NOT NULL,
-                    UNIQUE(analysis_id, pair_id),
-                    UNIQUE(analysis_id, frame_id),
-                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE,
-                    FOREIGN KEY(top_capture_id) REFERENCES captures(id),
-                    FOREIGN KEY(side_capture_id) REFERENCES captures(id)
+                    round_key TEXT NOT NULL,
+                    record_id TEXT NOT NULL,
+                    mode_id TEXT NOT NULL,
+                    round_id TEXT NOT NULL,
+                    started_at TEXT,
+                    ended_at TEXT,
+                    duration_seconds REAL,
+                    status TEXT NOT NULL,
+                    view_count INTEGER NOT NULL DEFAULT 0,
+                    top_view_count INTEGER NOT NULL DEFAULT 0,
+                    side_view_count INTEGER NOT NULL DEFAULT 0,
+                    rotating_view_count INTEGER NOT NULL DEFAULT 0,
+                    angular_coverage_deg REAL,
+                    static_scene_score REAL,
+                    model_result_id TEXT,
+                    tip_landmark_id TEXT,
+                    failure_reason TEXT,
+                    PRIMARY KEY(analysis_id, round_key),
+                    UNIQUE(analysis_id, mode_id, round_id),
+                    FOREIGN KEY(analysis_id)
+                        REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
                 )
                 """
             )
-            pair_columns = _columns(connection, "analysis_frame_pairs")
-            for name, sql_type in (
-                ("top_input_id", "INTEGER"),
-                ("side_input_id", "INTEGER"),
-                ("rotating_input_id", "INTEGER"),
-                ("rotating_timestamp", "TEXT"),
-                ("rotating_angle_deg", "REAL"),
-                ("rotating_timestamp_delta_ms", "REAL"),
-            ):
-                if name not in pair_columns:
-                    connection.execute(
-                        f"ALTER TABLE analysis_frame_pairs ADD COLUMN {name} {sql_type}"
-                    )
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS analysis_detections (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                CREATE TABLE IF NOT EXISTS analysis_views (
                     analysis_id TEXT NOT NULL,
-                    frame_id INTEGER NOT NULL,
+                    round_key TEXT NOT NULL,
+                    view_id TEXT NOT NULL,
+                    capture_id INTEGER NOT NULL,
                     camera_id TEXT NOT NULL,
-                    automatic_json TEXT,
-                    interpolated_json TEXT,
-                    resolved_json TEXT,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(analysis_id, frame_id, camera_id),
-                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+                    snapshot_id TEXT,
+                    timestamp TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    absolute_path TEXT NOT NULL,
+                    angle_deg REAL,
+                    motor_position_deg REAL,
+                    image_width INTEGER NOT NULL,
+                    image_height INTEGER NOT NULL,
+                    image_sha256 TEXT NOT NULL,
+                    selected_for_reconstruction INTEGER NOT NULL DEFAULT 0,
+                    exclusion_reason TEXT,
+                    pose_status TEXT,
+                    pose_reprojection_error_px REAL,
+                    PRIMARY KEY(analysis_id, view_id),
+                    UNIQUE(analysis_id, round_key, camera_id, capture_id),
+                    FOREIGN KEY(analysis_id, round_key)
+                        REFERENCES analysis_rounds(analysis_id, round_key)
+                        ON DELETE CASCADE
                 )
                 """
             )
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS manual_corrections (
+                CREATE TABLE IF NOT EXISTS analysis_camera_poses (
+                    analysis_id TEXT NOT NULL,
+                    round_key TEXT NOT NULL,
+                    view_id TEXT NOT NULL,
+                    camera_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    valid INTEGER NOT NULL DEFAULT 0,
+                    pose_source TEXT NOT NULL,
+                    failure_reason TEXT,
+                    PRIMARY KEY(analysis_id, view_id),
+                    FOREIGN KEY(analysis_id, view_id)
+                        REFERENCES analysis_views(analysis_id, view_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_round_models (
+                    analysis_id TEXT NOT NULL,
+                    round_key TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    failure_reason TEXT,
+                    PRIMARY KEY(analysis_id, model_id),
+                    UNIQUE(analysis_id, round_key),
+                    FOREIGN KEY(analysis_id, round_key)
+                        REFERENCES analysis_rounds(analysis_id, round_key)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_tip_landmarks (
+                    analysis_id TEXT NOT NULL,
+                    round_key TEXT NOT NULL,
+                    tip_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    valid INTEGER NOT NULL DEFAULT 0,
+                    confidence REAL NOT NULL DEFAULT 0,
+                    PRIMARY KEY(analysis_id, tip_id),
+                    UNIQUE(analysis_id, round_key),
+                    FOREIGN KEY(analysis_id, round_key)
+                        REFERENCES analysis_rounds(analysis_id, round_key)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_tip_observations (
+                    analysis_id TEXT NOT NULL,
+                    round_key TEXT NOT NULL,
+                    view_id TEXT NOT NULL,
+                    candidate_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    selected INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(analysis_id, candidate_id),
+                    FOREIGN KEY(analysis_id, view_id)
+                        REFERENCES analysis_views(analysis_id, view_id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_tip_corrections (
                     correction_id TEXT PRIMARY KEY,
                     analysis_id TEXT NOT NULL,
-                    frame_id INTEGER NOT NULL,
-                    camera_id TEXT NOT NULL,
-                    automatic_x_px REAL,
-                    automatic_y_px REAL,
-                    corrected_x_px REAL,
-                    corrected_y_px REAL,
+                    round_key TEXT NOT NULL,
                     operator_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    reason TEXT,
-                    invalid INTEGER NOT NULL DEFAULT 0,
-                    FOREIGN KEY(analysis_id) REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(analysis_id, round_key)
+                        REFERENCES analysis_rounds(analysis_id, round_key)
+                        ON DELETE CASCADE
                 )
                 """
             )
-            _migrate_manual_correction_history(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_trajectory_points (
+                    analysis_id TEXT NOT NULL,
+                    mode_id TEXT NOT NULL,
+                    round_key TEXT NOT NULL,
+                    point_index INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    PRIMARY KEY(analysis_id, mode_id, point_index),
+                    FOREIGN KEY(analysis_id, round_key)
+                        REFERENCES analysis_rounds(analysis_id, round_key)
+                        ON DELETE CASCADE
+                )
+                """
+            )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analysis_runs_record ON analysis_runs(record_id)"
             )
@@ -471,16 +593,14 @@ def initialize_schema(database: Database) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_analysis_runs_status ON analysis_runs(status)"
             )
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_analysis_pairs_run ON analysis_frame_pairs(analysis_id, frame_id)"
+                "CREATE INDEX IF NOT EXISTS idx_analysis_rounds_status ON analysis_rounds(analysis_id, status)"
             )
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_analysis_detections_run ON analysis_detections(analysis_id, frame_id)"
+                "CREATE INDEX IF NOT EXISTS idx_analysis_rounds_order ON analysis_rounds(analysis_id, mode_id, round_id)"
             )
             connection.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_manual_corrections_frame
-                ON manual_corrections(analysis_id, frame_id, camera_id, created_at)
-                """
+                "CREATE INDEX IF NOT EXISTS idx_analysis_views_round ON analysis_views(analysis_id, round_key, camera_id)"
             )
+            _cleanup_analysis_history(connection)
     finally:
         connection.execute("PRAGMA foreign_keys = ON")

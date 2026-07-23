@@ -130,9 +130,6 @@ export default function useAnalysisSetup({
         const next = {
           ...previous,
           sourcePreview: preview,
-          endFrame: preview?.total_frame_count > 0
-            ? String(preview.total_frame_count)
-            : previous.endFrame,
         };
         setupRef.current = next;
         return next;
@@ -326,26 +323,6 @@ export default function useAnalysisSetup({
     return performSourceScan(next);
   }
 
-  function scanSources() {
-    return performSourceScan(setupRef.current);
-  }
-
-  function updateRoi(
-    camera,
-    key,
-    value,
-  ) {
-    const roiKey = camera === "top" ? "topRoi" : "sideRoi";
-    setSetup((previous) => ({
-      ...previous,
-      [roiKey]: {
-        ...previous[roiKey],
-        [key]: value,
-      },
-    }));
-    setStepError("");
-  }
-
   function updateParameter(key, value) {
     setSetup((previous) => ({
       ...previous,
@@ -461,7 +438,7 @@ export default function useAnalysisSetup({
     const run = normalizeCreatedAnalysisRun(result, {
       record_id: setup.recordId,
       method_name: setup.method,
-      method_version: setup.method === "top_side_rotating" ? "2.0.0" : "1.0.0",
+      method_version: setup.method === "round_multiview" ? "1.0.0" : "2.0.0",
       status: "draft",
       progress: 0,
       current_frame: 0,
@@ -542,8 +519,6 @@ export default function useAnalysisSetup({
     updateSetup,
     updateCameraSource,
     updateModeSelection,
-    scanSources,
-    updateRoi,
     updateParameter,
     goToStep,
     nextStep,

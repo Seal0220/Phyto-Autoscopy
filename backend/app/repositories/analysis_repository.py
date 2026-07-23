@@ -5,10 +5,15 @@ from typing import Iterable
 
 from app.database.connection import Database
 from app.models.analysis_models import (
-    AnalysisFramePair,
+    AnalysisRound,
     AnalysisRun,
-    ManualCorrection,
-    StoredDetection,
+    AnalysisView,
+    CameraPoseResult,
+    RoundModelResult,
+    TipCorrection,
+    TipLandmark,
+    TipObservation2D,
+    TipTrajectoryPoint,
 )
 
 
@@ -23,6 +28,12 @@ def _json_load(value: str | None, fallback):
         return json.loads(value)
     except (json.JSONDecodeError, TypeError):
         return fallback
+
+
+SUPPORTED_ANALYSIS_METHODS = (
+    "round_multiview",
+    "top_side_tip_only",
+)
 
 
 class AnalysisRepository:
@@ -49,6 +60,10 @@ class AnalysisRepository:
             payload.pop("pose_quality_json"),
             {},
         )
+        payload["reconstruction_environment"] = _json_load(
+            payload.pop("reconstruction_environment_json", None),
+            {},
+        )
         payload["manual_review_completed"] = bool(
             payload["manual_review_completed"]
         )
@@ -65,11 +80,15 @@ class AnalysisRepository:
                 manual_review_completed, last_error,
                 intrinsics_snapshot_json, aruco_layout_snapshot_json,
                 camera_pose_results_json, pose_estimation_version,
-                pose_quality_json
+                pose_quality_json, reconstruction_backend,
+                reconstruction_backend_version,
+                reconstruction_environment_json, round_count,
+                completed_round_count, failed_round_count,
+                tip_marker_count, trajectory_status
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -95,29 +114,45 @@ class AnalysisRepository:
                 _json_dump(run.camera_pose_results),
                 run.pose_estimation_version,
                 _json_dump(run.pose_quality),
+                run.reconstruction_backend,
+                run.reconstruction_backend_version,
+                _json_dump(run.reconstruction_environment),
+                run.round_count,
+                run.completed_round_count,
+                run.failed_round_count,
+                run.tip_marker_count,
+                run.trajectory_status,
             ),
         )
 
     def get(self, analysis_id: str) -> AnalysisRun | None:
         row = self.database.fetchone(
-            "SELECT * FROM analysis_runs WHERE analysis_id=?",
-            (analysis_id,),
+            """
+            SELECT * FROM analysis_runs
+            WHERE analysis_id=? AND method_name IN (?, ?)
+            """,
+            (analysis_id, *SUPPORTED_ANALYSIS_METHODS),
         )
         return self._run_from_row(row) if row else None
 
     def list(self, record_id: str | None = None) -> list[AnalysisRun]:
         if record_id is None:
             rows = self.database.fetchall(
-                "SELECT * FROM analysis_runs ORDER BY created_at DESC"
+                """
+                SELECT * FROM analysis_runs
+                WHERE method_name IN (?, ?)
+                ORDER BY created_at DESC
+                """,
+                SUPPORTED_ANALYSIS_METHODS,
             )
         else:
             rows = self.database.fetchall(
                 """
                 SELECT * FROM analysis_runs
-                WHERE record_id=?
+                WHERE record_id=? AND method_name IN (?, ?)
                 ORDER BY created_at DESC
                 """,
-                (record_id,),
+                (record_id, *SUPPORTED_ANALYSIS_METHODS),
             )
         return [self._run_from_row(row) for row in rows]
 
@@ -131,6 +166,10 @@ class AnalysisRepository:
         current_frame: int | None = None,
         total_frames: int | None = None,
         progress: float | None = None,
+        completed_round_count: int | None = None,
+        failed_round_count: int | None = None,
+        tip_marker_count: int | None = None,
+        trajectory_status: str | None = None,
         manual_review_completed: bool | None = None,
         last_error: str | None = None,
         clear_error: bool = False,
@@ -143,6 +182,10 @@ class AnalysisRepository:
             "current_frame": current_frame,
             "total_frames": total_frames,
             "progress": progress,
+            "completed_round_count": completed_round_count,
+            "failed_round_count": failed_round_count,
+            "tip_marker_count": tip_marker_count,
+            "trajectory_status": trajectory_status,
         }
         for name, value in optional_values.items():
             if value is not None:
@@ -175,6 +218,55 @@ class AnalysisRepository:
             (_json_dump(parameters), updated_at, analysis_id),
         )
 
+    def update_cancellation_metadata(
+        self,
+        analysis_id: str,
+        *,
+        requested_at: str,
+        requested_by: str,
+        updated_at: str,
+    ) -> None:
+        self.database.execute(
+            """
+            UPDATE analysis_runs
+            SET cancel_requested_at=?, cancel_requested_by=?, updated_at=?
+            WHERE analysis_id=?
+            """,
+            (
+                requested_at,
+                requested_by,
+                updated_at,
+                analysis_id,
+            ),
+        )
+
+    def update_reconstruction_metadata(
+        self,
+        analysis_id: str,
+        *,
+        backend: str,
+        backend_version: str,
+        environment: dict,
+        updated_at: str,
+    ) -> None:
+        self.database.execute(
+            """
+            UPDATE analysis_runs
+            SET reconstruction_backend=?,
+                reconstruction_backend_version=?,
+                reconstruction_environment_json=?,
+                updated_at=?
+            WHERE analysis_id=?
+            """,
+            (
+                backend,
+                backend_version,
+                _json_dump(environment),
+                updated_at,
+                analysis_id,
+            ),
+        )
+
     def update_pose_alignment(
         self,
         analysis_id: str,
@@ -203,15 +295,27 @@ class AnalysisRepository:
     def delete(self, analysis_id: str) -> None:
         with self.database.transaction() as connection:
             connection.execute(
-                "DELETE FROM manual_corrections WHERE analysis_id=?",
+                "DELETE FROM analysis_tip_corrections WHERE analysis_id=?",
                 (analysis_id,),
             )
             connection.execute(
-                "DELETE FROM analysis_detections WHERE analysis_id=?",
+                "DELETE FROM analysis_trajectory_points WHERE analysis_id=?",
                 (analysis_id,),
             )
             connection.execute(
-                "DELETE FROM analysis_frame_pairs WHERE analysis_id=?",
+                "DELETE FROM analysis_tip_observations WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_tip_landmarks WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_round_models WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_camera_poses WHERE analysis_id=?",
                 (analysis_id,),
             )
             connection.execute(
@@ -222,9 +326,6 @@ class AnalysisRepository:
     def clear_results(
         self,
         analysis_id: str,
-        *,
-        include_frame_pairs: bool = False,
-        include_corrections: bool = False,
     ) -> None:
         """Clear derived data in one short transaction.
 
@@ -239,433 +340,557 @@ class AnalysisRepository:
                 SET average_reprojection_error_px=NULL,
                     camera_pose_results_json='[]',
                     pose_estimation_version=NULL,
-                    pose_quality_json='{}'
+                    pose_quality_json='{}',
+                    completed_round_count=0,
+                    failed_round_count=0,
+                    tip_marker_count=0,
+                    trajectory_status=NULL,
+                    reconstruction_backend=NULL,
+                    reconstruction_backend_version=NULL,
+                    reconstruction_environment_json='{}'
                 WHERE analysis_id=?
                 """,
                 (analysis_id,),
             )
-            if include_corrections:
-                connection.execute(
-                    "DELETE FROM manual_corrections WHERE analysis_id=?",
-                    (analysis_id,),
-                )
             connection.execute(
-                "DELETE FROM analysis_detections WHERE analysis_id=?",
+                "DELETE FROM analysis_tip_corrections WHERE analysis_id=?",
                 (analysis_id,),
             )
-            if include_frame_pairs:
-                connection.execute(
-                    "DELETE FROM analysis_frame_pairs WHERE analysis_id=?",
-                    (analysis_id,),
-                )
-
-    def update_average_reprojection_error(
+            connection.execute(
+                "DELETE FROM analysis_trajectory_points WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_tip_observations WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_tip_landmarks WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_round_models WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_camera_poses WHERE analysis_id=?",
+                (analysis_id,),
+            )
+    def replace_rounds_and_views(
         self,
         analysis_id: str,
-        value: float | None,
+        rounds: Iterable[AnalysisRound],
+        views: Iterable[AnalysisView],
     ) -> None:
-        self.database.execute(
-            """
-            UPDATE analysis_runs
-            SET average_reprojection_error_px=?
-            WHERE analysis_id=?
-            """,
-            (value, analysis_id),
-        )
-
-    def replace_frame_pairs(
-        self,
-        analysis_id: str,
-        pairs: Iterable[AnalysisFramePair],
-    ) -> None:
+        round_rows = list(rounds)
+        view_rows = list(views)
         with self.database.transaction() as connection:
             connection.execute(
-                "DELETE FROM analysis_frame_pairs WHERE analysis_id=?",
+                "DELETE FROM analysis_views WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.execute(
+                "DELETE FROM analysis_rounds WHERE analysis_id=?",
                 (analysis_id,),
             )
             connection.executemany(
                 """
-                INSERT INTO analysis_frame_pairs(
-                    analysis_id, pair_id, frame_id, cycle_id,
-                    top_input_id, side_input_id, rotating_input_id,
-                    top_timestamp, side_timestamp, rotating_timestamp,
-                    rotating_angle_deg, timestamp_delta_ms,
-                    rotating_timestamp_delta_ms, frame_offset, pair_status
+                INSERT INTO analysis_rounds(
+                    analysis_id, round_key, record_id, mode_id, round_id,
+                    started_at, ended_at, duration_seconds, status, view_count,
+                    top_view_count, side_view_count, rotating_view_count,
+                    angular_coverage_deg, static_scene_score, model_result_id,
+                    tip_landmark_id, failure_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
-                        analysis_id,
-                        pair.pair_id,
-                        pair.frame_id,
-                        pair.cycle_id,
-                        pair.top_frame_id,
-                        pair.side_frame_id,
-                        pair.rotating_frame_id,
-                        pair.top_timestamp,
-                        pair.side_timestamp,
-                        pair.rotating_timestamp,
-                        pair.rotating_angle_deg,
-                        pair.timestamp_delta_ms,
-                        pair.rotating_timestamp_delta_ms,
-                        pair.frame_offset,
-                        pair.pair_status,
+                        item.analysis_id,
+                        item.round_key,
+                        item.record_id,
+                        item.mode_id,
+                        item.round_id,
+                        item.started_at,
+                        item.ended_at,
+                        item.duration_seconds,
+                        item.status,
+                        item.view_count,
+                        item.top_view_count,
+                        item.side_view_count,
+                        item.rotating_view_count,
+                        item.angular_coverage_deg,
+                        item.static_scene_score,
+                        item.model_result_id,
+                        item.tip_landmark_id,
+                        item.failure_reason,
                     )
-                    for pair in pairs
+                    for item in round_rows
+                ],
+            )
+            connection.executemany(
+                """
+                INSERT INTO analysis_views(
+                    analysis_id, round_key, view_id, capture_id, camera_id,
+                    snapshot_id, timestamp, relative_path, absolute_path,
+                    angle_deg, motor_position_deg, image_width, image_height,
+                    image_sha256, selected_for_reconstruction,
+                    exclusion_reason, pose_status,
+                    pose_reprojection_error_px
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item.analysis_id,
+                        item.round_key,
+                        item.view_id,
+                        item.capture_id,
+                        item.camera_id,
+                        item.snapshot_id,
+                        item.timestamp,
+                        item.relative_path,
+                        item.absolute_path,
+                        item.angle_deg,
+                        item.motor_position_deg,
+                        item.image_width,
+                        item.image_height,
+                        item.image_sha256,
+                        int(item.selected_for_reconstruction),
+                        item.exclusion_reason,
+                        item.pose_status,
+                        item.pose_reprojection_error_px,
+                    )
+                    for item in view_rows
                 ],
             )
 
-    def list_frame_pairs(self, analysis_id: str) -> list[AnalysisFramePair]:
+    def list_rounds(self, analysis_id: str) -> list[AnalysisRound]:
         rows = self.database.fetchall(
             """
-            SELECT
-                pair_id, frame_id, cycle_id,
-                COALESCE(top_input_id, top_capture_id) AS top_frame_id,
-                COALESCE(side_input_id, side_capture_id) AS side_frame_id,
-                rotating_input_id AS rotating_frame_id,
-                top_timestamp, side_timestamp, rotating_timestamp,
-                rotating_angle_deg, timestamp_delta_ms,
-                rotating_timestamp_delta_ms, frame_offset, pair_status
-            FROM analysis_frame_pairs
+            SELECT * FROM analysis_rounds
             WHERE analysis_id=?
-            ORDER BY frame_id ASC
+            ORDER BY mode_id, round_id
             """,
             (analysis_id,),
         )
-        return [AnalysisFramePair(**dict(row)) for row in rows]
+        return [AnalysisRound(**dict(row)) for row in rows]
 
-    def get_frame_pair(
+    def list_views(
         self,
         analysis_id: str,
-        frame_id: int,
-    ) -> AnalysisFramePair | None:
-        row = self.database.fetchone(
-            """
-            SELECT
-                pair_id, frame_id, cycle_id,
-                COALESCE(top_input_id, top_capture_id) AS top_frame_id,
-                COALESCE(side_input_id, side_capture_id) AS side_frame_id,
-                rotating_input_id AS rotating_frame_id,
-                top_timestamp, side_timestamp, rotating_timestamp,
-                rotating_angle_deg, timestamp_delta_ms,
-                rotating_timestamp_delta_ms, frame_offset, pair_status
-            FROM analysis_frame_pairs
-            WHERE analysis_id=? AND frame_id=?
-            """,
-            (analysis_id, frame_id),
-        )
-        return AnalysisFramePair(**dict(row)) if row else None
-
-    def upsert_detection(self, detection: StoredDetection) -> None:
-        self.database.execute(
-            """
-            INSERT INTO analysis_detections(
-                analysis_id, frame_id, camera_id, automatic_json,
-                interpolated_json, resolved_json, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(analysis_id, frame_id, camera_id) DO UPDATE SET
-                automatic_json=excluded.automatic_json,
-                interpolated_json=excluded.interpolated_json,
-                resolved_json=excluded.resolved_json,
-                updated_at=excluded.updated_at
-            """,
-            self._detection_values(detection),
-        )
-
-    @staticmethod
-    def _detection_values(detection: StoredDetection) -> tuple[object, ...]:
-        return (
-            detection.analysis_id,
-            detection.frame_id,
-            detection.camera_id,
-            _json_dump(detection.automatic_detection.model_dump())
-            if detection.automatic_detection
-            else None,
-            _json_dump(detection.interpolated_detection.model_dump())
-            if detection.interpolated_detection
-            else None,
-            _json_dump(detection.resolved_detection.model_dump())
-            if detection.resolved_detection
-            else None,
-            detection.updated_at,
-        )
-
-    @staticmethod
-    def _upsert_detections(
-        connection,
-        detections: Iterable[StoredDetection],
-    ) -> None:
-        connection.executemany(
-            """
-            INSERT INTO analysis_detections(
-                analysis_id, frame_id, camera_id, automatic_json,
-                interpolated_json, resolved_json, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(analysis_id, frame_id, camera_id) DO UPDATE SET
-                automatic_json=excluded.automatic_json,
-                interpolated_json=excluded.interpolated_json,
-                resolved_json=excluded.resolved_json,
-                updated_at=excluded.updated_at
-            """,
-            [
-                AnalysisRepository._detection_values(detection)
-                for detection in detections
-            ],
-        )
-
-    def upsert_detections(
-        self,
-        detections: Iterable[StoredDetection],
-    ) -> None:
-        with self.database.transaction() as connection:
-            self._upsert_detections(connection, detections)
-
-    @staticmethod
-    def _detection_from_row(row) -> StoredDetection:
-        payload = dict(row)
-        payload["automatic_detection"] = _json_load(
-            payload.pop("automatic_json"),
-            None,
-        )
-        payload["interpolated_detection"] = _json_load(
-            payload.pop("interpolated_json"),
-            None,
-        )
-        payload["resolved_detection"] = _json_load(
-            payload.pop("resolved_json"),
-            None,
-        )
-        return StoredDetection(**payload)
-
-    def get_detection(
-        self,
-        analysis_id: str,
-        frame_id: int,
-        camera_id: str,
-    ) -> StoredDetection | None:
-        row = self.database.fetchone(
-            """
-            SELECT
-                analysis_id, frame_id, camera_id, automatic_json,
-                interpolated_json, resolved_json, updated_at
-            FROM analysis_detections
-            WHERE analysis_id=? AND frame_id=? AND camera_id=?
-            """,
-            (analysis_id, frame_id, camera_id),
-        )
-        return self._detection_from_row(row) if row else None
-
-    def list_detections(
-        self,
-        analysis_id: str,
-        camera_id: str | None = None,
-    ) -> list[StoredDetection]:
-        if camera_id is None:
+        round_key: str | None = None,
+    ) -> list[AnalysisView]:
+        if round_key is None:
             rows = self.database.fetchall(
                 """
-                SELECT
-                    analysis_id, frame_id, camera_id, automatic_json,
-                    interpolated_json, resolved_json, updated_at
-                FROM analysis_detections
+                SELECT * FROM analysis_views
                 WHERE analysis_id=?
-                ORDER BY frame_id ASC, camera_id ASC
+                ORDER BY round_key, timestamp, camera_id
                 """,
                 (analysis_id,),
             )
         else:
             rows = self.database.fetchall(
                 """
-                SELECT
-                    analysis_id, frame_id, camera_id, automatic_json,
-                    interpolated_json, resolved_json, updated_at
-                FROM analysis_detections
-                WHERE analysis_id=? AND camera_id=?
-                ORDER BY frame_id ASC
+                SELECT * FROM analysis_views
+                WHERE analysis_id=? AND round_key=?
+                ORDER BY timestamp, camera_id
                 """,
-                (analysis_id, camera_id),
+                (analysis_id, round_key),
             )
-        return [self._detection_from_row(row) for row in rows]
+        return [
+            AnalysisView(
+                **{
+                    **dict(row),
+                    "selected_for_reconstruction": bool(
+                        row["selected_for_reconstruction"]
+                    ),
+                }
+            )
+            for row in rows
+        ]
 
-    def insert_correction(self, correction: ManualCorrection) -> None:
+    def update_round(self, item: AnalysisRound) -> None:
         self.database.execute(
             """
-            INSERT INTO manual_corrections(
-                correction_id, analysis_id, frame_id, camera_id,
-                automatic_x_px, automatic_y_px, corrected_x_px,
-                corrected_y_px, operator_id, created_at, reason, invalid
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            UPDATE analysis_rounds
+            SET started_at=?, ended_at=?, duration_seconds=?, status=?,
+                view_count=?, top_view_count=?, side_view_count=?,
+                rotating_view_count=?, angular_coverage_deg=?,
+                static_scene_score=?, model_result_id=?,
+                tip_landmark_id=?, failure_reason=?
+            WHERE analysis_id=? AND round_key=?
             """,
             (
-                correction.correction_id,
-                correction.analysis_id,
-                correction.frame_id,
-                correction.camera_id,
-                correction.automatic_x_px,
-                correction.automatic_y_px,
-                correction.corrected_x_px,
-                correction.corrected_y_px,
-                correction.operator_id,
-                correction.created_at,
-                correction.reason,
-                int(correction.invalid),
+                item.started_at,
+                item.ended_at,
+                item.duration_seconds,
+                item.status,
+                item.view_count,
+                item.top_view_count,
+                item.side_view_count,
+                item.rotating_view_count,
+                item.angular_coverage_deg,
+                item.static_scene_score,
+                item.model_result_id,
+                item.tip_landmark_id,
+                item.failure_reason,
+                item.analysis_id,
+                item.round_key,
             ),
         )
 
-    @staticmethod
-    def _correction_values(correction: ManualCorrection) -> tuple[object, ...]:
-        return (
-            correction.correction_id,
-            correction.analysis_id,
-            correction.frame_id,
-            correction.camera_id,
-            correction.automatic_x_px,
-            correction.automatic_y_px,
-            correction.corrected_x_px,
-            correction.corrected_y_px,
-            correction.operator_id,
-            correction.created_at,
-            correction.reason,
-            int(correction.invalid),
-        )
-
-    def insert_correction_with_detections(
-        self,
-        correction: ManualCorrection,
-        detections: Iterable[StoredDetection],
-        *,
-        updated_at: str,
-    ) -> None:
+    def update_views(self, views: Iterable[AnalysisView]) -> None:
+        records = list(views)
         with self.database.transaction() as connection:
-            connection.execute(
+            connection.executemany(
                 """
-                INSERT INTO manual_corrections(
-                    correction_id, analysis_id, frame_id, camera_id,
-                    automatic_x_px, automatic_y_px, corrected_x_px,
-                    corrected_y_px, operator_id, created_at, reason, invalid
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE analysis_views
+                SET selected_for_reconstruction=?, exclusion_reason=?,
+                    pose_status=?, pose_reprojection_error_px=?
+                WHERE analysis_id=? AND view_id=?
                 """,
-                self._correction_values(correction),
-            )
-            self._upsert_detections(connection, detections)
-            connection.execute(
-                """
-                UPDATE analysis_runs
-                SET status='reviewing', stage='waiting_for_review',
-                    manual_review_completed=0,
-                    average_reprojection_error_px=NULL,
-                    last_error=NULL, updated_at=?
-                WHERE analysis_id=?
-                """,
-                (updated_at, correction.analysis_id),
+                [
+                    (
+                        int(item.selected_for_reconstruction),
+                        item.exclusion_reason,
+                        item.pose_status,
+                        item.pose_reprojection_error_px,
+                        item.analysis_id,
+                        item.view_id,
+                    )
+                    for item in records
+                ],
             )
 
-    def delete_correction_with_detections(
+    def replace_camera_poses(
         self,
         analysis_id: str,
-        correction_id: str,
-        detections: Iterable[StoredDetection],
-        *,
-        updated_at: str,
-    ) -> bool:
+        poses: Iterable[CameraPoseResult],
+    ) -> None:
+        records = list(poses)
         with self.database.transaction() as connection:
-            cursor = connection.execute(
-                """
-                DELETE FROM manual_corrections
-                WHERE analysis_id=? AND correction_id=?
-                """,
-                (analysis_id, correction_id),
-            )
-            if cursor.rowcount <= 0:
-                return False
-            self._upsert_detections(connection, detections)
             connection.execute(
-                """
-                UPDATE analysis_runs
-                SET status='reviewing', stage='waiting_for_review',
-                    manual_review_completed=0,
-                    average_reprojection_error_px=NULL,
-                    last_error=NULL, updated_at=?
-                WHERE analysis_id=?
-                """,
-                (updated_at, analysis_id),
+                "DELETE FROM analysis_camera_poses WHERE analysis_id=?",
+                (analysis_id,),
             )
-            return True
+            connection.executemany(
+                """
+                INSERT INTO analysis_camera_poses(
+                    analysis_id, round_key, view_id, camera_id,
+                    payload_json, valid, pose_source, failure_reason
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item.analysis_id,
+                        item.round_key,
+                        item.view_id,
+                        item.camera_id,
+                        _json_dump(item.model_dump(mode="json")),
+                        int(item.valid),
+                        item.pose_source,
+                        item.failure_reason,
+                    )
+                    for item in records
+                ],
+            )
 
-    def upsert_correction(self, correction: ManualCorrection) -> None:
-        """Backward-compatible name; corrections are append-only."""
+    def list_camera_poses(
+        self,
+        analysis_id: str,
+        round_key: str | None = None,
+    ) -> list[CameraPoseResult]:
+        if round_key is None:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_camera_poses
+                WHERE analysis_id=?
+                ORDER BY round_key, view_id
+                """,
+                (analysis_id,),
+            )
+        else:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_camera_poses
+                WHERE analysis_id=? AND round_key=?
+                ORDER BY view_id
+                """,
+                (analysis_id, round_key),
+            )
+        return [
+            CameraPoseResult.model_validate(
+                _json_load(row["payload_json"], {})
+            )
+            for row in rows
+        ]
 
-        self.insert_correction(correction)
+    def upsert_round_model(self, item: RoundModelResult) -> None:
+        self.database.execute(
+            """
+            INSERT INTO analysis_round_models(
+                analysis_id, round_key, model_id, status,
+                payload_json, failure_reason
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(analysis_id, model_id) DO UPDATE SET
+                status=excluded.status,
+                payload_json=excluded.payload_json,
+                failure_reason=excluded.failure_reason
+            """,
+            (
+                item.analysis_id,
+                item.round_key,
+                item.model_id,
+                item.status,
+                _json_dump(item.model_dump(mode="json")),
+                item.failure_reason,
+            ),
+        )
 
-    def list_corrections(self, analysis_id: str) -> list[ManualCorrection]:
+    def list_round_models(
+        self,
+        analysis_id: str,
+    ) -> list[RoundModelResult]:
         rows = self.database.fetchall(
             """
-            SELECT * FROM manual_corrections
+            SELECT payload_json FROM analysis_round_models
             WHERE analysis_id=?
-            ORDER BY frame_id ASC, camera_id ASC, created_at ASC, rowid ASC
+            ORDER BY round_key
             """,
             (analysis_id,),
         )
-        payloads = []
-        for row in rows:
-            payload = dict(row)
-            payload["invalid"] = bool(payload["invalid"])
-            payloads.append(ManualCorrection(**payload))
-        return payloads
+        return [
+            RoundModelResult.model_validate(
+                _json_load(row["payload_json"], {})
+            )
+            for row in rows
+        ]
 
-    def get_correction(
+    def upsert_tip_landmark(self, item: TipLandmark) -> None:
+        self.database.execute(
+            """
+            INSERT INTO analysis_tip_landmarks(
+                analysis_id, round_key, tip_id, payload_json,
+                valid, confidence
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(analysis_id, tip_id) DO UPDATE SET
+                payload_json=excluded.payload_json,
+                valid=excluded.valid,
+                confidence=excluded.confidence
+            """,
+            (
+                item.analysis_id,
+                item.round_key,
+                item.tip_id,
+                _json_dump(item.model_dump(mode="json")),
+                int(item.valid),
+                item.confidence,
+            ),
+        )
+
+    def list_tip_landmarks(self, analysis_id: str) -> list[TipLandmark]:
+        rows = self.database.fetchall(
+            """
+            SELECT payload_json FROM analysis_tip_landmarks
+            WHERE analysis_id=?
+            ORDER BY round_key
+            """,
+            (analysis_id,),
+        )
+        return [
+            TipLandmark.model_validate(_json_load(row["payload_json"], {}))
+            for row in rows
+        ]
+
+    def replace_tip_observations(
         self,
         analysis_id: str,
-        correction_id: str,
-    ) -> ManualCorrection | None:
-        row = self.database.fetchone(
-            """
-            SELECT * FROM manual_corrections
-            WHERE analysis_id=? AND correction_id=?
-            """,
-            (analysis_id, correction_id),
-        )
-        if row is None:
-            return None
-        payload = dict(row)
-        payload["invalid"] = bool(payload["invalid"])
-        return ManualCorrection(**payload)
+        round_key: str,
+        observations: Iterable[TipObservation2D],
+    ) -> None:
+        records = list(observations)
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                DELETE FROM analysis_tip_observations
+                WHERE analysis_id=? AND round_key=?
+                """,
+                (analysis_id, round_key),
+            )
+            connection.executemany(
+                """
+                INSERT INTO analysis_tip_observations(
+                    analysis_id, round_key, view_id, candidate_id,
+                    payload_json, selected
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item.analysis_id,
+                        item.round_key,
+                        item.view_id,
+                        item.candidate_id,
+                        _json_dump(item.model_dump(mode="json")),
+                        int(item.selected),
+                    )
+                    for item in records
+                ],
+            )
 
-    def get_frame_correction(
+    def list_tip_observations(
         self,
         analysis_id: str,
-        frame_id: int,
-        camera_id: str,
-    ) -> ManualCorrection | None:
-        row = self.database.fetchone(
-            """
-            SELECT * FROM manual_corrections
-            WHERE analysis_id=? AND frame_id=? AND camera_id=?
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT 1
-            """,
-            (analysis_id, frame_id, camera_id),
-        )
-        if row is None:
-            return None
-        payload = dict(row)
-        payload["invalid"] = bool(payload["invalid"])
-        return ManualCorrection(**payload)
+        round_key: str | None = None,
+    ) -> list[TipObservation2D]:
+        if round_key is None:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_tip_observations
+                WHERE analysis_id=?
+                ORDER BY round_key, view_id, candidate_id
+                """,
+                (analysis_id,),
+            )
+        else:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_tip_observations
+                WHERE analysis_id=? AND round_key=?
+                ORDER BY view_id, candidate_id
+                """,
+                (analysis_id, round_key),
+            )
+        return [
+            TipObservation2D.model_validate(
+                _json_load(row["payload_json"], {})
+            )
+            for row in rows
+        ]
 
-    def delete_correction(
+    def insert_tip_correction(self, item: TipCorrection) -> None:
+        self.database.execute(
+            """
+            INSERT INTO analysis_tip_corrections(
+                correction_id, analysis_id, round_key,
+                operator_id, created_at, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.correction_id,
+                item.analysis_id,
+                item.round_key,
+                item.operator_id,
+                item.created_at,
+                _json_dump(item.model_dump(mode="json")),
+            ),
+        )
+
+    def list_tip_corrections(
+        self,
+        analysis_id: str,
+        round_key: str | None = None,
+    ) -> list[TipCorrection]:
+        if round_key is None:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_tip_corrections
+                WHERE analysis_id=?
+                ORDER BY created_at, correction_id
+                """,
+                (analysis_id,),
+            )
+        else:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_tip_corrections
+                WHERE analysis_id=? AND round_key=?
+                ORDER BY created_at, correction_id
+                """,
+                (analysis_id, round_key),
+            )
+        return [
+            TipCorrection.model_validate(_json_load(row["payload_json"], {}))
+            for row in rows
+        ]
+
+    def delete_tip_correction(
         self,
         analysis_id: str,
         correction_id: str,
     ) -> bool:
         cursor = self.database.execute(
             """
-            DELETE FROM manual_corrections
+            DELETE FROM analysis_tip_corrections
             WHERE analysis_id=? AND correction_id=?
             """,
             (analysis_id, correction_id),
         )
         return cursor.rowcount > 0
+
+    def replace_tip_trajectory(
+        self,
+        analysis_id: str,
+        points: Iterable[TipTrajectoryPoint],
+    ) -> None:
+        records = list(points)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM analysis_trajectory_points WHERE analysis_id=?",
+                (analysis_id,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO analysis_trajectory_points(
+                    analysis_id, mode_id, round_key, point_index,
+                    payload_json
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item.analysis_id,
+                        item.mode_id,
+                        item.round_key,
+                        item.point_index,
+                        _json_dump(item.model_dump(mode="json")),
+                    )
+                    for item in records
+                ],
+            )
+
+    def list_tip_trajectory(
+        self,
+        analysis_id: str,
+        mode_id: str | None = None,
+    ) -> list[TipTrajectoryPoint]:
+        if mode_id is None:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_trajectory_points
+                WHERE analysis_id=?
+                ORDER BY mode_id, point_index
+                """,
+                (analysis_id,),
+            )
+        else:
+            rows = self.database.fetchall(
+                """
+                SELECT payload_json FROM analysis_trajectory_points
+                WHERE analysis_id=? AND mode_id=?
+                ORDER BY point_index
+                """,
+                (analysis_id, mode_id),
+            )
+        return [
+            TipTrajectoryPoint.model_validate(
+                _json_load(row["payload_json"], {})
+            )
+            for row in rows
+        ]

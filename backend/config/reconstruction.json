@@ -1,0 +1,19 @@
+{
+  "reconstruction": {
+    "backend": "gsplat_3dgs",
+    "available_backends": [
+      "gsplat_3dgs",
+      "graphdeco_3dgs"
+    ],
+    "device": "cuda",
+    "fallback_device": null,
+    "quality_preset": "standard",
+    "save_checkpoint": true,
+    "export_gaussians": true,
+    "export_point_cloud": true,
+    "export_plant_point_cloud": true,
+    "export_render_preview": true,
+    "use_pose_refinement": true,
+    "use_plant_mask": true
+  }
+}

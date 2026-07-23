@@ -84,7 +84,6 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                     "maximum_acceleration_deg_s2": 6,
                     "current_limit_amp": 1.5,
                     "maximum_current_limit_amp": 2.4,
-                    "holding_current_amp": 0.3,
                     "stabilization_delay_ms": 0,
                 }
             }

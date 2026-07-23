@@ -120,5 +120,28 @@ def aruco_layout_snapshot(settings: object) -> dict:
         position: center.astype(float).tolist()
         for position, center in marker_centers(settings).items()
     }
+    ids = marker_ids(settings)
+    corners = marker_world_corners(settings)
+    payload["layout_version"] = "aruco_world_v2"
+    payload["marker_ids"] = list(ids.values())
+    payload["marker_corner_world_coordinates"] = {
+        str(marker_id): value.astype(float).tolist()
+        for marker_id, value in corners.items()
+    }
+    payload["markers"] = [
+        {
+            "position": position,
+            "marker_id": marker_id,
+            "corners_world_mm": corners[marker_id].astype(float).tolist(),
+        }
+        for position, marker_id in ids.items()
+    ]
+    payload["marker_orientation"] = payload.get("marker_orientation_deg", 0.0)
+    payload["world_axes"] = {
+        "x": payload.get("x_axis_direction", "right"),
+        "y": payload.get("y_axis_direction", "front"),
+        "z": payload.get("z_axis_direction", "up"),
+    }
+    payload["unit"] = "mm"
     payload["distance_definition"] = "marker_center_to_center"
     return payload

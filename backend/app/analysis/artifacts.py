@@ -8,75 +8,60 @@ from typing import Iterable
 
 from app.analysis.export.csv_export import write_csv_atomic
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.rounds.paths import round_artifact_directory
 from app.models.analysis_models import (
-    AnalysisFramePair,
+    CameraPoseResult,
+    AnalysisRound,
     AnalysisRun,
-    ManualCorrection,
-    StoredDetection,
+    AnalysisView,
+    RoundModelResult,
+    TipCorrection,
+    TipLandmark,
+    TipTrajectoryPoint,
 )
 
 
-FRAME_PAIR_FIELDS = (
-    "pair_id",
-    "frame_id",
-    "cycle_id",
-    "top_frame_id",
-    "side_frame_id",
-    "rotating_frame_id",
-    "top_timestamp",
-    "side_timestamp",
-    "rotating_timestamp",
-    "rotating_angle_deg",
-    "timestamp_delta_ms",
-    "rotating_timestamp_delta_ms",
-    "frame_offset",
-    "pair_status",
-)
-
-DETECTION_FIELDS = (
-    "frame_id",
+TIP_TRAJECTORY_FIELDS = (
+    "record_id",
+    "mode_id",
+    "round_id",
     "timestamp",
-    "candidate_count",
-    "selected_x_px",
-    "selected_y_px",
-    "detection_type",
-    "valid",
-)
-
-TRAJECTORY_FIELDS = (
-    "frame_id",
-    "cycle_id",
-    "timestamp",
-    "top_x_px",
-    "top_y_px",
-    "side_x_px",
-    "side_y_px",
-    "rotating_x_px",
-    "rotating_y_px",
-    "rotating_angle_deg",
     "x_mm",
     "y_mm",
     "z_mm",
-    "refined_x_mm",
-    "refined_y_mm",
-    "refined_z_mm",
-    "top_detection_type",
-    "side_detection_type",
-    "top_reprojection_error_px",
-    "side_reprojection_error_px",
-    "rotating_reprojection_error_px",
-    "rotating_used",
+    "confidence",
     "valid",
+    "detection_type",
+    "visible_view_count",
+    "mean_reprojection_error_px",
+    "manually_corrected",
+    "elapsed_seconds",
+    "adjacent_distance_mm",
+    "speed_mm_per_second",
+    "acceleration_mm_per_second2",
+    "direction_x",
+    "direction_y",
+    "direction_z",
+    "horizontal_displacement_mm",
+    "vertical_displacement_mm",
+    "path_length_mm",
+    "curvature_per_mm",
+    "missing_segment",
 )
 
-REPROJECTION_FIELDS = (
-    "frame_id",
-    "top_error_px",
-    "side_error_px",
-    "rotating_error_px",
-    "overall_error_px",
-    "refined_overall_error_px",
-    "high_error",
+ROUND_SUMMARY_FIELDS = (
+    "record_id",
+    "mode_id",
+    "round_id",
+    "status",
+    "view_count",
+    "top_view_count",
+    "side_view_count",
+    "rotating_view_count",
+    "angular_coverage_deg",
+    "duration_seconds",
+    "model_status",
+    "tip_marker_status",
 )
 
 
@@ -106,6 +91,8 @@ class AnalysisArtifacts:
             "masks/rotating",
             "pose_debug",
             "logs",
+            "rounds",
+            "trajectory",
         ):
             (resolved / relative).mkdir(parents=True, exist_ok=True)
         return cls(resolved)
@@ -115,10 +102,165 @@ class AnalysisArtifacts:
         return self.root / "logs" / "analysis.log"
 
     def write_run(self, run: AnalysisRun) -> None:
-        write_json_atomic(self.root / "analysis.json", run.model_dump(mode="json"))
+        payload = run.model_dump(mode="json")
+        write_json_atomic(self.root / "run.json", payload)
+        write_json_atomic(self.root / "analysis.json", payload)
 
     def write_parameters(self, parameters: dict) -> None:
         write_json_atomic(self.root / "parameters.json", parameters)
+
+    def write_input_manifest(self, payload: list[dict]) -> None:
+        write_json_atomic(self.root / "input_manifest.json", payload)
+
+    def write_round_index(
+        self,
+        rounds: Iterable[AnalysisRound],
+        views: Iterable[AnalysisView],
+    ) -> None:
+        round_items = list(rounds)
+        view_items = list(views)
+        write_json_atomic(
+            self.root / "round_index.json",
+            {
+                "rounds": [
+                    item.model_dump(mode="json")
+                    for item in round_items
+                ],
+                "views": [
+                    item.model_dump(mode="json")
+                    for item in view_items
+                ],
+            },
+        )
+        views_by_round: dict[str, list[AnalysisView]] = {}
+        for view in view_items:
+            views_by_round.setdefault(view.round_key, []).append(view)
+        for round_item in round_items:
+            directory = round_artifact_directory(
+                self.root,
+                round_item.round_key,
+            )
+            write_json_atomic(
+                directory / "round.json",
+                round_item.model_dump(mode="json"),
+            )
+            write_json_atomic(
+                directory / "views.json",
+                [
+                    item.model_dump(mode="json")
+                    for item in views_by_round.get(
+                        round_item.round_key,
+                        [],
+                    )
+                ],
+            )
+
+    def write_round_pose_results(
+        self,
+        round_key: str,
+        poses: Iterable[CameraPoseResult],
+        *,
+        detections: Iterable[dict],
+        quality: dict,
+        pose_estimation_version: str,
+    ) -> None:
+        directory = round_artifact_directory(self.root, round_key)
+        write_json_atomic(
+            directory / "camera_poses.json",
+            [item.model_dump(mode="json") for item in poses],
+        )
+        write_json_atomic(
+            directory / "aruco_detections.json",
+            list(detections),
+        )
+        write_json_atomic(
+            directory / "pose_quality.json",
+            {
+                "pose_estimation_version": pose_estimation_version,
+                **quality,
+            },
+        )
+
+    def write_round_quality(
+        self,
+        round_key: str,
+        payload: dict,
+    ) -> None:
+        write_json_atomic(
+            round_artifact_directory(self.root, round_key) / "quality.json",
+            payload,
+        )
+
+    def write_reconstruction_environment(self, payload: dict) -> None:
+        write_json_atomic(
+            self.root / "reconstruction_environment.json",
+            payload,
+        )
+
+    def read_undistortion_manifest(self) -> list[dict]:
+        path = self.root / "undistortion_manifest.json"
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        views = payload.get("views") if isinstance(payload, dict) else None
+        if not isinstance(views, list):
+            raise ValueError("undistortion manifest views must be an array")
+        return [item for item in views if isinstance(item, dict)]
+
+    def write_round_model_result(self, item: RoundModelResult) -> None:
+        directory = round_artifact_directory(self.root, item.round_key)
+        write_json_atomic(
+            directory / "model" / "result.json",
+            item.model_dump(mode="json"),
+        )
+
+    def write_round_model_index(
+        self,
+        items: Iterable[RoundModelResult],
+    ) -> None:
+        write_json_atomic(
+            self.root / "round_models.json",
+            [item.model_dump(mode="json") for item in items],
+        )
+
+    def write_tip_landmark(
+        self,
+        item: TipLandmark,
+        *,
+        quality: dict | None = None,
+    ) -> None:
+        payload = item.model_dump(mode="json")
+        if quality is not None:
+            payload["quality"] = quality
+        write_json_atomic(
+            round_artifact_directory(self.root, item.round_key)
+            / "tip"
+            / "tip_marker.json",
+            payload,
+        )
+
+    def write_tip_corrections(
+        self,
+        corrections: Iterable[TipCorrection],
+    ) -> None:
+        records = list(corrections)
+        write_json_atomic(
+            self.root / "tip_corrections.json",
+            [item.model_dump(mode="json") for item in records],
+        )
+        for path in (self.root / "rounds").glob(
+            "*/*/tip/corrections.json"
+        ):
+            path.unlink(missing_ok=True)
+        by_round: dict[str, list[TipCorrection]] = {}
+        for item in records:
+            by_round.setdefault(item.round_key, []).append(item)
+        for round_key, items in by_round.items():
+            write_json_atomic(
+                round_artifact_directory(self.root, round_key)
+                / "tip"
+                / "corrections.json",
+                [item.model_dump(mode="json") for item in items],
+            )
 
     def write_intrinsics_snapshot(self, payload: dict) -> None:
         write_json_atomic(self.root / "intrinsics_snapshot.json", payload)
@@ -168,6 +310,34 @@ class AnalysisArtifacts:
             payload.get("quality", {}),
         )
 
+    def write_aggregated_pose_results(
+        self,
+        poses: Iterable[CameraPoseResult],
+        *,
+        pose_estimation_version: str,
+        round_quality: list[dict],
+    ) -> None:
+        pose_items = list(poses)
+        write_json_atomic(
+            self.root / "camera_poses.json",
+            [item.model_dump(mode="json") for item in pose_items],
+        )
+        write_json_atomic(
+            self.root / "aruco_alignment.json",
+            {
+                "pose_estimation_version": pose_estimation_version,
+                "coordinate_space": "undistorted",
+                "round_count": len(round_quality),
+            },
+        )
+        write_json_atomic(
+            self.root / "pose_quality.json",
+            {
+                "coordinate_space": "undistorted",
+                "rounds": round_quality,
+            },
+        )
+
     def clear_pose_alignment(self) -> None:
         for file_name in (
             "camera_poses.json",
@@ -189,113 +359,121 @@ class AnalysisArtifacts:
             raise ValueError("camera poses must be an array")
         return [item for item in payload if isinstance(item, dict)]
 
-    def write_frame_pairs(self, pairs: Iterable[AnalysisFramePair]) -> None:
-        rows = [pair.model_dump(mode="json") for pair in pairs]
-        write_csv_atomic(self.root / "frame_pairs.csv", FRAME_PAIR_FIELDS, rows)
-
-    @staticmethod
-    def _detection_row(detection: StoredDetection, *, resolved: bool) -> dict:
-        result = (
-            detection.resolved_detection
-            if resolved
-            else detection.automatic_detection
-        )
-        if result is None:
-            return {
-                "frame_id": detection.frame_id,
-                "timestamp": None,
-                "candidate_count": 0,
-                "selected_x_px": None,
-                "selected_y_px": None,
-                "detection_type": "Missing",
-                "valid": False,
+    def write_tip_trajectory(
+        self,
+        points: Iterable[TipTrajectoryPoint],
+        quality: dict,
+    ) -> None:
+        records = list(points)
+        rows = [
+            {
+                field: getattr(item, field)
+                for field in TIP_TRAJECTORY_FIELDS
             }
-        selected = result.selected_point
-        return {
-            "frame_id": result.frame_id,
-            "timestamp": result.timestamp,
-            "candidate_count": len(result.candidate_points),
-            "selected_x_px": selected.x_px if selected else None,
-            "selected_y_px": selected.y_px if selected else None,
-            "detection_type": result.detection_type,
-            "valid": result.valid,
+            for item in records
+        ]
+        write_csv_atomic(
+            self.root / "trajectory" / "tip_marker_trajectory.csv",
+            TIP_TRAJECTORY_FIELDS,
+            rows,
+        )
+        write_json_atomic(
+            self.root / "trajectory" / "tip_marker_trajectory.json",
+            [item.model_dump(mode="json") for item in records],
+        )
+        write_json_atomic(
+            self.root / "trajectory" / "trajectory_quality.json",
+            quality,
+        )
+
+    def write_formal_summaries(
+        self,
+        rounds: Iterable[AnalysisRound],
+        models: Iterable[RoundModelResult],
+        landmarks: Iterable[TipLandmark],
+        trajectory_quality: dict,
+    ) -> None:
+        round_items = list(rounds)
+        model_items = list(models)
+        landmark_items = list(landmarks)
+        models_by_round = {
+            item.round_key: item
+            for item in model_items
         }
-
-    def write_detections(
-        self,
-        camera_id: str,
-        detections: Iterable[StoredDetection],
-    ) -> None:
-        records = list(detections)
-        automatic_rows = [
-            self._detection_row(item, resolved=False)
-            for item in records
-        ]
-        resolved_rows = [
-            self._detection_row(item, resolved=True)
-            for item in records
-        ]
+        landmarks_by_round = {
+            item.round_key: item
+            for item in landmark_items
+        }
+        rows = []
+        for item in round_items:
+            model = models_by_round.get(item.round_key)
+            landmark = landmarks_by_round.get(item.round_key)
+            rows.append({
+                "record_id": item.record_id,
+                "mode_id": item.mode_id,
+                "round_id": item.round_id,
+                "status": item.status,
+                "view_count": item.view_count,
+                "top_view_count": item.top_view_count,
+                "side_view_count": item.side_view_count,
+                "rotating_view_count": item.rotating_view_count,
+                "angular_coverage_deg": item.angular_coverage_deg,
+                "duration_seconds": item.duration_seconds,
+                "model_status": model.status if model is not None else None,
+                "tip_marker_status": (
+                    "valid"
+                    if landmark is not None and landmark.valid
+                    else "invalid"
+                    if landmark is not None
+                    else "missing"
+                ),
+            })
         write_csv_atomic(
-            self.root / f"{camera_id}_detections.csv",
-            DETECTION_FIELDS,
-            automatic_rows,
+            self.root / "summaries" / "round_summary.csv",
+            ROUND_SUMMARY_FIELDS,
+            rows,
         )
-        write_csv_atomic(
-            self.root / "detections" / f"{camera_id}_automatic.csv",
-            DETECTION_FIELDS,
-            automatic_rows,
-        )
-        write_csv_atomic(
-            self.root / f"resolved_{camera_id}_positions.csv",
-            DETECTION_FIELDS,
-            resolved_rows,
-        )
-        write_csv_atomic(
-            self.root / "detections" / f"resolved_{camera_id}.csv",
-            DETECTION_FIELDS,
-            resolved_rows,
-        )
-
-    def write_corrections(
-        self,
-        corrections: Iterable[ManualCorrection],
-    ) -> None:
-        payload = [item.model_dump(mode="json") for item in corrections]
-        write_json_atomic(self.root / "manual_corrections.json", payload)
         write_json_atomic(
-            self.root / "detections" / "manual_corrections.json",
-            payload,
+            self.root / "summaries" / "model_quality.json",
+            [
+                {
+                    "round_key": item.round_key,
+                    "status": item.status,
+                    "backend": item.backend,
+                    "backend_version": item.backend_version,
+                    "quality": item.model_quality,
+                    "failure_reason": item.failure_reason,
+                }
+                for item in model_items
+            ],
         )
-
-    def write_trajectory(self, rows: list[dict]) -> None:
-        write_csv_atomic(
-            self.root / "trajectory_3d.csv",
-            TRAJECTORY_FIELDS,
-            rows,
-        )
-        write_csv_atomic(
-            self.root / "reconstruction" / "trajectory_3d.csv",
-            TRAJECTORY_FIELDS,
-            rows,
-        )
-
-    def write_reprojection_errors(self, rows: list[dict]) -> None:
-        write_csv_atomic(
-            self.root / "reprojection_errors.csv",
-            REPROJECTION_FIELDS,
-            rows,
-        )
-        write_csv_atomic(
-            self.root / "reconstruction" / "reprojection_errors.csv",
-            REPROJECTION_FIELDS,
-            rows,
-        )
-
-    def write_detection_summary(self, payload: dict) -> None:
-        write_json_atomic(self.root / "detection_summary.json", payload)
         write_json_atomic(
-            self.root / "summaries" / "detection_summary.json",
-            payload,
+            self.root / "summaries" / "tip_marker_quality.json",
+            [item.model_dump(mode="json") for item in landmark_items],
+        )
+        write_json_atomic(
+            self.root / "summaries" / "analysis_summary.json",
+            {
+                "round_count": len(round_items),
+                "completed_round_count": sum(
+                    item.status == "tip_completed"
+                    for item in round_items
+                ),
+                "failed_round_count": sum(
+                    item.status in {
+                        "failed",
+                        "model_failed",
+                        "tip_only",
+                        "tip_invalid",
+                    }
+                    for item in round_items
+                ),
+                "tip_marker_count": sum(
+                    item.valid
+                    for item in landmark_items
+                ),
+                "trajectory": trajectory_quality,
+            },
         )
 
     def read_csv(self, file_name: str) -> list[dict[str, str]]:

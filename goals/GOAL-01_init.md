@@ -348,7 +348,6 @@ MotorControllerInterface
 - Engage
 - Disengage
 - 設定 Current Limit
-- 設定 Holding Current
 - 設定速度
 - 設定加速度
 - 設定目標位置
@@ -538,7 +537,6 @@ CHLOROCULUS EYE-ARM 拍照
 - 最大速度
 - 最大加速度
 - 最大 Current Limit
-- 最大 Holding Current
 - 馬達移動逾時
 - 同時間只能執行一個馬達任務
 - 實驗停止時禁止新的移動命令
@@ -558,7 +556,6 @@ CHLOROCULUS EYE-ARM 拍照
     "microstep_division": 16,
     "current_limit_amp": 1.5,
     "maximum_current_limit_amp": 2.4,
-    "holding_current_amp": 0.3,
     "velocity_limit_deg_s": 3.0,
     "acceleration_deg_s2": 3.0,
     "minimum_angle_deg": 0.0,
@@ -952,7 +949,6 @@ phyto-autoscopy/
 - Engage
 - Disengage
 - 設定電流
-- 設定 Holding Current
 - 設定速度
 - 設定加速度
 - 移動至目標位置
@@ -1222,7 +1218,6 @@ CHLOROCULUS EYE-ARM
 - 設定速度
 - 設定加速度
 - 設定 Current Limit
-- 設定 Holding Current
 - 測試往返
 - 停止
 - 緊急停止

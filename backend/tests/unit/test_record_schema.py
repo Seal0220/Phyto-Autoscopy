@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 import app.database.schema as schema_module
@@ -110,7 +112,7 @@ def test_initialize_schema_migrates_legacy_rows_and_foreign_key(tmp_path) -> Non
     database.close()
 
 
-def test_initialize_schema_removes_legacy_calibration_projection_without_losing_analysis(
+def test_initialize_schema_backs_up_and_removes_legacy_analysis(
     tmp_path,
 ) -> None:
     database = Database(tmp_path / "legacy-calibration.sqlite3")
@@ -209,13 +211,19 @@ def test_initialize_schema_removes_legacy_calibration_projection_without_losing_
         ("analysis-legacy",),
     )
     foreign_keys = database.fetchall("PRAGMA foreign_key_list(analysis_runs)")
-    assert run is not None
-    assert run["calibration_id"] == "calibration-legacy"
-    assert run["record_id"] == "record-legacy"
+    assert run is None
     assert not any(row["from"] == "calibration_id" for row in foreign_keys)
     assert database.fetchone(
         "SELECT 1 FROM sqlite_master WHERE name='calibration_profiles'"
     ) is None
+
+    backup_path = tmp_path / "phyto_autoscopy-backup.sqlite3"
+    assert backup_path.is_file()
+    with sqlite3.connect(backup_path) as backup:
+        stored = backup.execute(
+            "SELECT analysis_id, calibration_id FROM analysis_runs"
+        ).fetchone()
+    assert stored == ("analysis-legacy", "calibration-legacy")
     database.close()
 
 

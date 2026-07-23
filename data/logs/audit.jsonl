@@ -3337,3 +3337,5 @@
 {"timestamp": "2026-07-22T05:22:16.037193+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/analysis/sources/preview", "outcome": "ok"}
 {"timestamp": "2026-07-22T05:26:50.636768+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/analysis/sources/preview", "outcome": "ok"}
 {"timestamp": "2026-07-22T05:31:23.721436+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/analysis/sources/preview", "outcome": "ok"}
+{"timestamp": "2026-07-23T01:08:35.011896+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-07-23T01:08:35.023470+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}

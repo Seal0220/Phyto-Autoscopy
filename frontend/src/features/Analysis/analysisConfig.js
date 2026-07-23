@@ -1,17 +1,21 @@
 export const ANALYSIS_METHODS = {
-  top_side: {
-    label: "頂+側",
-    description: "保留原論文的俯視與側視偵測、極線約束及雙鏡頭三角測量。",
-    reference: "Ruiz-Melero et al. 2024",
+  round_multiview: {
+    label: "每輪多視角三維重建",
+    description: "俯視、側視與同一輪的全部有效旋臂視角共同建立三維模型與尖端標記。",
+    version: "1.0.0",
   },
-  top_side_rotating: {
-    label: "頂+側+環繞",
-    description: "以頂+側建立基準三維點，再使用 rotating 視角進行穩健多視角精修。",
-    reference: "Ruiz-Melero et al. 2024 + rotating multiview refinement",
+  top_side_tip_only: {
+    label: "雙鏡頭尖端分析",
+    description: "使用俯視與側視影像建立三維尖端標記與跨輪軌跡，不宣稱建立完整環繞模型。",
+    version: "2.0.0",
   },
 };
 
-export const HIGH_REPROJECTION_ERROR_THRESHOLD_PX = 10;
+export const ANALYSIS_CAMERA_LABELS = {
+  top: "俯視角",
+  side: "側視角",
+  rotating: "旋臂視角",
+};
 
 export const ANALYSIS_SETUP_STEPS = [
   {
@@ -24,15 +28,11 @@ export const ANALYSIS_SETUP_STEPS = [
   },
   {
     id: 3,
-    label: "分析範圍",
+    label: "重建與尖端分析",
   },
   {
     id: 4,
-    label: "方法參數",
-  },
-  {
-    id: 5,
-    label: "建立分析",
+    label: "確認並建立",
   },
 ];
 
@@ -54,11 +54,11 @@ export const ANALYSIS_STATUS_META = {
     tone: "warning",
   },
   needs_review: {
-    label: "等待人工修正",
+    label: "等待人工確認",
     tone: "warning",
   },
   reviewing: {
-    label: "人工修正中",
+    label: "人工確認中",
     tone: "warning",
   },
   reconstructing: {
@@ -68,6 +68,10 @@ export const ANALYSIS_STATUS_META = {
   completed: {
     label: "已完成",
     tone: "success",
+  },
+  partially_completed: {
+    label: "部分完成",
+    tone: "warning",
   },
   failed: {
     label: "失敗",
@@ -81,220 +85,69 @@ export const ANALYSIS_STATUS_META = {
 
 export const ANALYSIS_STAGE_LABELS = {
   validating: "驗證輸入資料",
-  pairing_frames: "配對雙鏡頭影格",
+  grouping_rounds: "整理分析輪次",
+  snapshotting_intrinsics: "固化相機內參",
+  undistorting_images: "套用內參並去畸變",
   detecting_aruco: "偵測 ArUco 基準",
   estimating_camera_poses: "估算相機姿態",
   refining_camera_poses: "精修相機姿態",
-  initializing_background: "初始化背景模型",
-  detecting_top_tip: "偵測俯視尖端",
-  detecting_side_tip: "偵測側視尖端",
-  interpolating: "補足缺失位置",
-  waiting_for_review: "等待人工修正",
-  triangulating: "計算三維位置",
-  calculating_reprojection_error: "計算重投影誤差",
+  selecting_reconstruction_views: "選擇模型影像",
+  extracting_features: "提取多視角特徵",
+  matching_features: "配對多視角特徵",
+  initializing_round_geometry: "建立初始三維幾何",
+  detecting_tip_candidates: "偵測尖端候選",
+  reconstructing_round_model: "建立每輪三維模型",
+  isolating_plant_model: "分離植物模型",
+  extracting_model_point_cloud: "建立植物點雲",
+  extracting_model_skeleton: "建立植物骨架",
+  triangulating_tip_marker: "計算三維尖端標記",
+  refining_tip_marker: "精修尖端標記",
+  linking_tip_trajectory: "建立尖端標記軌跡",
+  waiting_for_review: "等待人工確認",
+  calculating_quality_metrics: "計算品質指標",
   exporting: "輸出分析結果",
   completed: "已完成",
 };
 
+export const RECONSTRUCTION_QUALITY_OPTIONS = [
+  {
+    value: "preview",
+    label: "預覽",
+  },
+  {
+    value: "standard",
+    label: "標準",
+  },
+  {
+    value: "high",
+    label: "高品質",
+  },
+];
+
 export const ANALYSIS_PARAMETER_DEFAULTS = {
-  segmentationHistory: "",
-  segmentationVarianceThreshold: "",
-  segmentationLearningRate: "",
-  segmentationInitializationFrames: "",
-  segmentationDetectShadows: false,
-  openingKernelSize: "",
-  closingKernelSize: "",
-  erosionKernelSize: "",
-  minimumTopContourArea: "",
-  minimumSideContourArea: "",
-  lightingChangeArea: "",
-  lightingChangeEstimateFrames: "",
-  topPlantBaseX: "",
-  topPlantBaseY: "",
-  topSelectedPoints: "",
-  topUpdateRoi: true,
-  topRoiUpdateMargin: "",
-  sidePlantBaseX: "",
-  sidePlantBaseY: "",
-  sideSelectedPoints: "",
-  sideUpdateRoi: true,
-  sideRoiUpdateMargin: "",
-  maximumEpipolarDistance: "",
-  minimumPathConnectivity: "",
-  maximumInterpolationGapSeconds: "",
+  reconstructionBackend: "gsplat_3dgs",
+  qualityPreset: "standard",
+  useBundleAdjustment: true,
+  generatePlantMask: true,
+  usePlantMaskInLoss: true,
+  preserveSceneModel: true,
+  exportPlantModel: true,
+  saveBackgroundModel: false,
+  minimumTipConfidence: "0.7",
+  minimumSupportingViews: "2",
+  maximumTipReprojectionError: "5",
+  useSkeletonRefinement: true,
+  useTemporalPrior: true,
+  waitForLowConfidenceReview: true,
+  exportAll2dCandidates: false,
+  saveReprojectionOverlays: true,
+  saveGaussianModel: true,
+  exportScenePointCloud: true,
+  exportPlantPointCloud: true,
+  exportSkeleton: true,
+  exportTipMarkers: true,
+  exportTrajectoryCsv: true,
+  saveModelPreviews: true,
+  saveDiagnostics: true,
+  saveCheckpoints: true,
 };
-
-export const MOG2_PARAMETER_FIELDS = [
-  {
-    key: "segmentationHistory",
-    label: "背景歷史影格數",
-    min: 1,
-    step: 1,
-    suffix: "影格",
-  },
-  {
-    key: "segmentationVarianceThreshold",
-    label: "變異門檻",
-    min: 0.01,
-    step: 0.01,
-  },
-  {
-    key: "segmentationLearningRate",
-    label: "學習率",
-    min: -1,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "segmentationInitializationFrames",
-    label: "背景初始化影格數",
-    min: 1,
-    step: 1,
-    suffix: "影格",
-  },
-];
-
-export const MORPHOLOGY_PARAMETER_FIELDS = [
-  {
-    key: "openingKernelSize",
-    label: "開運算核心",
-    min: 1,
-    step: 2,
-    suffix: "px",
-    description: "填入正奇數以啟用；留空即停用。",
-    optional: true,
-  },
-  {
-    key: "closingKernelSize",
-    label: "閉運算核心",
-    min: 1,
-    step: 2,
-    suffix: "px",
-    description: "填入正奇數以啟用；留空即停用。",
-    optional: true,
-  },
-  {
-    key: "erosionKernelSize",
-    label: "侵蝕核心",
-    min: 1,
-    step: 2,
-    suffix: "px",
-    description: "填入正奇數以啟用；留空即停用。",
-    optional: true,
-  },
-  {
-    key: "minimumTopContourArea",
-    label: "俯視最小輪廓面積",
-    min: 0,
-    step: 1,
-    suffix: "px²",
-  },
-  {
-    key: "minimumSideContourArea",
-    label: "側視最小輪廓面積",
-    min: 0,
-    step: 1,
-    suffix: "px²",
-  },
-];
-
-export const LIGHTING_PARAMETER_FIELDS = [
-  {
-    key: "lightingChangeArea",
-    label: "光照切換面積門檻",
-    min: 0,
-    step: 1,
-    suffix: "px²",
-  },
-  {
-    key: "lightingChangeEstimateFrames",
-    label: "光照穩定等待",
-    min: 1,
-    step: 1,
-    suffix: "影格",
-  },
-];
-
-export const TOP_DETECTION_PARAMETER_FIELDS = [
-  {
-    key: "topPlantBaseX",
-    label: "俯視植物基部 X",
-    min: 0,
-    step: 1,
-    suffix: "px",
-  },
-  {
-    key: "topPlantBaseY",
-    label: "俯視植物基部 Y",
-    min: 0,
-    step: 1,
-    suffix: "px",
-  },
-  {
-    key: "topSelectedPoints",
-    label: "俯視候選輪廓數",
-    min: 1,
-    step: 1,
-  },
-  {
-    key: "topRoiUpdateMargin",
-    label: "俯視 ROI 更新邊距",
-    min: 0,
-    step: 1,
-    suffix: "px",
-    enabledBy: "topUpdateRoi",
-  },
-];
-
-export const SIDE_DETECTION_PARAMETER_FIELDS = [
-  {
-    key: "sidePlantBaseX",
-    label: "側視植物基部 X",
-    min: 0,
-    step: 1,
-    suffix: "px",
-  },
-  {
-    key: "sidePlantBaseY",
-    label: "側視植物基部 Y",
-    min: 0,
-    step: 1,
-    suffix: "px",
-  },
-  {
-    key: "sideSelectedPoints",
-    label: "側視候選輪廓數",
-    min: 1,
-    step: 1,
-  },
-  {
-    key: "sideRoiUpdateMargin",
-    label: "側視 ROI 更新邊距",
-    min: 0,
-    step: 1,
-    suffix: "px",
-    enabledBy: "sideUpdateRoi",
-  },
-  {
-    key: "maximumEpipolarDistance",
-    label: "Epipolar 最大距離",
-    min: 0.01,
-    step: 0.01,
-    suffix: "px",
-  },
-];
-
-export const MINIMUM_PATH_CONNECTIVITY_OPTIONS = [
-  {
-    value: "",
-    label: "請選擇",
-  },
-  {
-    value: "4",
-    label: "4 鄰接",
-  },
-  {
-    value: "8",
-    label: "8 鄰接",
-  },
-];

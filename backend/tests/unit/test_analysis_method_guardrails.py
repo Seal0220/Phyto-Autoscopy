@@ -18,7 +18,6 @@ FORBIDDEN_DEPENDENCIES = {
     "diff-gaussian-rasterization",
     "filterpy",
     "flax",
-    "gsplat",
     "jax",
     "keras",
     "mmdet",
@@ -26,7 +25,6 @@ FORBIDDEN_DEPENDENCIES = {
     "onnxruntime",
     "scikit-learn",
     "tensorflow",
-    "torch",
     "transformers",
     "ultralytics",
 }

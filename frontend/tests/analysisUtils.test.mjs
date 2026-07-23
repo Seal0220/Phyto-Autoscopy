@@ -2,453 +2,139 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  analysisDefaultEndFrame,
+  analysisDefaultSelectedModeIds,
   analysisMethodFromCameraSources,
-  analysisProgressPercent,
+  analysisRecordSummaryItems,
   analysisSetupFromRecord,
   analysisSourcesFromPayload,
-  activeCalibrationFromPayload,
   buildAnalysisCreatePayload,
   createInitialAnalysisSetup,
-  mergeAnalysisProgress,
-  mergeAnalysisRuns,
   validateAnalysisSetupStep,
 } from "../src/features/Analysis/lib/analysisUtils.js";
 
-test("record auto-fill derives the method from rotating availability", () => {
-  const initial = createInitialAnalysisSetup();
-  const populated = analysisSetupFromRecord(initial, {
-    record_id: "record-auto",
-    record_path: "C:/captures/record-auto",
-    ended_at: "2026-07-22T03:00:00Z",
-    total_image_count: 24,
-    capture_configuration: {
-      rotation_enabled: true,
-      total_cycles: 2,
+const modes = [
+  {
+    id: "ContinuousInterval.01",
+    type: "continuous_interval",
+    folder: "ContinuousInterval.01",
+    image_count: 30,
+  },
+  {
+    id: "AngleInterval.01",
+    type: "angle_interval",
+    folder: "AngleInterval.01",
+    image_count: 90,
+  },
+];
+
+function readySetup() {
+  const setup = analysisSetupFromRecord(
+    createInitialAnalysisSetup(),
+    {
+      record_id: "record-1",
+      record_path: "C:/captures/record-1",
+      available_modes: modes,
     },
-    total_frame_count: 8,
-    rotating_frame_count: 8,
-  });
-
-  assert.equal(populated.recordId, "record-auto");
-  assert.equal(populated.recordPath, "C:/captures/record-auto");
-  assert.deepEqual(populated.captureConfiguration, {
-    rotation_enabled: true,
-    total_cycles: 2,
-  });
-  assert.equal(populated.endFrame, "8");
-  assert.equal(populated.method, "top_side_rotating");
-  assert.equal(populated.cameraSources.rotating.enabled, true);
-  assert.equal(
-    analysisMethodFromCameraSources({
-      rotating: {
-        enabled: false,
-      },
-    }),
-    "top_side",
   );
-});
-
-function validSetup() {
-  const setup = createInitialAnalysisSetup("record-1");
-  setup.recordPath = "C:/captures/record-1";
   setup.sourcePreview = {
     ready: true,
-    total_frame_count: 12,
-    pairable_frame_count: 12,
-    camera_resolutions: {
-      top: [1280, 960],
-      side: [1280, 960],
-      rotating: null,
+    ready_round_count: 1,
+    intrinsics_readiness: {
+      top: { ready: true },
+      side: { ready: true },
+      rotating: { ready: true },
     },
-    errors: [],
-  };
-  setup.calibrationId = "calibration-1";
-  setup.endFrame = "12";
-  setup.topRoi = {
-    x: "0",
-    y: "1",
-    width: "640",
-    height: "480",
-  };
-  setup.sideRoi = {
-    x: "2",
-    y: "3",
-    width: "640",
-    height: "480",
-  };
-  setup.parameters = {
-    ...setup.parameters,
-    segmentationHistory: "100",
-    segmentationVarianceThreshold: "16",
-    segmentationLearningRate: "-1",
-    segmentationInitializationFrames: "10",
-    openingKernelSize: "3",
-    closingKernelSize: "5",
-    erosionKernelSize: "3",
-    minimumTopContourArea: "0",
-    minimumSideContourArea: "0",
-    lightingChangeArea: "0",
-    lightingChangeEstimateFrames: "5",
-    topPlantBaseX: "0",
-    topPlantBaseY: "240",
-    topSelectedPoints: "3",
-    topRoiUpdateMargin: "0",
-    sidePlantBaseX: "0",
-    sidePlantBaseY: "470",
-    sideSelectedPoints: "4",
-    sideRoiUpdateMargin: "0",
-    maximumEpipolarDistance: "5.5",
-    minimumPathConnectivity: "8",
-    maximumInterpolationGapSeconds: "30",
+    aruco_readiness: { ready: true },
+    backend_readiness: { available: true },
   };
   return setup;
 }
 
-const sources = [
-  {
-    record_id: "record-1",
-    ready: true,
-    total_frame_count: 12,
-    camera_resolutions: {
-      top: [1280, 960],
-      side: [1280, 960],
-    },
-    not_ready_reasons: [],
-  },
-];
-const activeCalibration = {
-  calibration_id: "calibration-1",
-  valid: true,
-  image_width: 1280,
-  image_height: 960,
-};
+test("選擇紀錄會帶入根目錄並預設排除連續擷取模式", () => {
+  const setup = readySetup();
 
-test("analysis dashboard normalizes source wrappers and nested runs", () => {
-  const normalized = analysisSourcesFromPayload({
-    sources: [
-      {
-        record_id: "record-1",
-        ready: true,
-        top_frame_count: "4",
-        side_frame_count: 3,
-        total_frame_count: 5,
-        pairable_frame_count: 3,
-        camera_resolutions: {
-          top: [1920, 1080],
-          side: [1280, 720],
-        },
-        analysis_runs: [
-          {
-            analysis_id: "analysis-1",
-            progress: 1.4,
-          },
-        ],
-      },
-    ],
+  assert.equal(setup.recordId, "record-1");
+  assert.equal(setup.recordPath, "C:/captures/record-1");
+  assert.deepEqual(setup.selectedModeIds, ["AngleInterval.01"]);
+  assert.equal(setup.method, "round_multiview");
+});
+
+test("分析方法只依旋臂視角旗標推導", () => {
+  assert.equal(
+    analysisMethodFromCameraSources({
+      rotating: { enabled: true },
+    }),
+    "round_multiview",
+  );
+  assert.equal(
+    analysisMethodFromCameraSources({
+      rotating: { enabled: false },
+    }),
+    "top_side_tip_only",
+  );
+});
+
+test("來源資料會正規化模式與總張數", () => {
+  const [source] = analysisSourcesFromPayload({
+    sources: [{
+      record_id: "record-1",
+      record_path: "C:/captures/record-1",
+      total_image_count: "120",
+      available_modes: modes,
+    }],
   });
 
-  assert.equal(normalized[0].top_frame_count, 4);
-  assert.equal(normalized[0].total_frame_count, 5);
-  assert.deepEqual(normalized[0].camera_resolutions, {
-    top: [1920, 1080],
-    side: [1280, 720],
-    rotating: null,
-  });
-  assert.equal(normalized[0].analysis_runs[0].progress, 1);
-  assert.throws(
-    () => analysisSourcesFromPayload({ sources: null }),
-    /可分析紀錄資料格式錯誤/,
+  assert.equal(source.total_image_count, 120);
+  assert.equal(source.available_modes.length, 2);
+  assert.deepEqual(
+    analysisDefaultSelectedModeIds(source.available_modes),
+    ["AngleInterval.01"],
   );
 });
 
-test("analysis range defaults to every frame-pair row, not only usable pairs", () => {
-  assert.equal(analysisDefaultEndFrame({
-    total_frame_count: 8,
-    pairable_frame_count: 5,
-  }), "8");
-  assert.equal(analysisDefaultEndFrame({
-    total_frame_count: 0,
-    pairable_frame_count: 5,
-  }), "");
+test("四個建立步驟可驗證完整 Round 分析配置", () => {
+  const setup = readySetup();
+
+  for (const step of [1, 2, 3, 4]) {
+    assert.equal(validateAnalysisSetupStep(setup, step), true);
+  }
 });
 
-test("analysis runs merge without duplicating embedded runs", () => {
-  const merged = mergeAnalysisRuns(
-    [
-      {
-        analysis_runs: [
-          {
-            analysis_id: "analysis-1",
-            status: "draft",
-          },
-        ],
-      },
-    ],
-    [
-      {
-        analysis_id: "analysis-1",
-        status: "processing",
-      },
-      {
-        analysis_id: "analysis-2",
-        status: "completed",
-      },
-    ],
-  );
+test("建立 payload 不包含舊影格範圍、偏移或 ROI", () => {
+  const payload = buildAnalysisCreatePayload(readySetup());
+  const serialized = JSON.stringify(payload);
 
-  assert.equal(merged.length, 2);
-  assert.equal(
-    merged.find((run) => run.analysis_id === "analysis-1").status,
-    "processing",
-  );
+  assert.equal(payload.method, "round_multiview");
+  assert.deepEqual(payload.mode_ids, ["AngleInterval.01"]);
+  assert.equal(payload.camera_sources.top.enabled, true);
+  assert.equal(payload.camera_sources.side.enabled, true);
+  assert.equal(payload.camera_sources.rotating.enabled, true);
+  for (const forbidden of [
+    "start_frame",
+    "end_frame",
+    "frame_offset",
+    "manual_frame_offset",
+    "top_roi",
+    "side_roi",
+    "plant_base",
+    "mog2",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
 });
 
-test("analysis websocket progress updates only its matching dashboard run", () => {
-  const runs = [
-    {
-      analysis_id: "analysis-1",
-      status: "processing",
-      progress: 0.1,
-    },
-    {
-      analysis_id: "analysis-2",
-      status: "draft",
-      progress: 0,
-    },
-  ];
-  const next = mergeAnalysisProgress(runs, {
-    analysis_id: "analysis-1",
-    status: "processing",
-    stage: "detecting_top_tip",
-    progress: 0.75,
-    current_frame: 15,
-    total_frames: 20,
-    last_error: null,
+test("紀錄摘要只列出時間、模式數量與總張數", () => {
+  const items = analysisRecordSummaryItems({
+    created_at: "2026-07-22T08:00:00Z",
+    ended_at: "2026-07-22T09:00:00Z",
+    available_modes: modes,
+    total_image_count: 120,
   });
 
-  assert.equal(next[0].progress, 0.75);
-  assert.equal(next[0].current_frame, 15);
-  assert.equal(next[0].stage, "detecting_top_tip");
-  assert.equal(next[1], runs[1]);
-  assert.equal(mergeAnalysisProgress(runs, {
-    analysis_id: null,
-    status: "idle",
-  }), runs);
-});
-
-test("analysis setup requires scanned sources and valid calibration", () => {
-  const setup = validSetup();
-
-  assert.equal(validateAnalysisSetupStep(setup, 4, activeCalibration), true);
-  setup.sourcePreview = {
-    ready: false,
-    errors: ["缺少側視影像"],
-  };
-  assert.throws(
-    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
-    /缺少側視影像/,
+  assert.deepEqual(
+    items.map((item) => item.label),
+    ["開始時間", "結束時間", "模式數量", "總張數"],
   );
-  setup.sourcePreview = validSetup().sourcePreview;
-  assert.throws(
-    () => validateAnalysisSetupStep(
-      setup,
-      1,
-      { ...activeCalibration, valid: false },
-    ),
-    /啟用的相機校正無效/,
-  );
-});
-
-test("analysis parameter validation rejects even morphology kernels", () => {
-  const setup = validSetup();
-  setup.parameters.openingKernelSize = "4";
-
-  assert.throws(
-    () => validateAnalysisSetupStep(setup, 3, activeCalibration),
-    /核心大小必須是正奇數/,
-  );
-});
-
-test("analysis range stays within source frames and analysis image bounds", () => {
-  const tooManyFrames = validSetup();
-  tooManyFrames.endFrame = "13";
-  assert.throws(
-    () => validateAnalysisSetupStep(
-      tooManyFrames,
-      2,
-      activeCalibration,
-    ),
-    /不可超過此紀錄的 12 組影格/,
-  );
-
-  const outsideImage = validSetup();
-  outsideImage.topRoi.x = "1000";
-  outsideImage.topRoi.width = "640";
-  assert.throws(
-    () => validateAnalysisSetupStep(
-      outsideImage,
-      2,
-      activeCalibration,
-    ),
-    /俯視 ROI 不可超出 1280 × 960/,
-  );
-});
-
-test("analysis ROI uses capture resolution even when calibration resolution differs", () => {
-  const setup = validSetup();
-  setup.topRoi.x = "1000";
-  setup.topRoi.width = "640";
-  setup.sourcePreview = {
-    ...setup.sourcePreview,
-    camera_resolutions: {
-      top: [1920, 1080],
-      side: [800, 600],
-      rotating: null,
-    },
-  };
-
-  assert.equal(
-    validateAnalysisSetupStep(
-      setup,
-      2,
-      activeCalibration,
-    ),
-    true,
-  );
-
-  setup.sideRoi.x = "700";
-  setup.sideRoi.width = "200";
-  assert.throws(
-    () => validateAnalysisSetupStep(
-      setup,
-      2,
-      activeCalibration,
-    ),
-    /側視 ROI 不可超出 800 × 600 的分析影像範圍/,
-  );
-});
-
-test("analysis setup preserves explicitly disabled optional cleanup", () => {
-  const setup = validSetup();
-  setup.parameters.openingKernelSize = "";
-  setup.parameters.closingKernelSize = "";
-  setup.parameters.erosionKernelSize = "";
-  setup.parameters.topUpdateRoi = false;
-  setup.parameters.topRoiUpdateMargin = "";
-  setup.parameters.sideUpdateRoi = false;
-  setup.parameters.sideRoiUpdateMargin = "";
-
-  assert.equal(validateAnalysisSetupStep(setup, 3, activeCalibration), true);
-
-  const payload = buildAnalysisCreatePayload(setup);
-  assert.equal(payload.parameters.segmentation.opening_kernel_size, null);
-  assert.equal(payload.parameters.segmentation.closing_kernel_size, null);
-  assert.equal(payload.parameters.segmentation.erosion_kernel_size, null);
-  assert.equal(payload.parameters.top_detection.update_roi, false);
-  assert.equal(payload.parameters.top_detection.roi_update_margin_px, null);
-  assert.equal(payload.parameters.side_detection.update_roi, false);
-  assert.equal(payload.parameters.side_detection.roi_update_margin_px, null);
-});
-
-test("analysis payload keeps the selected method and unified camera sources", () => {
-  const setup = validSetup();
-  setup.parameters.highReprojectionErrorThreshold = "999";
-  const payload = buildAnalysisCreatePayload(setup);
-
-  assert.equal(payload.record_id, "record-1");
-  assert.equal(payload.manual_frame_offset, 0);
-  assert.deepEqual(payload.top_roi, {
-    x: 0,
-    y: 1,
-    width: 640,
-    height: 480,
-  });
-  assert.equal(
-    payload.parameters.method.name,
-    "top_side",
-  );
-  assert.equal(payload.method, "top_side");
-  assert.deepEqual(payload.camera_sources, {
-    top: {
-      enabled: true,
-      path: "C:/captures/record-1",
-    },
-    side: {
-      enabled: true,
-      path: "C:/captures/record-1",
-    },
-    rotating: {
-      enabled: false,
-      path: "C:/captures/record-1",
-    },
-  });
-  assert.equal(payload.parameters.segmentation.method, "mog2");
-  assert.equal(payload.parameters.side_detection.minimum_path_connectivity, 8);
-  assert.equal(
-    payload.parameters.side_detection.minimum_path_edge_weight,
-    "inverse_distance_transform",
-  );
-  assert.equal(payload.parameters.interpolation.method, "linear");
-  assert.equal(payload.parameters.reprojection.high_error_threshold_px, 10);
-});
-
-test("advanced analysis requires rotating source, angle preview, and calibration", () => {
-  const setup = validSetup();
-  setup.method = "top_side_rotating";
-  setup.cameraSources.rotating = {
-    enabled: true,
-  };
-  setup.sourcePreview = {
-    ...setup.sourcePreview,
-    rotating_frame_count: 12,
-    rotating_angle_count: 12,
-    rotating_pairable_frame_count: 12,
-    camera_resolutions: {
-      ...setup.sourcePreview.camera_resolutions,
-      rotating: [1280, 960],
-    },
-  };
-
-  assert.throws(
-    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
-    /包含旋臂幾何/,
-  );
-  assert.throws(
-    () => validateAnalysisSetupStep(setup, 1, null),
-    /沒有已啟用的相機校正/,
-  );
-  assert.equal(
-    validateAnalysisSetupStep(
-      setup,
-      1,
-      { ...activeCalibration, supports_rotating: true },
-    ),
-    true,
-  );
-});
-
-test("analysis setup requires a selected Record root", () => {
-  const setup = validSetup();
-  setup.recordId = "";
-  setup.recordPath = "";
-
-  assert.throws(
-    () => validateAnalysisSetupStep(setup, 1, activeCalibration),
-    /請先選擇一筆可分析紀錄/,
-  );
-});
-
-test("analysis reads only the active calibration adapter and clamps progress", () => {
-  assert.equal(
-    activeCalibrationFromPayload({
-      calibration_id: "c1",
-      valid: true,
-    }).valid,
-    true,
-  );
-  assert.equal(activeCalibrationFromPayload(null), null);
-  assert.equal(analysisProgressPercent(-1), 0);
-  assert.equal(analysisProgressPercent(0.258), 26);
-  assert.equal(analysisProgressPercent(4), 100);
+  assert.equal(items[2].value, "2 種");
+  assert.equal(items[3].value, "120 張");
 });

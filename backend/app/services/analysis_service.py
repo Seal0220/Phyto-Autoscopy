@@ -3,16 +3,14 @@ from __future__ import annotations
 import json
 import hashlib
 import logging
-import math
 import shutil
 import traceback
 import zipfile
-from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from threading import Event, RLock
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 import cv2
@@ -22,53 +20,40 @@ from pydantic import ValidationError
 from app.analysis import analysis_method
 from app.analysis.analysis_runner import AnalysisJobManager
 from app.analysis.artifacts import AnalysisArtifacts
-from app.calibration.resolution_adaptation import (
-    CameraPairResolutionAdaptation,
-    adapt_camera_pair_resolution,
+from app.analysis.intrinsics import (
+    build_intrinsics_snapshot,
+    undistort_analysis_views,
 )
-from app.analysis.detection.epipolar_constraint import epipolar_line_from_top_point
-from app.analysis.detection.side_tip_detection import side_tip_candidates
-from app.analysis.detection.top_tip_detection import top_tip_candidates
-from app.analysis.detection.rotating_tip import (
-    detect_rotating_tip_near_projection,
+from app.analysis.rounds import (
+    RoundGroupingResult,
+    evaluate_round_quality,
+    group_analysis_rounds,
+    select_round_reconstruction_views,
 )
-from app.analysis.frame_pairing import pair_capture_frames
+from app.analysis.rounds.paths import (
+    round_artifact_directory,
+    safe_artifact_name,
+)
+from app.analysis.reconstruction import ReconstructionBackendRegistry
+from app.analysis.reconstruction.reconstruction_worker import (
+    run_reconstruction_worker,
+)
+from app.analysis.review import create_tip_correction
 from app.analysis.pose_alignment import align_dataset_camera_poses
 from app.analysis.pose_alignment.aruco_world import aruco_layout_snapshot
-from app.analysis.pose_alignment.runtime_geometry import (
-    RuntimeAnalysisGeometry,
-    build_runtime_analysis_geometry,
-)
-from app.analysis.reconstruction.coordinate_system import (
-    apply_world_transform,
-)
-from app.analysis.reconstruction.reprojection import (
-    reprojection_errors,
-    summarize_reprojection_errors,
-)
-from app.analysis.reconstruction.triangulation import triangulate_point
-from app.analysis.reconstruction.multiview import (
-    robust_multiview_triangulate,
-)
 from app.analysis.run_metadata import (
     next_dated_identifier,
     repository_commit,
     runtime_versions,
     utc_now_iso,
 )
-from app.analysis.segmentation.mog2_background import Mog2BackgroundSegmenter
 from app.analysis.record_validator import (
     CaptureRecordValidation,
     CaptureRecordValidator,
 )
-from app.analysis.source_validator import validate_analysis_sources
-from app.analysis.tracking.linear_interpolation import (
-    TrackPoint,
-    interpolate_missing_track,
-)
-from app.analysis.tracking.temporal_selection import select_temporal_candidate
+from app.analysis.tip.pipeline import analyze_round_tip
+from app.analysis.tip.trajectory_linker import link_tip_trajectory
 from app.core.config import (
-    AnalysisSettings,
     AppSettings,
     BACKEND_ROOT,
     PoseAlignmentSettings,
@@ -81,22 +66,18 @@ from app.core.exceptions import (
 )
 from app.models.analysis_models import (
     AnalysisCreateRequest,
-    AnalysisFrameDetail,
-    AnalysisFramePair,
+    AnalysisRound,
+    CameraPoseResult as AnalysisCameraPoseResult,
     AnalysisProgress,
     AnalysisRun,
     AnalysisSourceSummary,
     AnalysisSourceMode,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
-    DetectionSummary,
-    DetectionResult,
-    ManualCorrection,
-    ManualCorrectionRequest,
-    Point2D,
-    ReprojectionErrorRecord,
-    StoredDetection,
-    TrajectoryPoint,
+    RoundModelResult,
+    TipCorrection,
+    TipCorrectionRequest,
+    TipLandmark,
 )
 from app.models.calibration_models import CameraIntrinsics
 from app.repositories.analysis_repository import AnalysisRepository
@@ -112,16 +93,16 @@ PROCESSING_STATUSES = frozenset({
     "processing",
     "reconstructing",
 })
-TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
-PAIRABLE_STATUSES = frozenset({"paired", "manually_aligned"})
-DETECTION_CATEGORIES = (
-    "Automatic",
-    "Estimated",
-    "Interpolated",
-    "Manual",
-    "Missing",
-    "Invalid",
-)
+TERMINAL_STATUSES = frozenset({
+    "completed",
+    "partially_completed",
+    "failed",
+    "cancelled",
+})
+SUPPORTED_ANALYSIS_METHODS = frozenset({
+    "round_multiview",
+    "top_side_tip_only",
+})
 STATUS_LABELS = {
     "draft": "草稿",
     "validating": "驗證中",
@@ -131,6 +112,7 @@ STATUS_LABELS = {
     "reviewing": "人工檢查中",
     "reconstructing": "三維重建中",
     "completed": "已完成",
+    "partially_completed": "部分完成",
     "failed": "失敗",
     "cancelled": "已取消",
 }
@@ -168,28 +150,6 @@ CAPTURE_CONFIGURATION_FIELDS = (
     "arm_height_mm",
 )
 
-_REQUIRED_ANALYSIS_PARAMETERS = (
-    "segmentation.history",
-    "segmentation.variance_threshold",
-    "segmentation.learning_rate",
-    "segmentation.initialization_frames",
-    "segmentation.minimum_top_contour_area_px",
-    "segmentation.minimum_side_contour_area_px",
-    "lighting_change.lighting_change_area_px",
-    "lighting_change.lighting_change_est_time_frames",
-    "top_detection.roi",
-    "top_detection.plant_base",
-    "top_detection.num_selected_points",
-    "side_detection.roi",
-    "side_detection.plant_base",
-    "side_detection.num_selected_points",
-    "side_detection.maximum_epipolar_distance_px",
-    "side_detection.minimum_path_connectivity",
-    "side_detection.minimum_path_edge_weight",
-    "interpolation.maximum_gap_seconds",
-)
-
-
 def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(base)
     for key, value in incoming.items():
@@ -200,22 +160,6 @@ def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any
     return merged
 
 
-def _matches_record_source_path(
-    validation: CaptureRecordValidation,
-    camera_id: str,
-    path: object,
-) -> bool:
-    path_text = str(path or "").strip()
-    if not path_text:
-        return True
-    requested = Path(path_text).expanduser().resolve()
-    allowed = {validation.record_path.resolve()}
-    camera_directory = validation.camera_directories.get(camera_id)
-    if camera_directory:
-        allowed.add(Path(camera_directory).resolve())
-    return requested in allowed
-
-
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -224,66 +168,8 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _nested_value(payload: dict[str, Any], dotted_path: str) -> Any:
-    current: Any = payload
-    for key in dotted_path.split("."):
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
-
-
 def _status_label(status: str) -> str:
     return STATUS_LABELS.get(status, "未知狀態")
-
-
-def _point(value: Iterable[float]) -> tuple[float, float]:
-    values = tuple(float(item) for item in value)
-    if len(values) != 2 or not all(math.isfinite(item) for item in values):
-        raise AnalysisError("植物基部座標必須包含兩個有效數值。")
-    return values[0], values[1]
-
-
-def _roi(value: Iterable[int]) -> tuple[int, int, int, int]:
-    values = tuple(int(item) for item in value)
-    if len(values) != 4:
-        raise AnalysisError("ROI 必須為 [x, y, width, height]。")
-    return values[0], values[1], values[2], values[3]
-
-
-def _shift_contour(
-    contour: np.ndarray,
-    origin: tuple[int, int],
-) -> list[list[float]]:
-    points = contour.reshape(-1, 2).astype(np.float64)
-    if not len(points):
-        return []
-    points[:, 0] += origin[0]
-    points[:, 1] += origin[1]
-    return points.tolist()
-
-
-def _skew(vector: np.ndarray) -> np.ndarray:
-    x, y, z = np.asarray(vector, dtype=np.float64).reshape(3)
-    return np.asarray([[0, -z, y], [z, 0, -x], [-y, x, 0]], dtype=np.float64)
-
-
-def _fundamental_from_projections(
-    top_projection: np.ndarray,
-    side_projection: np.ndarray,
-) -> np.ndarray:
-    """Derive the Fundamental Matrix in the rectified image coordinates."""
-
-    top = np.asarray(top_projection, dtype=np.float64)
-    side = np.asarray(side_projection, dtype=np.float64)
-    _, _, top_vt = np.linalg.svd(top)
-    top_center = top_vt[-1]
-    epipole = side @ top_center
-    matrix = _skew(epipole) @ side @ np.linalg.pinv(top)
-    norm = np.linalg.norm(matrix)
-    if norm <= 1e-12 or not np.isfinite(matrix).all():
-        raise AnalysisError("無法由雙鏡頭投影矩陣建立校正後 Fundamental Matrix。")
-    return matrix / norm
 
 
 class AnalysisService:
@@ -315,6 +201,7 @@ class AnalysisService:
         self.intrinsic_calibration_service = intrinsic_calibration_service
         self._lock = RLock()
         self._validator = CaptureRecordValidator()
+        self._reconstruction_backends = ReconstructionBackendRegistry()
         self._runner = AnalysisJobManager(
             self._run_job,
             maximum_workers=maximum_workers,
@@ -328,7 +215,7 @@ class AnalysisService:
 
     def _require_completed_run(self, analysis_id: str) -> AnalysisRun:
         run = self._require_run(analysis_id)
-        if run.status != "completed":
+        if run.status not in {"completed", "partially_completed"}:
             raise AnalysisError("分析完成後才能讀取重建結果。")
         return run
 
@@ -342,13 +229,14 @@ class AnalysisService:
     def _required_camera_ids(method: str) -> tuple[str, ...]:
         return (
             ("top", "side", "rotating")
-            if method == "top_side_rotating"
+            if method == "round_multiview"
             else ("top", "side")
         )
 
     def _snapshot_intrinsics(
         self,
         method: str,
+        camera_resolutions: Mapping[str, tuple[int, int]],
     ) -> dict[str, dict[str, Any]]:
         try:
             available = {
@@ -371,10 +259,21 @@ class AnalysisService:
             raise AnalysisError(
                 "下列相機內參已失效，請先重新校正：" + ", ".join(invalid)
             )
-        return {
-            camera_id: available[camera_id].model_dump(mode="json")
-            for camera_id in required
-        }
+        snapshots = {}
+        for camera_id in required:
+            resolution = camera_resolutions.get(camera_id)
+            if resolution is None:
+                raise AnalysisError(f"紀錄缺少 {camera_id} 影像解析度。")
+            try:
+                snapshots[camera_id] = build_intrinsics_snapshot(
+                    available[camera_id],
+                    resolution,
+                )
+            except (TypeError, ValueError, cv2.error) as error:
+                raise AnalysisError(
+                    f"{camera_id} 影像解析度與內參不相容：{error}"
+                ) from error
+        return snapshots
 
     def _intrinsics_for_run(
         self,
@@ -388,7 +287,11 @@ class AnalysisService:
                 raise AnalysisError("分析建立時固化的內參快照遺失。") from error
         try:
             intrinsics = {
-                camera_id: CameraIntrinsics.model_validate(value)
+                camera_id: CameraIntrinsics.model_validate({
+                    key: item
+                    for key, item in value.items()
+                    if key in CameraIntrinsics.model_fields
+                })
                 for camera_id, value in payload.items()
             }
         except (TypeError, ValidationError) as error:
@@ -410,33 +313,6 @@ class AnalysisService:
             )
         except (KeyError, ValidationError) as error:
             raise AnalysisError(f"分析姿態對齊設定無效：{error}") from error
-
-    def _geometry_for_run(
-        self,
-        run: AnalysisRun,
-    ) -> RuntimeAnalysisGeometry:
-        intrinsics = self._intrinsics_for_run(run)
-        fixed_poses: dict[str, list[list[float]]] = {}
-        for camera_id in ("top", "side"):
-            pose = next(
-                (
-                    value
-                    for value in run.camera_pose_results
-                    if value.get("camera_id") == camera_id
-                    and value.get("resolved")
-                    and value.get("world_to_camera_matrix") is not None
-                ),
-                None,
-            )
-            if pose is not None:
-                fixed_poses[camera_id] = pose["world_to_camera_matrix"]
-        try:
-            return build_runtime_analysis_geometry(
-                intrinsics,
-                fixed_poses,
-            )
-        except (TypeError, ValueError, cv2.error) as error:
-            raise AnalysisError(f"本次分析的相機幾何無法建立：{error}") from error
 
     def _output_dir(self, run: AnalysisRun) -> Path:
         path = Path(run.output_path).resolve()
@@ -594,9 +470,7 @@ class AnalysisService:
         self,
         record_id: str,
         *,
-        timestamp_tolerance_ms: float,
-        manual_frame_offset: int,
-        method: str = "top_side",
+        method: str = "top_side_tip_only",
         mode_ids: Iterable[str] = (),
     ) -> CaptureRecordValidation:
         record = self._require_record(record_id)
@@ -604,11 +478,9 @@ class AnalysisService:
         return self._validator.validate(
             record,
             captures,
-            timestamp_tolerance_ms=timestamp_tolerance_ms,
-            manual_frame_offset=manual_frame_offset,
             required_camera_ids=(
                 ("top", "side", "rotating")
-                if method == "top_side_rotating"
+                if method == "round_multiview"
                 else ("top", "side")
             ),
             selected_mode_folders=self._selected_mode_folders(
@@ -617,74 +489,49 @@ class AnalysisService:
             ),
         )
 
-    def _validation_for_sources(
+    def _round_grouping(
         self,
-        camera_sources: Mapping[str, object],
+        validation: CaptureRecordValidation,
         *,
+        analysis_id: str,
+        record_id: str,
+        mode_ids: Iterable[str],
         method: str,
-        selected_mode_folders: Iterable[str] = (),
-    ) -> CaptureRecordValidation:
-        return validate_analysis_sources(
-            camera_sources,
+        enabled_camera_ids: Iterable[str],
+        input_manifest: Iterable[Mapping[str, Any]] = (),
+    ) -> RoundGroupingResult:
+        selected_ids = tuple(mode_ids)
+        available = {mode.id: mode for mode in self._record_modes(record_id)}
+        mode_ids_by_folder = {
+            available[mode_id].folder: mode_id
+            for mode_id in selected_ids
+            if mode_id in available
+        }
+        image_hashes = {
+            int(item["input_id"]): str(item.get("sha256") or "")
+            for item in input_manifest
+            if isinstance(item, Mapping) and item.get("input_id") is not None
+        }
+        return group_analysis_rounds(
+            analysis_id=analysis_id,
+            record_id=record_id,
+            frames=validation.frames,
+            mode_ids_by_folder=mode_ids_by_folder,
             method=method,
-            allowed_roots=(self.settings.paths.captures_dir,),
-            image_probe=self._validator.image_probe,
-            selected_mode_folders=selected_mode_folders,
+            enabled_camera_ids=tuple(enabled_camera_ids),
+            image_hashes=image_hashes,
         )
 
     def _validation_for_run(self, run: AnalysisRun) -> CaptureRecordValidation:
-        sources = run.parameters.get("camera_sources")
+        if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
+            raise AnalysisError("找不到分析紀錄。")
+        if not run.record_id:
+            raise AnalysisError("分析紀錄缺少捕捉紀錄 ID。")
         mode_ids = run.parameters.get("mode_ids", [])
         if not isinstance(mode_ids, list):
-            mode_ids = []
-        synchronization = self._analysis_settings(run).synchronization
-        if isinstance(sources, Mapping):
-            if run.record_id:
-                automatic = self._validation_for_record(
-                    run.record_id,
-                    timestamp_tolerance_ms=(
-                        synchronization.timestamp_tolerance_ms
-                    ),
-                    manual_frame_offset=synchronization.manual_frame_offset,
-                    method=run.method_name,
-                    mode_ids=mode_ids,
-                )
-                matches_automatic = all(
-                    not isinstance(value, Mapping)
-                    or not value.get("enabled")
-                    or _matches_record_source_path(
-                        automatic,
-                        camera_id,
-                        value.get("path", ""),
-                    )
-                    for camera_id, value in sources.items()
-                )
-                if matches_automatic:
-                    return automatic
-            normalized = {
-                camera_id: type(
-                    "StoredSource",
-                    (),
-                    {"path": value.get("path", "")},
-                )()
-                for camera_id, value in sources.items()
-                if isinstance(value, Mapping) and value.get("enabled")
-            }
-            return self._validation_for_sources(
-                normalized,
-                method=run.method_name,
-                selected_mode_folders=(
-                    self._selected_mode_folders(run.record_id, mode_ids)
-                    if run.record_id
-                    else ()
-                ),
-            )
-        if not run.record_id:
-            raise AnalysisError("分析缺少影像目錄。")
+            raise AnalysisError("分析擷取模式清單格式無效。")
         return self._validation_for_record(
             run.record_id,
-            timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-            manual_frame_offset=synchronization.manual_frame_offset,
             method=run.method_name,
             mode_ids=mode_ids,
         )
@@ -712,240 +559,8 @@ class AnalysisService:
             })
         return result
 
-    @staticmethod
-    def _analysis_settings(run: AnalysisRun) -> AnalysisSettings:
-        try:
-            return AnalysisSettings.model_validate(run.parameters["analysis"])
-        except (KeyError, ValidationError) as error:
-            raise AnalysisError(f"分析紀錄設定無效：{error}") from error
-
-    @staticmethod
-    def _camera_resolutions(run: AnalysisRun) -> dict[str, tuple[int, int]]:
-        source_validation = run.parameters.get("source_validation", {})
-        stored = source_validation.get("camera_resolutions", {})
-        resolutions: dict[str, tuple[int, int]] = {}
-
-        if isinstance(stored, Mapping):
-            camera_ids = (
-                ("top", "side", "rotating")
-                if run.method_name == "top_side_rotating"
-                else ("top", "side")
-            )
-            for camera_id in camera_ids:
-                value = stored.get(camera_id)
-                if isinstance(value, (list, tuple)) and len(value) == 2:
-                    try:
-                        width, height = (int(item) for item in value)
-                    except (TypeError, ValueError):
-                        continue
-                    if width > 0 and height > 0:
-                        resolutions[camera_id] = (width, height)
-
-        if len(resolutions) < 2:
-            manifest_resolutions: dict[str, set[tuple[int, int]]] = {
-                "top": set(),
-                "side": set(),
-                "rotating": set(),
-            }
-            for item in run.parameters.get("input_manifest", []):
-                if not isinstance(item, Mapping):
-                    continue
-                camera_id = item.get("camera_id")
-                value = item.get("resolution")
-                if (
-                    camera_id not in manifest_resolutions
-                    or not isinstance(value, (list, tuple))
-                    or len(value) != 2
-                ):
-                    continue
-                try:
-                    width, height = (int(part) for part in value)
-                except (TypeError, ValueError):
-                    continue
-                if width > 0 and height > 0:
-                    manifest_resolutions[camera_id].add((width, height))
-            for camera_id, values in manifest_resolutions.items():
-                if camera_id not in resolutions and len(values) == 1:
-                    resolutions[camera_id] = next(iter(values))
-
-        missing = [
-            camera_id
-            for camera_id in (
-                ("top", "side", "rotating")
-                if run.method_name == "top_side_rotating"
-                else ("top", "side")
-            )
-            if camera_id not in resolutions
-        ]
-        if missing:
-            raise AnalysisError(
-                "分析紀錄缺少固定的影像解析度：" + ", ".join(missing)
-            )
-        return resolutions
-
-    @staticmethod
-    def _adapted_geometry(
-        geometry: RuntimeAnalysisGeometry,
-        camera_resolutions: Mapping[str, tuple[int, int]],
-    ) -> CameraPairResolutionAdaptation:
-        try:
-            return adapt_camera_pair_resolution(
-                projection_resolution=(
-                    geometry.image_width,
-                    geometry.image_height,
-                ),
-                calibration_resolutions={
-                    camera_id: tuple(geometry.camera_image_sizes.get(camera_id, []))
-                    for camera_id in ("top", "side")
-                },
-                camera_resolutions=camera_resolutions,
-                top_camera_matrix=np.asarray(geometry.top_camera_matrix),
-                side_camera_matrix=np.asarray(geometry.side_camera_matrix),
-                top_projection_matrix=np.asarray(geometry.top_projection_matrix),
-                side_projection_matrix=np.asarray(geometry.side_projection_matrix),
-                fundamental_matrix=np.asarray(geometry.fundamental_matrix),
-            )
-        except (TypeError, ValueError) as error:
-            raise AnalysisError(f"相機校正解析度換算失敗：{error}") from error
-
-    @staticmethod
-    def _camera_pose_for_input(
-        run: AnalysisRun,
-        camera_id: str,
-        input_id: int,
-    ) -> np.ndarray | None:
-        payload = next(
-            (
-                pose
-                for pose in run.camera_pose_results
-                if pose.get("camera_id") == camera_id
-                and int(pose.get("input_id", -1)) == int(input_id)
-                and pose.get("resolved")
-            ),
-            None,
-        )
-        if payload is None or payload.get("world_to_camera_matrix") is None:
-            return None
-        matrix = np.asarray(
-            payload["world_to_camera_matrix"],
-            dtype=np.float64,
-        )
-        if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
-            return None
-        return matrix
-
-    @staticmethod
-    def _scaled_intrinsic_matrix(
-        intrinsics: CameraIntrinsics,
-        resolution: tuple[int, int],
-    ) -> np.ndarray:
-        matrix = np.asarray(
-            intrinsics.camera_matrix,
-            dtype=np.float64,
-        ).copy()
-        matrix[0, :3] *= resolution[0] / float(intrinsics.width)
-        matrix[1, :3] *= resolution[1] / float(intrinsics.height)
-        return matrix
-
-    @staticmethod
-    def _project_world_point(
-        world_point: np.ndarray,
-        world_to_camera: np.ndarray,
-        intrinsics: CameraIntrinsics,
-        camera_matrix: np.ndarray,
-    ) -> tuple[float, float]:
-        rotation_vector, _ = cv2.Rodrigues(world_to_camera[:3, :3])
-        translation_vector = world_to_camera[:3, 3].reshape(3, 1)
-        distortion = np.asarray(
-            intrinsics.distortion_coefficients,
-            dtype=np.float64,
-        )
-        if intrinsics.camera_model == "opencv_fisheye":
-            projected, _ = cv2.fisheye.projectPoints(
-                np.asarray(world_point, dtype=np.float64).reshape(-1, 1, 3),
-                rotation_vector,
-                translation_vector,
-                camera_matrix,
-                distortion.reshape(4, 1),
-            )
-        else:
-            projected, _ = cv2.projectPoints(
-                np.asarray(world_point, dtype=np.float64).reshape(-1, 3),
-                rotation_vector,
-                translation_vector,
-                camera_matrix,
-                distortion,
-            )
-        x_value, y_value = projected.reshape(-1, 2)[0]
-        return float(x_value), float(y_value)
-
-    @staticmethod
-    def _undistort_camera_point(
-        point: tuple[float, float],
-        intrinsics: CameraIntrinsics,
-        camera_matrix: np.ndarray,
-    ) -> tuple[float, float]:
-        pixels = np.asarray(point, dtype=np.float64).reshape(1, 1, 2)
-        distortion = np.asarray(
-            intrinsics.distortion_coefficients,
-            dtype=np.float64,
-        )
-        if intrinsics.camera_model == "opencv_fisheye":
-            undistorted = cv2.fisheye.undistortPoints(
-                pixels,
-                camera_matrix,
-                distortion.reshape(4, 1),
-                P=camera_matrix,
-            )
-        else:
-            undistorted = cv2.undistortPoints(
-                pixels,
-                camera_matrix,
-                distortion,
-                P=camera_matrix,
-            )
-        x_value, y_value = undistorted.reshape(-1, 2)[0]
-        return float(x_value), float(y_value)
-
-    @staticmethod
-    def _implementation_choices() -> dict[str, Any]:
-        return {
-            "minimum_path_graph": (
-                "CHLOROCULUS implementation choice: topology-preserving skeleton, "
-                "configured 4/8-neighbour graph, Dijkstra minimum cost path."
-            ),
-            "minimum_path_edge_weight": (
-                "CHLOROCULUS implementation choice: inverse distance-transform weight; "
-                "the paper does not disclose the edge weight."
-            ),
-            "dynamic_roi": (
-                "CHLOROCULUS implementation choice: configured ROI is the hard bound; "
-                "when enabled, the next ROI is the selected contour bounding rectangle "
-                "expanded by the user-provided margin and clipped to that hard bound."
-            ),
-            "rectification": (
-                "Input images are undistorted and stereo-rectified. Epipolar lines use "
-                "a Fundamental Matrix derived from the resolution-adapted rectified "
-                "P_top/P_side."
-            ),
-            "resolution_adaptation": (
-                "The Analysis Run intrinsics snapshot and dataset-specific camera poses "
-                "remain immutable. Pixel-coordinate matrices are adapted only in ephemeral "
-                "runtime geometry for the selected image resolution."
-            ),
-            "optional_morphology": (
-                "A null morphology kernel explicitly disables that optional cleanup "
-                "operation; no undocumented numeric kernel is substituted."
-            ),
-            "paper_metrics": (
-                "Reported paper accuracy and error values are comparison baselines only, "
-                "never pass thresholds or guarantees."
-            ),
-        }
-
     def list_sources(self) -> list[AnalysisSourceSummary]:
         results = []
-        synchronization = self.settings.analysis.synchronization
         for record in self.record_repository.list():
             record_payload = self._record_payload(record.record_id)
             available_modes = self._record_modes(
@@ -957,14 +572,10 @@ class AnalysisService:
             try:
                 validation = self._validation_for_record(
                     record.record_id,
-                    timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-                    manual_frame_offset=synchronization.manual_frame_offset,
                 )
                 full_validation = self._validation_for_record(
                     record.record_id,
-                    timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-                    manual_frame_offset=synchronization.manual_frame_offset,
-                    method="top_side_rotating",
+                    method="round_multiview",
                 )
                 reasons = list(validation.not_ready_reasons)
                 ready = validation.ready
@@ -1014,59 +625,75 @@ class AnalysisService:
         self,
         request: AnalysisSourcePreviewRequest,
     ) -> AnalysisSourcePreview:
-        camera_sources = {
-            camera_id: {
-                "enabled": bool(source.enabled),
-                "path": source.path.strip(),
-            }
+        validation = self._validation_for_record(
+            request.record_id,
+            method=request.method,
+            mode_ids=request.mode_ids,
+        )
+        enabled_camera_ids = tuple(
+            camera_id
             for camera_id, source in request.camera_sources.items()
+            if source.enabled
+        )
+        grouping = self._round_grouping(
+            validation,
+            analysis_id="preview",
+            record_id=request.record_id,
+            mode_ids=request.mode_ids,
+            method=request.method,
+            enabled_camera_ids=enabled_camera_ids,
+        )
+        validation_errors = [
+            issue.message
+            for issue in validation.issues
+        ]
+        errors = list(dict.fromkeys([*validation_errors, *grouping.errors]))
+        ready_rounds = grouping.ready_round_count
+        intrinsics_readiness: dict[str, dict[str, Any]] = {}
+        try:
+            available_intrinsics = {
+                item.camera_id: item
+                for item in self.intrinsic_calibration_service.list_intrinsics()
+            }
+        except Exception as error:
+            available_intrinsics = {}
+            errors.append(f"無法讀取相機內參：{error}")
+        for camera_id in enabled_camera_ids:
+            intrinsics = available_intrinsics.get(camera_id)
+            intrinsics_readiness[camera_id] = {
+                "ready": bool(
+                    intrinsics
+                    and intrinsics.status == "valid"
+                    and not intrinsics.invalidation_reasons
+                ),
+                "camera_model": intrinsics.camera_model if intrinsics else None,
+                "width": intrinsics.width if intrinsics else None,
+                "height": intrinsics.height if intrinsics else None,
+                "reprojection_error_px": (
+                    intrinsics.reprojection_error_px if intrinsics else None
+                ),
+                "updated_at": intrinsics.updated_at if intrinsics else None,
+                "reasons": (
+                    list(intrinsics.invalidation_reasons)
+                    if intrinsics
+                    else ["尚未建立有效內參。"]
+                ),
+            }
+        layout = aruco_layout_snapshot(self.settings.pose_alignment.aruco_world)
+        aruco_readiness = {
+            "ready": bool(layout.get("markers")),
+            "layout_version": layout.get("layout_version"),
+            "dictionary": layout.get("dictionary"),
+            "marker_count": len(layout.get("markers", [])),
+            "marker_size_mm": layout.get("marker_size_mm"),
+            "world_origin": layout.get("world_origin"),
+            "unit": layout.get("unit", "mm"),
         }
-        validation = None
-        selected_mode_folders = ()
-        if request.record_id:
-            selected_mode_folders = self._selected_mode_folders(
-                request.record_id,
-                request.mode_ids,
-            )
-            synchronization = self.settings.analysis.synchronization
-            automatic = self._validation_for_record(
-                request.record_id,
-                timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-                manual_frame_offset=synchronization.manual_frame_offset,
-                method=request.method,
-                mode_ids=request.mode_ids,
-            )
-            uses_automatic_paths = True
-            for camera_id, source in camera_sources.items():
-                if not source["enabled"]:
-                    continue
-                requested_path = source["path"]
-                if not _matches_record_source_path(
-                    automatic,
-                    camera_id,
-                    requested_path,
-                ):
-                    uses_automatic_paths = False
-                    break
-                source["path"] = str(automatic.record_path)
-            if uses_automatic_paths:
-                validation = automatic
-        if validation is None:
-            validation = self._validation_for_sources(
-                {
-                    camera_id: type(
-                        "PreviewSource",
-                        (),
-                        {"path": source["path"]},
-                    )()
-                    for camera_id, source in camera_sources.items()
-                    if source["enabled"]
-                },
-                method=request.method,
-                selected_mode_folders=selected_mode_folders,
-            )
+        backend_readiness = self._reconstruction_backends.check(
+            self.settings.reconstruction.backend
+        )
         return AnalysisSourcePreview(
-            ready=validation.ready,
+            ready=not errors and ready_rounds > 0,
             camera_frame_counts={
                 "top": validation.top_frame_count,
                 "side": validation.side_frame_count,
@@ -1074,19 +701,230 @@ class AnalysisService:
             },
             camera_resolutions=dict(validation.camera_resolutions),
             camera_directories=dict(validation.camera_directories),
-            pairable_frame_count=validation.pairable_frame_count,
-            rotating_pairable_frame_count=(
-                validation.rotating_pairable_frame_count
+            pairable_frame_count=ready_rounds,
+            rotating_pairable_frame_count=sum(
+                item.status == "ready" and item.rotating_view_count > 0
+                for item in grouping.readiness
             ),
-            total_frame_count=validation.total_frame_count,
-            errors=list(validation.not_ready_reasons),
+            total_frame_count=len(grouping.rounds),
+            errors=errors,
+            warnings=list(grouping.warnings),
+            round_count=len(grouping.rounds),
+            ready_round_count=ready_rounds,
+            incomplete_round_count=grouping.incomplete_round_count,
+            total_view_count=len(grouping.views),
+            round_readiness=list(grouping.readiness),
+            intrinsics_readiness=intrinsics_readiness,
+            aruco_readiness=aruco_readiness,
+            backend_readiness=backend_readiness,
         )
 
     def list_runs(self, record_id: str | None = None) -> list[AnalysisRun]:
         return self.repository.list(record_id)
 
+    def list_reconstruction_backends(self) -> list[dict[str, Any]]:
+        return self._reconstruction_backends.list_readiness()
+
+    def _new_analysis_parameters(
+        self,
+        incoming: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        defaults = {
+            "reconstruction": self.settings.reconstruction.model_dump(mode="json"),
+            "pose_strategy": {
+                "use_aruco_world_pose": True,
+                "use_bundle_adjustment": True,
+            },
+            "background": {
+                "generate_plant_mask": True,
+                "use_plant_mask_in_loss": True,
+                "preserve_scene_model": True,
+                "export_plant_model": True,
+                "save_background_model": False,
+            },
+            "tip_analysis": {
+                "minimum_confidence": 0.7,
+                "minimum_supporting_views": 2,
+                "maximum_reprojection_error_px": 5.0,
+                "use_skeleton_refinement": True,
+                "use_temporal_prior": True,
+                "wait_for_low_confidence_review": True,
+                "export_all_2d_candidates": False,
+                "save_reprojection_overlays": True,
+            },
+            "outputs": {
+                "save_gaussian_model": True,
+                "export_scene_point_cloud": True,
+                "export_plant_point_cloud": True,
+                "export_skeleton": True,
+                "export_tip_markers": True,
+                "export_trajectory_csv": True,
+                "save_model_previews": True,
+                "save_diagnostics": True,
+                "save_checkpoints": True,
+            },
+            "advanced": {},
+        }
+        merged = _deep_merge(defaults, dict(incoming))
+        reconstruction = merged.get("reconstruction")
+        if not isinstance(reconstruction, Mapping):
+            raise AnalysisError("三維模型設定格式無效。")
+        backend = str(reconstruction.get("backend") or "")
+        if backend not in self.settings.reconstruction.available_backends:
+            raise AnalysisError(f"不支援的三維模型後端：{backend}")
+        quality = str(reconstruction.get("quality_preset") or "")
+        if quality not in {"preview", "standard", "high"}:
+            raise AnalysisError("模型品質只能使用預覽、標準或高品質。")
+        tip = merged.get("tip_analysis")
+        if not isinstance(tip, Mapping):
+            raise AnalysisError("尖端標記設定格式無效。")
+        try:
+            confidence = float(tip["minimum_confidence"])
+            support = int(tip["minimum_supporting_views"])
+            reprojection = float(tip["maximum_reprojection_error_px"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise AnalysisError("尖端標記門檻必須是有效數值。") from error
+        if not 0 <= confidence <= 1:
+            raise AnalysisError("最低尖端標記信心必須介於 0 與 1。")
+        if support < 2:
+            raise AnalysisError("尖端標記至少需要兩個支持視角。")
+        if reprojection <= 0:
+            raise AnalysisError("最大尖端標記重投影誤差必須大於 0。")
+        return merged
+
     def get_run(self, analysis_id: str) -> AnalysisRun:
         return self._require_run(analysis_id)
+
+    def list_rounds(self, analysis_id: str):
+        self._require_run(analysis_id)
+        return self.repository.list_rounds(analysis_id)
+
+    def list_views(
+        self,
+        analysis_id: str,
+        round_key: str | None = None,
+    ):
+        self._require_run(analysis_id)
+        return self.repository.list_views(analysis_id, round_key)
+
+    def list_round_models(self, analysis_id: str) -> list[RoundModelResult]:
+        self._require_run(analysis_id)
+        return self.repository.list_round_models(analysis_id)
+
+    def list_tip_landmarks(self, analysis_id: str) -> list[TipLandmark]:
+        self._require_run(analysis_id)
+        return self.repository.list_tip_landmarks(analysis_id)
+
+    def list_tip_observations(
+        self,
+        analysis_id: str,
+        round_key: str | None = None,
+    ):
+        self._require_run(analysis_id)
+        return self.repository.list_tip_observations(
+            analysis_id,
+            round_key,
+        )
+
+    def list_tip_trajectory(
+        self,
+        analysis_id: str,
+        mode_id: str | None = None,
+    ):
+        self._require_run(analysis_id)
+        return self.repository.list_tip_trajectory(
+            analysis_id,
+            mode_id,
+        )
+
+    def get_tip_trajectory_quality(
+        self,
+        analysis_id: str,
+    ) -> dict[str, Any]:
+        path = self.get_artifact_path(
+            analysis_id,
+            "trajectory/trajectory_quality.json",
+        )
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise AnalysisError(f"尖端標記軌跡品質無法讀取：{error}") from error
+        if not isinstance(payload, dict):
+            raise AnalysisError("尖端標記軌跡品質格式無效。")
+        return payload
+
+    def get_artifact_path(
+        self,
+        analysis_id: str,
+        artifact_path: str,
+    ) -> Path:
+        run = self._require_run(analysis_id)
+        root = self._artifacts(run).root.resolve()
+        candidate = (root / artifact_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as error:
+            raise AnalysisError("分析輸出路徑超出允許範圍。") from error
+        if not candidate.is_file():
+            raise AnalysisError("找不到指定的分析輸出檔案。")
+        return candidate
+
+    def get_view_image_path(
+        self,
+        analysis_id: str,
+        view_id: str,
+        coordinate_space: str = "undistorted",
+    ) -> Path:
+        run = self._require_run(analysis_id)
+        view = next(
+            (
+                item
+                for item in self.repository.list_views(analysis_id)
+                if item.view_id == view_id
+            ),
+            None,
+        )
+        if view is None:
+            raise AnalysisError(f"找不到分析視角：{view_id}")
+        artifacts = self._artifacts(run)
+        if coordinate_space == "source":
+            if not run.record_id:
+                raise AnalysisError("分析紀錄缺少來源 Record。")
+            record_root = Path(
+                self._require_record(run.record_id).record_path
+            ).resolve()
+            candidate = Path(view.absolute_path).resolve()
+            try:
+                candidate.relative_to(record_root)
+            except ValueError as error:
+                raise AnalysisError("來源影像路徑超出捕捉紀錄。") from error
+        elif coordinate_space == "undistorted":
+            item = next(
+                (
+                    row
+                    for row in artifacts.read_undistortion_manifest()
+                    if str(row.get("view_id")) == view_id
+                ),
+                None,
+            )
+            if item is None:
+                raise AnalysisError("此視角尚無去畸變影像。")
+            candidate = self.get_artifact_path(
+                analysis_id,
+                str(item.get("undistorted_path") or ""),
+            )
+        elif coordinate_space == "reprojection":
+            candidate = (
+                round_artifact_directory(artifacts.root, view.round_key)
+                / "tip"
+                / "reprojections"
+                / f"{safe_artifact_name(view.view_id)}.jpg"
+            ).resolve()
+        else:
+            raise AnalysisError("影像座標空間只支援原始、去畸變或重投影。")
+        if not candidate.is_file():
+            raise AnalysisError("找不到指定的分析影像。")
+        return candidate
 
     def create(
         self,
@@ -1094,31 +932,9 @@ class AnalysisService:
         actor_id: str,
     ) -> AnalysisRun:
         with self._lock:
-            base = self.settings.analysis.model_dump(mode="json")
-            merged = _deep_merge(base, request.parameters)
-            if request.top_roi is not None:
-                merged["top_detection"]["roi"] = [
-                    request.top_roi.x,
-                    request.top_roi.y,
-                    request.top_roi.width,
-                    request.top_roi.height,
-                ]
-            if request.side_roi is not None:
-                merged["side_detection"]["roi"] = [
-                    request.side_roi.x,
-                    request.side_roi.y,
-                    request.side_roi.width,
-                    request.side_roi.height,
-                ]
-            if request.manual_frame_offset is not None:
-                merged["synchronization"]["manual_frame_offset"] = (
-                    request.manual_frame_offset
-                )
-            try:
-                analysis_settings = AnalysisSettings.model_validate(merged)
-            except ValidationError as error:
-                raise AnalysisError(f"分析設定無效：{error}") from error
-            synchronization = analysis_settings.synchronization
+            analysis_parameters = self._new_analysis_parameters(
+                request.parameters
+            )
             selected_sources = {
                 camera_id: {
                     "enabled": bool(source.enabled),
@@ -1126,59 +942,32 @@ class AnalysisService:
                 }
                 for camera_id, source in request.camera_sources.items()
             }
-            if request.mode_ids and not request.record_id:
-                raise AnalysisError("手動影像目錄不可選取紀錄擷取模式。")
-            selected_mode_folders = ()
-            if request.record_id:
-                selected_mode_folders = self._selected_mode_folders(
-                    request.record_id,
-                    request.mode_ids,
-                )
-                automatic = self._validation_for_record(
-                    request.record_id,
-                    timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-                    manual_frame_offset=synchronization.manual_frame_offset,
-                    method=request.method,
-                    mode_ids=request.mode_ids,
-                )
-                for camera_id, source in selected_sources.items():
-                    if source["enabled"] and not source["path"]:
-                        source["path"] = str(automatic.record_path)
-                uses_automatic_paths = all(
-                    not source["enabled"]
-                    or _matches_record_source_path(
-                        automatic,
-                        camera_id,
-                        source["path"],
-                    )
-                    for camera_id, source in selected_sources.items()
-                )
-            else:
-                automatic = None
-                uses_automatic_paths = False
-            validation = (
-                automatic
-                if uses_automatic_paths and automatic is not None
-                else self._validation_for_sources(
-                    {
-                        camera_id: type(
-                            "SelectedSource",
-                            (),
-                            {"path": source["path"]},
-                        )()
-                        for camera_id, source in selected_sources.items()
-                        if source["enabled"]
-                    },
-                    method=request.method,
-                    selected_mode_folders=selected_mode_folders,
-                )
+            self._selected_mode_folders(
+                request.record_id,
+                request.mode_ids,
             )
-            if not validation.ready:
+            validation = self._validation_for_record(
+                request.record_id,
+                method=request.method,
+                mode_ids=request.mode_ids,
+            )
+            for source in selected_sources.values():
+                if source["enabled"]:
+                    source["path"] = str(validation.record_path)
+            validation_errors = [
+                issue.message
+                for issue in validation.issues
+            ]
+            if validation_errors:
                 raise AnalysisError(
-                    "影像目錄不可分析："
-                    + "；".join(validation.not_ready_reasons)
+                    "捕捉紀錄不可分析：" + "；".join(
+                        dict.fromkeys(validation_errors)
+                    )
                 )
-            intrinsics_snapshot = self._snapshot_intrinsics(request.method)
+            intrinsics_snapshot = self._snapshot_intrinsics(
+                request.method,
+                validation.camera_resolutions,
+            )
             pose_settings = self.settings.pose_alignment.model_dump(mode="json")
             top_camera = self.settings.cameras["top"]
             side_camera = self.settings.cameras["side"]
@@ -1225,19 +1014,92 @@ class AnalysisService:
                 analysis_id = f"{prefix}_{int(suffix) + 1:03d}"
                 output_dir = root / output_group / analysis_id
             now = utc_now_iso()
+            grouping = self._round_grouping(
+                validation,
+                analysis_id=analysis_id,
+                record_id=request.record_id,
+                mode_ids=request.mode_ids,
+                method=request.method,
+                enabled_camera_ids=(
+                    camera_id
+                    for camera_id, source in selected_sources.items()
+                    if source["enabled"]
+                ),
+                input_manifest=input_manifest,
+            )
+            if grouping.errors:
+                raise AnalysisError(
+                    "捕捉紀錄無法建立分析輪次："
+                    + "；".join(grouping.errors)
+                )
+            reconstruction = analysis_parameters["reconstruction"]
+            backend_readiness = self._reconstruction_backends.check(
+                reconstruction["backend"]
+            )
+            if (
+                request.method == "round_multiview"
+                and not backend_readiness.get("available")
+            ):
+                raise AnalysisError(
+                    "；".join(
+                        backend_readiness.get("errors")
+                        or ["目前沒有可用的三維模型建立後端。"]
+                    )
+                )
+            free_gpu_memory = (
+                backend_readiness.get("environment", {})
+                .get("gpu_free_memory_bytes")
+            )
+            recommended_gpu_memory = {
+                "preview": 4 * 1024 ** 3,
+                "standard": 8 * 1024 ** 3,
+                "high": 12 * 1024 ** 3,
+            }[str(reconstruction["quality_preset"])]
+            if (
+                free_gpu_memory is not None
+                and int(free_gpu_memory) < recommended_gpu_memory
+            ):
+                backend_readiness = {
+                    **backend_readiness,
+                    "warnings": [
+                        *backend_readiness.get("warnings", []),
+                        "目前可用 GPU 記憶體低於所選品質的建議值，"
+                        "部分 Round 可能只能產生低品質模型。",
+                    ],
+                }
+            source_bytes = sum(
+                int(item.get("size_bytes") or 0)
+                for item in input_manifest
+            )
+            quality_multiplier = {
+                "preview": 4,
+                "standard": 8,
+                "high": 12,
+            }[str(reconstruction["quality_preset"])]
+            required_storage_bytes = max(
+                source_bytes * quality_multiplier,
+                1024 ** 3,
+            )
+            try:
+                free_storage_bytes = shutil.disk_usage(root).free
+            except OSError as error:
+                raise AnalysisError(
+                    f"無法檢查分析輸出儲存空間：{error}"
+                ) from error
+            if free_storage_bytes < required_storage_bytes:
+                raise AnalysisError(
+                    "分析輸出儲存空間不足；至少需要約 "
+                    f"{required_storage_bytes / 1024 ** 3:.1f} GB。"
+                )
             parameters = {
-                "analysis": analysis_settings.model_dump(mode="json"),
-                "frame_range": {
-                    "start_frame": request.start_frame,
-                    "end_frame": request.end_frame,
-                },
+                **analysis_parameters,
                 "manual_review_required": request.manual_review_required,
                 "mode_ids": list(request.mode_ids),
                 "camera_sources": selected_sources,
                 "input_manifest": input_manifest,
                 "source_validation": {
                     "ready_at_creation": validation.ready,
-                    "not_ready_reasons": list(validation.not_ready_reasons),
+                    "not_ready_reasons": validation_errors,
                     "source_frame_count": validation.source_frame_count,
                     "rejected_frame_count": validation.rejected_frame_count,
                     "camera_resolutions": {
@@ -1245,10 +1107,20 @@ class AnalysisService:
                         for camera_id, resolution
                         in validation.camera_resolutions.items()
                     },
+                    "round_count": len(grouping.rounds),
+                    "ready_round_count": grouping.ready_round_count,
+                    "incomplete_round_count": grouping.incomplete_round_count,
+                    "warnings": list(grouping.warnings),
                 },
                 "pose_alignment": pose_settings,
+                "coordinate_space": "undistorted",
+                "backend_readiness_at_creation": backend_readiness,
+                "storage_readiness_at_creation": {
+                    "available_bytes": free_storage_bytes,
+                    "estimated_required_bytes": required_storage_bytes,
+                    "writable": True,
+                },
                 "runtime_versions": runtime_versions(),
-                "implementation_choices": self._implementation_choices(),
             }
             run = AnalysisRun(
                 analysis_id=analysis_id,
@@ -1264,62 +1136,33 @@ class AnalysisService:
                 created_by=actor_id,
                 output_path=str(output_dir),
                 status="draft",
+                reconstruction_backend=backend_readiness["backend"],
+                reconstruction_backend_version=backend_readiness[
+                    "backend_version"
+                ],
+                reconstruction_environment=backend_readiness,
+                round_count=len(grouping.rounds),
             )
             artifacts = AnalysisArtifacts.create(output_dir)
             try:
                 artifacts.write_parameters(parameters)
-                artifacts.write_corrections([])
+                artifacts.write_input_manifest(input_manifest)
+                artifacts.write_round_index(grouping.rounds, grouping.views)
+                artifacts.write_reconstruction_environment(backend_readiness)
                 artifacts.write_run(run)
                 artifacts.write_intrinsics_snapshot(intrinsics_snapshot)
                 artifacts.write_aruco_layout_snapshot(layout_snapshot)
                 self.repository.create(run)
+                self.repository.replace_rounds_and_views(
+                    analysis_id,
+                    grouping.rounds,
+                    grouping.views,
+                )
             except Exception:
                 shutil.rmtree(output_dir, ignore_errors=True)
                 raise
             self._log(run, "INFO", "分析紀錄已建立；輸入清單與參數已固化。")
             return run
-
-    def _validate_required_parameters(
-        self,
-        analysis: AnalysisSettings,
-        camera_resolutions: Mapping[str, tuple[int, int]],
-    ) -> None:
-        payload = analysis.model_dump(mode="json")
-        missing = [
-            dotted_path
-            for dotted_path in _REQUIRED_ANALYSIS_PARAMETERS
-            if _nested_value(payload, dotted_path) is None
-        ]
-        if (
-            analysis.top_detection.update_roi
-            and analysis.top_detection.roi_update_margin_px is None
-        ):
-            missing.append("top_detection.roi_update_margin_px")
-        if (
-            analysis.side_detection.update_roi
-            and analysis.side_detection.roi_update_margin_px is None
-        ):
-            missing.append("side_detection.roi_update_margin_px")
-        if missing:
-            raise AnalysisError(
-                "下列資料相依參數尚未決定，不能以虛構值執行："
-                + ", ".join(missing)
-            )
-
-        for camera_id, label, settings in (
-            ("top", "俯視", analysis.top_detection),
-            ("side", "側視", analysis.side_detection),
-        ):
-            resolution = camera_resolutions.get(camera_id)
-            if resolution is None:
-                raise AnalysisError(f"紀錄缺少{label}影像解析度。")
-            width, height = resolution
-            x, y, roi_width, roi_height = _roi(settings.roi or ())
-            if x + roi_width > width or y + roi_height > height:
-                raise AnalysisError(f"{label} ROI 超出分析影像解析度。")
-            base_x, base_y = _point(settings.plant_base or ())
-            if not (0 <= base_x < width and 0 <= base_y < height):
-                raise AnalysisError(f"{label}植物基部超出影像範圍。")
 
     @staticmethod
     def _verify_frozen_manifest(
@@ -1333,6 +1176,94 @@ class AnalysisService:
                 "捕捉資料輸入在分析紀錄建立後已變更；"
                 "請建立新的分析，原始資料未被修改。"
             )
+
+    def _validate_round_analysis(self, run: AnalysisRun) -> AnalysisRun:
+        validation = self._validation_for_run(run)
+        errors = [
+            issue.message
+            for issue in validation.issues
+        ]
+        if errors:
+            raise AnalysisError(
+                "紀錄不可分析：" + "；".join(dict.fromkeys(errors))
+            )
+        self._verify_frozen_manifest(run, validation)
+        intrinsics = self._intrinsics_for_run(run)
+        for camera_id in self._required_camera_ids(run.method_name):
+            resolution = validation.camera_resolutions.get(camera_id)
+            calibration = intrinsics[camera_id]
+            if resolution is None:
+                raise AnalysisError(f"紀錄缺少 {camera_id} 影像解析度。")
+            width, height = resolution
+            if width * calibration.height != height * calibration.width:
+                raise AnalysisError(
+                    f"{camera_id} 影像解析度 {width} × {height} 與內參 "
+                    f"{calibration.width} × {calibration.height} 的長寬比不相容。"
+                )
+        try:
+            stored_layout = self._artifacts(run).read_aruco_layout_snapshot()
+        except (OSError, ValueError) as error:
+            raise AnalysisError("分析建立時固化的 ArUco 基準快照遺失。") from error
+        if stored_layout != run.aruco_layout_snapshot:
+            raise AnalysisError("分析的 ArUco 基準快照與資料庫紀錄不一致。")
+
+        rounds = self.repository.list_rounds(run.analysis_id)
+        views = self.repository.list_views(run.analysis_id)
+        processable_statuses = {
+            "ready",
+            "ready_tip_only",
+            "preprocessed",
+            "reconstructing",
+            "model_completed",
+            "model_failed",
+            "failed",
+            "cancelled",
+        }
+        ready_rounds = [
+            item
+            for item in rounds
+            if item.status in processable_statuses
+        ]
+        if not ready_rounds:
+            raise AnalysisError("分析沒有任何可執行的 Round。")
+        if len(views) != len(run.parameters.get("input_manifest", [])):
+            raise AnalysisError("分析 View 清單與固化輸入清單數量不一致。")
+
+        reconstruction = run.parameters.get("reconstruction", {})
+        backend_name = str(reconstruction.get("backend") or "")
+        backend_readiness = self._reconstruction_backends.probe_runtime(
+            backend_name
+        )
+        if (
+            run.method_name == "round_multiview"
+            and not backend_readiness["available"]
+        ):
+            raise AnalysisError("；".join(backend_readiness["errors"]))
+        parameters = {
+            **run.parameters,
+            "backend_readiness_at_validation": backend_readiness,
+        }
+        self.repository.update_parameters(
+            run.analysis_id,
+            parameters,
+            utc_now_iso(),
+        )
+        self._artifacts(run).write_parameters(parameters)
+        updated = self._set_state(
+            run,
+            status="ready",
+            stage="grouping_rounds",
+            current_frame=0,
+            total_frames=len(ready_rounds),
+            progress=0.0,
+            clear_error=True,
+        )
+        self._log(
+            updated,
+            "INFO",
+            f"驗證完成，共 {len(ready_rounds)} 個可分析 Round、{len(views)} 個 View。",
+        )
+        return updated
 
     def validate(self, analysis_id: str) -> AnalysisRun:
         with self._lock:
@@ -1352,67 +1283,7 @@ class AnalysisService:
                 clear_error=True,
             )
             try:
-                analysis = self._analysis_settings(run)
-                synchronization = analysis.synchronization
-                validation = self._validation_for_run(run)
-                if not validation.ready:
-                    raise AnalysisError("紀錄不可分析：" + "；".join(validation.not_ready_reasons))
-                self._verify_frozen_manifest(run, validation)
-                self._intrinsics_for_run(run)
-                self._pose_settings_for_run(run)
-                try:
-                    stored_layout = self._artifacts(
-                        run
-                    ).read_aruco_layout_snapshot()
-                except (OSError, ValueError) as error:
-                    raise AnalysisError(
-                        "分析建立時固化的 ArUco 基準快照遺失。"
-                    ) from error
-                if stored_layout != run.aruco_layout_snapshot:
-                    raise AnalysisError(
-                        "分析的 ArUco 基準快照與資料庫紀錄不一致。"
-                    )
-                self._validate_required_parameters(
-                    analysis,
-                    validation.camera_resolutions,
-                )
-                self._set_state(run, stage="pairing_frames", progress=0.02)
-                pairs = pair_capture_frames(
-                    validation.top_frames,
-                    validation.side_frames,
-                    validation.rotating_frames,
-                    timestamp_tolerance_ms=synchronization.timestamp_tolerance_ms,
-                    manual_frame_offset=synchronization.manual_frame_offset,
-                )
-                frame_range = run.parameters.get("frame_range", {})
-                start_frame = frame_range.get("start_frame") or 1
-                end_frame = frame_range.get("end_frame") or len(pairs)
-                selected_pairs = [
-                    pair
-                    for pair in pairs
-                    if start_frame <= pair.frame_id <= end_frame
-                ]
-                if not any(pair.pair_status in PAIRABLE_STATUSES for pair in selected_pairs):
-                    raise AnalysisError("指定範圍沒有可分析的雙鏡頭影格配對。")
-                if not synchronization.keep_unpaired_frames:
-                    selected_pairs = [
-                        pair
-                        for pair in selected_pairs
-                        if pair.pair_status in PAIRABLE_STATUSES
-                    ]
-                self.repository.replace_frame_pairs(analysis_id, selected_pairs)
-                self._artifacts(run).write_frame_pairs(selected_pairs)
-                updated = self._set_state(
-                    run,
-                    status="ready",
-                    stage="pairing_frames",
-                    current_frame=0,
-                    total_frames=len(selected_pairs),
-                    progress=0.0,
-                    clear_error=True,
-                )
-                self._log(updated, "INFO", f"驗證完成，共 {len(selected_pairs)} 組影格。")
-                return updated
+                return self._validate_round_analysis(run)
             except Exception as error:
                 self._record_failure(run, error, context="驗證失敗")
                 if isinstance(error, AnalysisError):
@@ -1582,9 +1453,24 @@ class AnalysisService:
             self._log(run, "INFO", "分析已排入背景執行。")
             return run
 
-    def cancel(self, analysis_id: str) -> AnalysisRun:
+    def cancel(
+        self,
+        analysis_id: str,
+        actor_id: str = "system",
+    ) -> AnalysisRun:
         run = self._require_run(analysis_id)
-        if self._runner.cancel(analysis_id):
+        worker_cancelled = self._runner.cancel(analysis_id)
+        if worker_cancelled or run.status in PROCESSING_STATUSES:
+            requested_at = utc_now_iso()
+            self.repository.update_cancellation_metadata(
+                analysis_id,
+                requested_at=requested_at,
+                requested_by=actor_id,
+                updated_at=requested_at,
+            )
+            run = self._require_run(analysis_id)
+            self._artifacts(run).write_run(run)
+        if worker_cancelled:
             self._log(run, "INFO", "已要求取消分析，背景工作將於下一個檢查點停止。")
             return run
         if run.status in PROCESSING_STATUSES:
@@ -1604,8 +1490,29 @@ class AnalysisService:
             analysis_id
         ):
             raise AnalysisError("前一個分析背景工作尚未停止，請稍後重試。")
-        self.validate(analysis_id)
-        return self.start(analysis_id)
+        validated = self.validate(analysis_id)
+        resumed = self._set_state(
+            validated,
+            status="processing",
+            stage="detecting_aruco",
+            current_frame=0,
+            progress=0.0,
+            clear_error=True,
+        )
+        try:
+            if not self._runner.start(analysis_id):
+                raise AnalysisError("分析工作已在執行。")
+        except Exception as error:
+            self._record_failure(
+                resumed,
+                error,
+                context="無法重新啟動分析背景工作",
+            )
+            if isinstance(error, AnalysisError):
+                raise
+            raise AnalysisError(f"無法重新啟動分析背景工作：{error}") from error
+        self._log(resumed, "INFO", "分析已從既有 Round checkpoint 繼續執行。")
+        return resumed
 
     def resume(self, analysis_id: str) -> AnalysisRun:
         run = self._require_run(analysis_id)
@@ -1626,28 +1533,41 @@ class AnalysisService:
     ) -> AnalysisRun:
         with self._lock:
             run = self._require_run(analysis_id)
-            if run.status not in {"needs_review", "reviewing", "completed"}:
+            if run.status not in {
+                "needs_review",
+                "reviewing",
+                "completed",
+                "partially_completed",
+            }:
                 raise AnalysisError("目前狀態不可執行三維重建。")
             if self._runner.is_active(analysis_id):
                 raise AnalysisError("分析工作已在執行。")
-            run = self._set_state(
-                run,
-                status="reconstructing",
-                stage="triangulating",
-                current_frame=0,
-                progress=0.72,
+            self._refresh_tip_correction_artifacts(run)
+            resolved = self._resolved_tip_landmarks(analysis_id)
+            if not any(item.valid for item in resolved):
+                raise AnalysisError("沒有有效尖端標記，無法完成分析。")
+            rounds = self.repository.list_rounds(analysis_id)
+            incomplete = sum(
+                item.status not in {"tip_completed"}
+                for item in rounds
+            )
+            final_status = (
+                "partially_completed"
+                if incomplete > 0
+                else "completed"
+            )
+            completed = self._set_state(
+                self._require_run(analysis_id),
+                status=final_status,
+                stage="completed",
+                current_frame=len(rounds),
+                total_frames=len(rounds),
+                progress=1.0,
                 manual_review_completed=manual_review_completed,
                 clear_error=True,
             )
-            try:
-                if not self._runner.start(analysis_id):
-                    raise AnalysisError("分析工作已在執行。")
-            except Exception as error:
-                self._record_failure(run, error, context="無法啟動重建背景工作")
-                if isinstance(error, AnalysisError):
-                    raise
-                raise AnalysisError(f"無法啟動重建背景工作：{error}") from error
-            return run
+            self._log(completed, "INFO", "尖端標記人工確認已完成。")
+            return completed
 
     def reset(self, analysis_id: str) -> AnalysisRun:
         with self._lock:
@@ -1657,37 +1577,58 @@ class AnalysisService:
                 and not self._runner.wait_until_idle(analysis_id)
             ) or run.status in PROCESSING_STATUSES:
                 raise AnalysisError("分析紀錄中，請先取消並等待背景工作停止。")
-            self.repository.clear_results(
-                analysis_id,
-                include_frame_pairs=True,
-                include_corrections=True,
-            )
+            self.repository.clear_results(analysis_id)
             artifacts = self._artifacts(run)
             for relative in (
-                "detections",
-                "reconstruction",
                 "summaries",
-                "overlays",
-                "masks",
-                "pose_debug",
+                "rounds",
+                "trajectory",
             ):
                 shutil.rmtree(artifacts.root / relative, ignore_errors=True)
             for file_name in (
-                "frame_pairs.csv",
-                "top_detections.csv",
-                "side_detections.csv",
-                "manual_corrections.json",
-                "resolved_top_positions.csv",
-                "resolved_side_positions.csv",
-                "trajectory_3d.csv",
-                "reprojection_errors.csv",
-                "detection_summary.json",
-                "camera_poses.json",
-                "aruco_alignment.json",
-                "pose_quality.json",
+                "undistortion_manifest.json",
+                "round_quality.json",
+                "round_models.json",
+                "reconstruction_environment.json",
+                "tip_corrections.json",
             ):
                 (artifacts.root / file_name).unlink(missing_ok=True)
-            AnalysisArtifacts.create(artifacts.root).write_corrections([])
+            rounds = self.repository.list_rounds(analysis_id)
+            reset_rounds = []
+            for item in rounds:
+                if item.status == "incomplete":
+                    status = "incomplete"
+                elif (
+                    run.method_name == "round_multiview"
+                    and item.round_id == "round.00"
+                ):
+                    status = "ready_tip_only"
+                else:
+                    status = "ready"
+                reset_item = item.model_copy(
+                    update={
+                        "status": status,
+                        "static_scene_score": None,
+                        "model_result_id": None,
+                        "tip_landmark_id": None,
+                        "failure_reason": None,
+                    }
+                )
+                self.repository.update_round(reset_item)
+                reset_rounds.append(reset_item)
+            reset_views = [
+                item.model_copy(
+                    update={
+                        "selected_for_reconstruction": False,
+                        "exclusion_reason": None,
+                        "pose_status": None,
+                        "pose_reprojection_error_px": None,
+                    }
+                )
+                for item in self.repository.list_views(analysis_id)
+            ]
+            self.repository.update_views(reset_views)
+            artifacts.write_round_index(reset_rounds, reset_views)
             updated = self._set_state(
                 run,
                 status="draft",
@@ -1734,496 +1675,264 @@ class AnalysisService:
     def close(self) -> None:
         self._runner.close()
 
-    def list_frame_pairs(self, analysis_id: str) -> list[AnalysisFramePair]:
-        self._require_run(analysis_id)
-        return self.repository.list_frame_pairs(analysis_id)
-
-    def list_corrections(self, analysis_id: str) -> list[ManualCorrection]:
-        self._require_run(analysis_id)
-        return self.repository.list_corrections(analysis_id)
-
-    @staticmethod
-    def _base_resolved_detection(
-        stored: StoredDetection,
-    ) -> DetectionResult | None:
-        automatic = stored.automatic_detection
-        interpolated = stored.interpolated_detection
-        if automatic is not None and automatic.valid and automatic.selected_point:
-            return automatic.model_copy(deep=True)
-        if interpolated is not None and interpolated.valid and interpolated.selected_point:
-            return interpolated.model_copy(deep=True)
-        if automatic is not None:
-            return automatic.model_copy(deep=True)
-        if interpolated is not None:
-            return interpolated.model_copy(deep=True)
-        return None
-
-    def _apply_correction(
+    def _resolved_tip_landmarks(
         self,
-        stored: StoredDetection,
-        correction: ManualCorrection | None,
-    ) -> StoredDetection:
-        resolved = self._base_resolved_detection(stored)
-        if correction is not None:
-            if resolved is None:
-                resolved = DetectionResult(
-                    frame_id=stored.frame_id,
-                    camera_id=stored.camera_id,
-                    detection_type="Missing",
-                    valid=False,
-                )
-            if correction.invalid:
-                resolved = resolved.model_copy(
-                    update={
-                        "selected_point": None,
-                        "detection_type": "Invalid",
-                        "valid": False,
-                        "status_reason": correction.reason or "manual_invalid",
-                    },
-                    deep=True,
+        analysis_id: str,
+    ) -> list[TipLandmark]:
+        resolved = {
+            item.round_key: item
+            for item in self.repository.list_tip_landmarks(analysis_id)
+        }
+        for correction in self.repository.list_tip_corrections(analysis_id):
+            resolved[correction.round_key] = correction.corrected_tip
+        return list(resolved.values())
+
+    def _refresh_tip_correction_artifacts(self, run: AnalysisRun) -> None:
+        corrections = self.repository.list_tip_corrections(run.analysis_id)
+        resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
+        landmark_by_round = {
+            item.round_key: item
+            for item in resolved_landmarks
+        }
+        models = self.repository.list_round_models(run.analysis_id)
+        model_by_round = {
+            item.round_key: item
+            for item in models
+        }
+        rounds = []
+        for round_item in self.repository.list_rounds(run.analysis_id):
+            landmark = landmark_by_round.get(round_item.round_key)
+            if landmark is None:
+                rounds.append(round_item)
+                continue
+            model = model_by_round.get(round_item.round_key)
+            if not landmark.valid:
+                status = "tip_invalid"
+                failure_reason = landmark.failure_reason
+            elif (
+                run.method_name == "round_multiview"
+                and (model is None or model.status != "completed")
+            ):
+                status = "tip_only"
+                failure_reason = (
+                    model.failure_reason
+                    if model is not None
+                    else round_item.failure_reason
                 )
             else:
-                resolved = resolved.model_copy(
-                    update={
-                        "selected_point": Point2D(
-                            x_px=float(correction.corrected_x_px),
-                            y_px=float(correction.corrected_y_px),
-                        ),
-                        "detection_type": "Manual",
-                        "valid": True,
-                        "status_reason": correction.reason,
-                    },
-                    deep=True,
-                )
-        return stored.model_copy(
-            update={
-                "resolved_detection": resolved,
-                "updated_at": utc_now_iso(),
-            },
-            deep=True,
+                status = "tip_completed"
+                failure_reason = None
+            updated_round = round_item.model_copy(
+                update={
+                    "status": status,
+                    "tip_landmark_id": landmark.tip_id,
+                    "failure_reason": failure_reason,
+                }
+            )
+            self.repository.update_round(updated_round)
+            rounds.append(updated_round)
+        trajectory = link_tip_trajectory(rounds, resolved_landmarks)
+        self.repository.replace_tip_trajectory(
+            run.analysis_id,
+            trajectory.points,
         )
-
-    def _record_correction_refresh_failure(
-        self,
-        run: AnalysisRun,
-        error: BaseException,
-    ) -> AnalysisError:
-        message = (
-            "人工修正已套用，但衍生檔案刷新失敗；"
-            "資料庫仍保留一致的修正內容，可重新執行重建："
-            f"{public_error_detail(error)}"
+        valid_count = sum(item.valid for item in resolved_landmarks)
+        completed_round_count = sum(
+            item.status == "tip_completed"
+            for item in rounds
+        )
+        failed_round_count = sum(
+            item.status in {
+                "failed",
+                "model_failed",
+                "tip_only",
+                "tip_invalid",
+            }
+            for item in rounds
         )
         self.repository.update_state(
             run.analysis_id,
             updated_at=utc_now_iso(),
-            status="reviewing",
-            stage="waiting_for_review",
-            manual_review_completed=False,
-            last_error=message,
+            completed_round_count=completed_round_count,
+            failed_round_count=failed_round_count,
+            tip_marker_count=valid_count,
+            trajectory_status="completed" if valid_count else "unavailable",
         )
         updated = self._require_run(run.analysis_id)
-        try:
-            self._artifacts(updated).write_run(updated)
-        except Exception:
-            logger.exception(
-                "Failed to update analysis metadata after correction refresh error"
-            )
-        try:
-            self._log(updated, "ERROR", message)
-        except Exception:
-            logger.exception(
-                "Failed to write analysis log after correction refresh error"
-            )
-        self._emit_progress(updated)
-        if self.error_reporter is not None:
-            try:
-                self.error_reporter(
-                    f"分析 {run.analysis_id} 的人工修正衍生檔案刷新失敗。"
-                )
-            except Exception:
-                logger.exception("Analysis correction error reporter failed")
-        return AnalysisError(message)
-
-    def _refresh_correction_artifacts(self, run: AnalysisRun) -> None:
-        updated = self._require_run(run.analysis_id)
-        try:
-            self._write_detection_exports(updated)
-            self._artifacts(updated).write_corrections(
-                self.repository.list_corrections(run.analysis_id)
-            )
-            self._artifacts(updated).write_run(updated)
-        except Exception as error:
-            raise self._record_correction_refresh_failure(
-                updated,
-                error,
-            ) from error
+        artifacts = self._artifacts(updated)
+        artifacts.write_tip_corrections(corrections)
+        artifacts.write_tip_trajectory(
+            trajectory.points,
+            trajectory.quality,
+        )
+        artifacts.write_formal_summaries(
+            rounds,
+            models,
+            resolved_landmarks,
+            trajectory.quality,
+        )
+        artifacts.write_run(updated)
         self._emit_progress(updated)
 
-    def save_correction(
+    def list_tip_corrections(
         self,
         analysis_id: str,
-        request: ManualCorrectionRequest,
+        round_key: str | None = None,
+    ) -> list[TipCorrection]:
+        run = self._require_run(analysis_id)
+        if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
+            return []
+        return self.repository.list_tip_corrections(
+            analysis_id,
+            round_key,
+        )
+
+    def save_tip_correction(
+        self,
+        analysis_id: str,
+        request: TipCorrectionRequest,
         actor_id: str,
-    ) -> ManualCorrection:
+    ) -> TipCorrection:
         with self._lock:
             run = self._require_run(analysis_id)
-            if run.status not in {"needs_review", "reviewing", "completed"}:
-                raise AnalysisError("目前狀態不可儲存人工修正。")
-            pair = self.repository.get_frame_pair(analysis_id, request.frame_id)
-            if pair is None:
-                raise AnalysisError(f"找不到影格：{request.frame_id}")
-            capture_id = (
-                pair.top_capture_id
-                if request.camera_id == "top"
-                else pair.side_capture_id
+            if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
+                raise AnalysisError("此分析方法不支援三維尖端標記修正。")
+            if run.status not in {
+                "needs_review",
+                "reviewing",
+                "completed",
+                "partially_completed",
+            }:
+                raise AnalysisError("目前狀態不可修正三維尖端標記。")
+            round_item = next(
+                (
+                    item
+                    for item in self.repository.list_rounds(analysis_id)
+                    if item.round_key == request.round_key
+                ),
+                None,
             )
-            if capture_id is None:
-                raise AnalysisError("缺少該相機影格，不能指定人工位置。")
-            stored = self.repository.get_detection(
-                analysis_id,
-                request.frame_id,
-                request.camera_id,
+            if round_item is None:
+                raise AnalysisError(f"找不到 Round：{request.round_key}")
+            automatic_tip = next(
+                (
+                    item
+                    for item in self.repository.list_tip_landmarks(analysis_id)
+                    if item.round_key == request.round_key
+                ),
+                None,
             )
-            if stored is None:
-                raise AnalysisError("尚無可修正的自動偵測資料。")
-            if not request.invalid:
-                assert request.corrected_x_px is not None
-                assert request.corrected_y_px is not None
-                width, height = self._camera_resolutions(run)[request.camera_id]
-                if (
-                    request.corrected_x_px < 0
-                    or request.corrected_y_px < 0
-                    or request.corrected_x_px >= width
-                    or request.corrected_y_px >= height
-                ):
-                    raise AnalysisError("人工修正位置超出影像範圍。")
-            automatic = stored.automatic_detection
-            automatic_point = automatic.selected_point if automatic else None
-            correction = ManualCorrection(
-                correction_id=f"correction_{uuid4().hex}",
-                analysis_id=analysis_id,
-                frame_id=request.frame_id,
-                camera_id=request.camera_id,
-                automatic_x_px=automatic_point.x_px if automatic_point else None,
-                automatic_y_px=automatic_point.y_px if automatic_point else None,
-                corrected_x_px=request.corrected_x_px,
-                corrected_y_px=request.corrected_y_px,
-                operator_id=actor_id,
-                created_at=utc_now_iso(),
-                reason=request.reason,
-                invalid=request.invalid,
+            if automatic_tip is None:
+                raise AnalysisError("此 Round 尚無可修正的自動尖端標記。")
+            model_result = next(
+                (
+                    item
+                    for item in self.repository.list_round_models(analysis_id)
+                    if item.round_key == request.round_key
+                ),
+                None,
             )
-            correction_history = [
-                *self.repository.list_corrections(analysis_id),
-                correction,
-            ]
-            updates = self._interpolated_camera_detections(
-                run,
-                request.camera_id,
-                correction_history,
+            tip_settings = run.parameters.get("tip_analysis")
+            maximum_error = (
+                float(tip_settings.get("maximum_reprojection_error_px", 5.0))
+                if isinstance(tip_settings, Mapping)
+                else 5.0
             )
-            self.repository.insert_correction_with_detections(
-                correction,
-                updates,
-                updated_at=utc_now_iso(),
-            )
-            self._refresh_correction_artifacts(run)
+            try:
+                correction = create_tip_correction(
+                    correction_id=f"tip_correction_{uuid4().hex}",
+                    operator_id=actor_id,
+                    created_at=utc_now_iso(),
+                    request=request,
+                    round_item=round_item,
+                    views=self.repository.list_views(
+                        analysis_id,
+                        request.round_key,
+                    ),
+                    poses=self.repository.list_camera_poses(
+                        analysis_id,
+                        request.round_key,
+                    ),
+                    intrinsics_snapshot=run.intrinsics_snapshot,
+                    automatic_tip=automatic_tip,
+                    artifacts_root=self._artifacts(run).root,
+                    model_result=model_result,
+                    maximum_reprojection_error_px=maximum_error,
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise AnalysisError(f"尖端標記人工修正失敗：{error}") from error
+            self.repository.insert_tip_correction(correction)
+            try:
+                self._refresh_tip_correction_artifacts(run)
+            except Exception as error:
+                self.repository.delete_tip_correction(
+                    analysis_id,
+                    correction.correction_id,
+                )
+                try:
+                    self._refresh_tip_correction_artifacts(run)
+                except Exception:
+                    pass
+                if isinstance(error, AnalysisError):
+                    raise
+                raise AnalysisError(
+                    f"尖端標記修正後的軌跡更新失敗：{error}"
+                ) from error
+            if run.status == "needs_review":
+                self._set_state(
+                    self._require_run(analysis_id),
+                    status="reviewing",
+                    stage="waiting_for_review",
+                    progress=0.95,
+                )
             return correction
 
-    def delete_correction(
+    def delete_tip_correction(
         self,
         analysis_id: str,
         correction_id: str,
     ) -> None:
         with self._lock:
             run = self._require_run(analysis_id)
-            if run.status not in {"needs_review", "reviewing", "completed"}:
-                raise AnalysisError("目前狀態不可刪除人工修正。")
-            correction = self.repository.get_correction(analysis_id, correction_id)
-            if correction is None:
-                raise AnalysisError(f"找不到人工修正：{correction_id}")
-            correction_history = [
-                item
-                for item in self.repository.list_corrections(analysis_id)
-                if item.correction_id != correction_id
-            ]
-            updates = self._interpolated_camera_detections(
-                run,
-                correction.camera_id,
-                correction_history,
+            if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
+                raise AnalysisError("此分析方法不支援三維尖端標記修正。")
+            if run.status not in {
+                "needs_review",
+                "reviewing",
+                "completed",
+                "partially_completed",
+            }:
+                raise AnalysisError("目前狀態不可刪除三維尖端標記修正。")
+            stored = next(
+                (
+                    item
+                    for item in self.repository.list_tip_corrections(analysis_id)
+                    if item.correction_id == correction_id
+                ),
+                None,
             )
-            if not self.repository.delete_correction_with_detections(
+            if stored is None or not self.repository.delete_tip_correction(
                 analysis_id,
                 correction_id,
-                updates,
-                updated_at=utc_now_iso(),
             ):
-                raise AnalysisError(f"找不到人工修正：{correction_id}")
-            self._refresh_correction_artifacts(run)
-
-    def _manifest_item(
-        self,
-        run: AnalysisRun,
-        input_id: int,
-    ) -> dict[str, Any]:
-        for item in run.parameters.get("input_manifest", []):
-            stored_input_id = item.get("input_id", item.get("capture_id", -1))
-            if int(stored_input_id) == input_id:
-                return item
-        raise AnalysisError(f"輸入清單找不到影像輸入 ID：{input_id}")
-
-    def get_frame_image_path(
-        self,
-        analysis_id: str,
-        frame_id: int,
-        camera_id: Literal["top", "side", "rotating"],
-    ) -> Path:
-        if camera_id not in {"top", "side", "rotating"}:
-            raise AnalysisError("影格相機角色只能是 top、side 或 rotating。")
-        run = self._require_run(analysis_id)
-        pair = self.repository.get_frame_pair(analysis_id, frame_id)
-        if pair is None:
-            raise AnalysisError(f"找不到影格：{frame_id}")
-        input_ids = {
-            "top": pair.top_capture_id,
-            "side": pair.side_capture_id,
-            "rotating": pair.rotating_capture_id,
-        }
-        input_id = input_ids[camera_id]
-        if input_id is None:
-            raise AnalysisError("該相機影格不存在。")
-        item = self._manifest_item(run, input_id)
-        absolute_path = item.get("absolute_path")
-        if absolute_path:
-            path = Path(str(absolute_path)).resolve()
-        elif run.record_id:
-            record = self._require_record(run.record_id)
-            path = (
-                Path(record.record_path).resolve()
-                / str(item["relative_path"])
-            ).resolve()
-        else:
-            raise AnalysisError("輸入清單缺少影像的絕對路徑。")
-        root = self.settings.paths.captures_dir.resolve()
-        try:
-            path.relative_to(root)
-        except ValueError as error:
-            raise AnalysisError("輸入影像路徑超出允許的擷取目錄。") from error
-        if not path.is_file():
-            raise AnalysisError("輸入影像已不存在。")
-        stat = path.stat()
-        if stat.st_size != item["size_bytes"] or stat.st_mtime_ns != item["modified_ns"]:
-            raise AnalysisError("輸入影像在分析紀錄建立後已變更。")
-        if _sha256(path) != item.get("sha256"):
-            raise AnalysisError("輸入影像內容與固化的 SHA-256 不一致。")
-        return path
-
-    def get_frame_detail(
-        self,
-        analysis_id: str,
-        frame_id: int,
-    ) -> AnalysisFrameDetail:
-        pair = self.repository.get_frame_pair(analysis_id, frame_id)
-        if pair is None:
-            raise AnalysisError(f"找不到影格：{frame_id}")
-        top_url = (
-            f"/api/analysis/{analysis_id}/frames/{frame_id}/images/top"
-            if pair.top_capture_id is not None
-            else None
-        )
-        side_url = (
-            f"/api/analysis/{analysis_id}/frames/{frame_id}/images/side"
-            if pair.side_capture_id is not None
-            else None
-        )
-        rotating_url = (
-            f"/api/analysis/{analysis_id}/frames/{frame_id}/images/rotating"
-            if pair.rotating_capture_id is not None
-            else None
-        )
-        return AnalysisFrameDetail(
-            pair=pair,
-            top_image_url=top_url,
-            side_image_url=side_url,
-            rotating_image_url=rotating_url,
-            top_detection=self.repository.get_detection(
-                analysis_id,
-                frame_id,
-                "top",
-            ),
-            side_detection=self.repository.get_detection(
-                analysis_id,
-                frame_id,
-                "side",
-            ),
-            rotating_detection=self.repository.get_detection(
-                analysis_id,
-                frame_id,
-                "rotating",
-            ),
-            corrections=[
-                correction
-                for correction in self.repository.list_corrections(analysis_id)
-                if correction.frame_id == frame_id
-            ],
-        )
-
-    def list_frames(self, analysis_id: str) -> list[AnalysisFrameDetail]:
-        self._require_run(analysis_id)
-        pairs = self.repository.list_frame_pairs(analysis_id)
-        detections = {
-            (stored.frame_id, stored.camera_id): stored
-            for stored in self.repository.list_detections(analysis_id)
-        }
-        corrections_by_frame: dict[int, list[ManualCorrection]] = {}
-        for correction in self.repository.list_corrections(analysis_id):
-            corrections_by_frame.setdefault(correction.frame_id, []).append(
-                correction
-            )
-        return [
-            AnalysisFrameDetail(
-                pair=pair,
-                top_image_url=(
-                    f"/api/analysis/{analysis_id}/frames/"
-                    f"{pair.frame_id}/images/top"
-                    if pair.top_capture_id is not None
-                    else None
-                ),
-                side_image_url=(
-                    f"/api/analysis/{analysis_id}/frames/"
-                    f"{pair.frame_id}/images/side"
-                    if pair.side_capture_id is not None
-                    else None
-                ),
-                rotating_image_url=(
-                    f"/api/analysis/{analysis_id}/frames/"
-                    f"{pair.frame_id}/images/rotating"
-                    if pair.rotating_capture_id is not None
-                    else None
-                ),
-                top_detection=detections.get((pair.frame_id, "top")),
-                side_detection=detections.get((pair.frame_id, "side")),
-                rotating_detection=detections.get((pair.frame_id, "rotating")),
-                corrections=corrections_by_frame.get(pair.frame_id, []),
-            )
-            for pair in pairs
-        ]
-
-    @staticmethod
-    def _csv_bool(value: object) -> bool:
-        return str(value).strip().lower() in {"1", "true", "yes"}
-
-    @staticmethod
-    def _csv_optional_float(value: object) -> float | None:
-        text = str(value or "").strip()
-        return float(text) if text else None
-
-    def get_trajectory(self, analysis_id: str) -> list[TrajectoryPoint]:
-        rows = self._artifacts(self._require_completed_run(analysis_id)).read_csv(
-            "trajectory_3d.csv"
-        )
-        try:
-            return [
-                TrajectoryPoint(
-                    frame_id=int(row["frame_id"]),
-                    cycle_id=(
-                        int(row["cycle_id"])
-                        if row.get("cycle_id", "").strip()
-                        else None
-                    ),
-                    timestamp=row.get("timestamp") or None,
-                    top_x_px=float(row["top_x_px"]),
-                    top_y_px=float(row["top_y_px"]),
-                    side_x_px=float(row["side_x_px"]),
-                    side_y_px=float(row["side_y_px"]),
-                    rotating_x_px=self._csv_optional_float(
-                        row.get("rotating_x_px")
-                    ),
-                    rotating_y_px=self._csv_optional_float(
-                        row.get("rotating_y_px")
-                    ),
-                    rotating_angle_deg=self._csv_optional_float(
-                        row.get("rotating_angle_deg")
-                    ),
-                    x_mm=float(row["x_mm"]),
-                    y_mm=float(row["y_mm"]),
-                    z_mm=float(row["z_mm"]),
-                    refined_x_mm=self._csv_optional_float(
-                        row.get("refined_x_mm")
-                    ),
-                    refined_y_mm=self._csv_optional_float(
-                        row.get("refined_y_mm")
-                    ),
-                    refined_z_mm=self._csv_optional_float(
-                        row.get("refined_z_mm")
-                    ),
-                    top_detection_type=row["top_detection_type"],
-                    side_detection_type=row["side_detection_type"],
-                    top_reprojection_error_px=float(
-                        row["top_reprojection_error_px"]
-                    ),
-                    side_reprojection_error_px=float(
-                        row["side_reprojection_error_px"]
-                    ),
-                    rotating_reprojection_error_px=self._csv_optional_float(
-                        row.get("rotating_reprojection_error_px")
-                    ),
-                    rotating_used=self._csv_bool(row.get("rotating_used")),
-                    valid=self._csv_bool(row["valid"]),
-                )
-                for row in rows
-            ]
-        except (KeyError, TypeError, ValueError) as error:
-            raise AnalysisError(f"三維軌跡資料格式無效：{error}") from error
-
-    def get_reprojection_errors(
-        self,
-        analysis_id: str,
-    ) -> list[ReprojectionErrorRecord]:
-        rows = self._artifacts(self._require_completed_run(analysis_id)).read_csv(
-            "reprojection_errors.csv"
-        )
-        try:
-            return [
-                ReprojectionErrorRecord(
-                    frame_id=int(row["frame_id"]),
-                    top_error_px=float(row["top_error_px"]),
-                    side_error_px=float(row["side_error_px"]),
-                    rotating_error_px=self._csv_optional_float(
-                        row.get("rotating_error_px")
-                    ),
-                    overall_error_px=float(row["overall_error_px"]),
-                    refined_overall_error_px=self._csv_optional_float(
-                        row.get("refined_overall_error_px")
-                    ),
-                    high_error=self._csv_bool(row["high_error"]),
-                )
-                for row in rows
-            ]
-        except (KeyError, TypeError, ValueError) as error:
-            raise AnalysisError(f"重投影誤差資料格式無效：{error}") from error
-
-    def get_detection_summary(self, analysis_id: str) -> DetectionSummary:
-        path = (
-            self._artifacts(self._require_completed_run(analysis_id)).root
-            / "detection_summary.json"
-        )
-        if not path.is_file():
-            raise AnalysisError("偵測摘要尚未產生。")
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as error:
-            raise AnalysisError(f"偵測摘要無法讀取：{error}") from error
-        if not isinstance(payload, dict):
-            raise AnalysisError("偵測摘要格式無效。")
-        try:
-            return DetectionSummary.model_validate(payload)
-        except ValidationError as error:
-            raise AnalysisError(f"偵測摘要格式無效：{error}") from error
+                raise AnalysisError(f"找不到尖端標記修正：{correction_id}")
+            try:
+                self._refresh_tip_correction_artifacts(run)
+            except Exception as error:
+                self.repository.insert_tip_correction(stored)
+                try:
+                    self._refresh_tip_correction_artifacts(run)
+                except Exception:
+                    pass
+                if isinstance(error, AnalysisError):
+                    raise
+                raise AnalysisError(
+                    f"刪除修正後的軌跡更新失敗：{error}"
+                ) from error
 
     def export(self, analysis_id: str) -> Path:
         run = self._require_run(analysis_id)
-        if run.status != "completed":
+        if run.status not in {"completed", "partially_completed"}:
             raise AnalysisError("分析完成後才能匯出。")
         root = self._artifacts(run).root
         destination = root / f"{analysis_id}_export.zip"
@@ -2251,40 +1960,986 @@ class AnalysisService:
         if cancel_event.is_set():
             raise OperationCancelledError("分析已由使用者取消。")
 
+    def _run_round_preprocessing(
+        self,
+        run: AnalysisRun,
+        cancel_event: Event,
+    ) -> AnalysisRun:
+        self._check_cancel(cancel_event)
+        validation = self._validation_for_run(run)
+        self._verify_frozen_manifest(run, validation)
+        rounds = self.repository.list_rounds(run.analysis_id)
+        views = self.repository.list_views(run.analysis_id)
+        if not rounds or not views:
+            raise AnalysisError("分析缺少 Round／View 清單。")
+        self._set_state(
+            run,
+            stage="snapshotting_intrinsics",
+            current_frame=0,
+            total_frames=len(views),
+            progress=0.02,
+        )
+
+        def update_undistortion(index: int, total: int) -> None:
+            self._check_cancel(cancel_event)
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                stage="undistorting_images",
+                current_frame=index,
+                total_frames=total,
+                progress=0.02 + (index / max(total, 1)) * 0.16,
+            )
+
+        try:
+            undistorted = undistort_analysis_views(
+                views,
+                run.intrinsics_snapshot,
+                self._artifacts(run).root,
+                cancel_check=lambda: self._check_cancel(cancel_event),
+                progress_callback=update_undistortion,
+            )
+        except (OSError, TypeError, ValueError, cv2.error) as error:
+            raise AnalysisError(f"分析影像去畸變失敗：{error}") from error
+
+        undistorted_by_view = {
+            item["view_id"]: item
+            for item in undistorted
+        }
+        artifacts = self._artifacts(run)
+        undistorted_intrinsics = {
+            camera_id: {
+                "camera_matrix": snapshot["undistorted_camera_matrix"],
+                "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],
+                "camera_model": "opencv",
+                "width": snapshot["analysis_image_width"],
+                "height": snapshot["analysis_image_height"],
+            }
+            for camera_id, snapshot in run.intrinsics_snapshot.items()
+        }
+        pose_settings = self._pose_settings_for_run(run)
+        views_by_round: dict[str, list] = {}
+        for view in views:
+            views_by_round.setdefault(view.round_key, []).append(view)
+        stored_poses: list[AnalysisCameraPoseResult] = []
+        updated_views = []
+        round_quality_payloads: list[dict[str, Any]] = []
+        pose_estimation_version = run.pose_estimation_version or "unknown"
+        failed_round_count = 0
+        existing_poses_by_round: dict[str, list[AnalysisCameraPoseResult]] = {}
+        for pose in self.repository.list_camera_poses(run.analysis_id):
+            existing_poses_by_round.setdefault(pose.round_key, []).append(pose)
+        previous_quality = {
+            str(item.get("round_key")): item
+            for item in run.pose_quality.get("rounds", [])
+            if isinstance(item, Mapping) and item.get("round_key")
+        }
+
+        for round_index, round_item in enumerate(rounds, start=1):
+            self._check_cancel(cancel_event)
+            round_views = views_by_round.get(round_item.round_key, [])
+            if round_item.status in {"model_completed", "tip_completed"}:
+                stored_poses.extend(
+                    existing_poses_by_round.get(round_item.round_key, [])
+                )
+                updated_views.extend(round_views)
+                previous = previous_quality.get(round_item.round_key)
+                if previous is not None:
+                    round_quality_payloads.append(previous)
+                continue
+            if round_item.status == "incomplete":
+                failed_round_count += 1
+                updated_views.extend(round_views)
+                continue
+            derived_frames = []
+            derived_paths: dict[str, Path] = {}
+            for view in round_views:
+                metadata = undistorted_by_view[view.view_id]
+                derived_path = artifacts.root / metadata["undistorted_path"]
+                derived_paths[view.view_id] = derived_path
+                derived_frames.append({
+                    "capture_id": view.capture_id,
+                    "camera_id": view.camera_id,
+                    "relative_path": metadata["undistorted_path"],
+                    "file_path": str(derived_path),
+                    "timestamp": view.timestamp,
+                    "angle_deg": view.angle_deg,
+                    "motor_position_deg": view.motor_position_deg,
+                })
+
+            def update_pose_stage(stage: str, progress: float) -> None:
+                self._check_cancel(cancel_event)
+                current = self._require_run(run.analysis_id)
+                round_progress = (
+                    (round_index - 1) + min(max(progress, 0), 1)
+                ) / max(len(rounds), 1)
+                self._set_state(
+                    current,
+                    stage=stage,
+                    current_frame=round_index,
+                    total_frames=len(rounds),
+                    progress=0.18 + round_progress * 0.14,
+                )
+
+            result = align_dataset_camera_poses(
+                derived_frames,
+                undistorted_intrinsics,
+                pose_settings,
+                required_camera_ids=self._required_camera_ids(
+                    run.method_name
+                ),
+                debug_directory=(
+                    artifacts.root
+                    / "pose_debug"
+                    / f"round_{round_index:04d}"
+                ),
+                stage_callback=update_pose_stage,
+                cancel_check=lambda: self._check_cancel(cancel_event),
+            )
+            pose_estimation_version = result.pose_estimation_version
+            view_by_capture = {
+                (view.capture_id, view.camera_id): view
+                for view in round_views
+            }
+            round_poses: list[AnalysisCameraPoseResult] = []
+            for pose in result.camera_poses:
+                view = view_by_capture.get((pose.input_id, pose.camera_id))
+                if view is None:
+                    continue
+                world_to_camera = (
+                    np.asarray(
+                        pose.world_to_camera_matrix,
+                        dtype=np.float64,
+                    )
+                    if pose.world_to_camera_matrix is not None
+                    else None
+                )
+                camera_to_world = (
+                    np.asarray(
+                        pose.camera_to_world_matrix,
+                        dtype=np.float64,
+                    )
+                    if pose.camera_to_world_matrix is not None
+                    else None
+                )
+                source = {
+                    "aruco": "aruco",
+                    "aruco_refined": "feature_refined",
+                    "sfm": "feature_refined",
+                    "motor_prior": "motor_prior",
+                }.get(pose.source, "invalid")
+                round_poses.append(
+                    AnalysisCameraPoseResult(
+                        analysis_id=run.analysis_id,
+                        round_key=view.round_key,
+                        view_id=view.view_id,
+                        camera_id=view.camera_id,
+                        rotation_matrix=(
+                            world_to_camera[:3, :3]
+                            .astype(float)
+                            .tolist()
+                            if world_to_camera is not None
+                            else None
+                        ),
+                        translation_vector_mm=(
+                            world_to_camera[:3, 3]
+                            .astype(float)
+                            .tolist()
+                            if world_to_camera is not None
+                            else None
+                        ),
+                        camera_center_world_mm=(
+                            camera_to_world[:3, 3]
+                            .astype(float)
+                            .tolist()
+                            if camera_to_world is not None
+                            else None
+                        ),
+                        detected_marker_ids=pose.visible_marker_ids,
+                        detected_corner_count=(
+                            pose.visible_marker_count * 4
+                        ),
+                        aruco_reprojection_error_px=(
+                            pose.aruco_reprojection_error_px
+                        ),
+                        pose_source=source,
+                        valid=pose.resolved,
+                        failure_reason=pose.failure_reason,
+                    )
+                )
+            quality = evaluate_round_quality(
+                round_item.round_key,
+                round_views,
+                derived_paths,
+            )
+            pose_by_view = {
+                item.view_id: item
+                for item in round_poses
+            }
+            selection = select_round_reconstruction_views(
+                round_views,
+                pose_by_view,
+                quality.view_quality,
+            )
+            updated_views.extend(selection.views)
+            stored_poses.extend(round_poses)
+            selected = [
+                view
+                for view in selection.views
+                if view.selected_for_reconstruction
+            ]
+            selected_cameras = {view.camera_id for view in selected}
+            required_cameras = set(
+                self._required_camera_ids(run.method_name)
+            )
+            failures = list(result.quality.required_camera_failures)
+            missing_selected = sorted(required_cameras - selected_cameras)
+            if missing_selected:
+                failures.append(
+                    "無法選出必要模型視角："
+                    + "、".join(missing_selected)
+                )
+            next_status = (
+                "ready_tip_only"
+                if round_item.status == "ready_tip_only" and not failures
+                else "preprocessed"
+                if not failures
+                else "failed"
+            )
+            if failures:
+                failed_round_count += 1
+            updated_round = round_item.model_copy(
+                update={
+                    "status": next_status,
+                    "static_scene_score": quality.static_scene_score,
+                    "failure_reason": "；".join(
+                        dict.fromkeys(failures)
+                    ) or None,
+                }
+            )
+            self.repository.update_round(updated_round)
+            quality_payload = {
+                **quality.as_dict(),
+                "pose_quality": result.quality.model_dump(mode="json"),
+                "selection": {
+                    "selected_view_ids": list(
+                        selection.selected_view_ids
+                    ),
+                    "warnings": list(selection.warnings),
+                },
+            }
+            round_quality_payloads.append(quality_payload)
+            artifacts.write_round_pose_results(
+                round_item.round_key,
+                round_poses,
+                detections=result.aruco_detections,
+                quality=result.quality.model_dump(mode="json"),
+                pose_estimation_version=result.pose_estimation_version,
+            )
+            artifacts.write_round_quality(
+                round_item.round_key,
+                quality_payload,
+            )
+
+        self.repository.replace_camera_poses(run.analysis_id, stored_poses)
+        self.repository.update_views(updated_views)
+        pose_payload = [
+            item.model_dump(mode="json")
+            for item in stored_poses
+        ]
+        aggregate_pose_quality = {
+            "coordinate_space": "undistorted",
+            "rounds": round_quality_payloads,
+        }
+        self.repository.update_pose_alignment(
+            run.analysis_id,
+            camera_pose_results=pose_payload,
+            pose_estimation_version=pose_estimation_version,
+            pose_quality=aggregate_pose_quality,
+            updated_at=utc_now_iso(),
+        )
+        self.repository.update_state(
+            run.analysis_id,
+            updated_at=utc_now_iso(),
+            failed_round_count=failed_round_count,
+        )
+        artifacts.write_aggregated_pose_results(
+            stored_poses,
+            pose_estimation_version=pose_estimation_version,
+            round_quality=round_quality_payloads,
+        )
+        artifacts.write_round_index(
+            self.repository.list_rounds(run.analysis_id),
+            self.repository.list_views(run.analysis_id),
+        )
+        updated = self._require_run(run.analysis_id)
+        artifacts.write_run(updated)
+        if failed_round_count >= len(rounds):
+            raise AnalysisError("所有 Round 的相機姿態或代表視角皆無法使用。")
+        return updated
+
+    def _round_reconstruction_job(
+        self,
+        run: AnalysisRun,
+        round_key: str,
+    ) -> dict[str, Any]:
+        artifacts = self._artifacts(run)
+        try:
+            undistorted_items = artifacts.read_undistortion_manifest()
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise AnalysisError("分析的去畸變影像清單遺失或格式無效。") from error
+        undistorted_by_view = {
+            str(item.get("view_id")): item
+            for item in undistorted_items
+            if item.get("view_id")
+        }
+        selected_views = [
+            item
+            for item in self.repository.list_views(
+                run.analysis_id,
+                round_key,
+            )
+            if item.selected_for_reconstruction
+        ]
+        if not selected_views:
+            raise AnalysisError("本輪沒有已選取的模型 View。")
+        poses = self.repository.list_camera_poses(
+            run.analysis_id,
+            round_key,
+        )
+        valid_pose_ids = {
+            item.view_id
+            for item in poses
+            if item.valid
+        }
+        selected_ids = {item.view_id for item in selected_views}
+        missing_pose_ids = sorted(selected_ids - valid_pose_ids)
+        if missing_pose_ids:
+            raise AnalysisError(
+                "本輪模型 View 缺少有效姿態："
+                + "、".join(missing_pose_ids)
+            )
+        selected_payloads = []
+        for view in selected_views:
+            metadata = undistorted_by_view.get(view.view_id)
+            if metadata is None:
+                raise AnalysisError(
+                    f"View {view.view_id} 缺少去畸變衍生資料。"
+                )
+            image_relative = str(metadata.get("undistorted_path") or "")
+            mask_relative = str(
+                metadata.get("valid_pixel_mask_path") or ""
+            )
+            image_path = (artifacts.root / image_relative).resolve()
+            mask_path = (artifacts.root / mask_relative).resolve()
+            if not image_path.is_file():
+                raise AnalysisError(
+                    f"View {view.view_id} 的去畸變影像不存在。"
+                )
+            if not mask_path.is_file():
+                raise AnalysisError(
+                    f"View {view.view_id} 的有效像素遮罩不存在。"
+                )
+            selected_payloads.append({
+                **view.model_dump(mode="json"),
+                "undistorted_path": str(image_path),
+                "valid_mask_path": str(mask_path),
+                "undistorted_sha256": _sha256(image_path),
+            })
+        reconstruction = run.parameters.get("reconstruction")
+        if not isinstance(reconstruction, Mapping):
+            raise AnalysisError("三維模型設定格式無效。")
+        return {
+            "schema_version": "1.0",
+            "analysis_id": run.analysis_id,
+            "record_id": run.record_id,
+            "round_key": round_key,
+            "artifact_root": str(artifacts.root),
+            "backend": str(reconstruction.get("backend") or ""),
+            "parameters": dict(reconstruction),
+            "selected_views": selected_payloads,
+            "camera_poses": [
+                item.model_dump(mode="json")
+                for item in poses
+                if item.view_id in selected_ids
+            ],
+            "intrinsics_snapshot": run.intrinsics_snapshot,
+            "aruco_layout_snapshot": run.aruco_layout_snapshot,
+            "coordinate_space": "undistorted",
+            "world_coordinate_unit": "millimetre",
+            "source_images_are_read_only": True,
+        }
+
+    def _run_round_models(
+        self,
+        run: AnalysisRun,
+        cancel_event: Event,
+    ) -> AnalysisRun:
+        if run.method_name != "round_multiview":
+            return run
+        reconstruction = run.parameters.get("reconstruction")
+        if not isinstance(reconstruction, Mapping):
+            raise AnalysisError("三維模型設定格式無效。")
+        backend_name = str(reconstruction.get("backend") or "")
+        readiness = self._reconstruction_backends.check(backend_name)
+        if not readiness.get("available"):
+            raise AnalysisError(
+                "；".join(readiness.get("errors") or ["模型後端不可用。"])
+            )
+        self.repository.update_reconstruction_metadata(
+            run.analysis_id,
+            backend=backend_name,
+            backend_version=str(readiness.get("backend_version") or "unknown"),
+            environment=dict(readiness.get("environment") or {}),
+            updated_at=utc_now_iso(),
+        )
+        artifacts = self._artifacts(run)
+        artifacts.write_reconstruction_environment(readiness)
+        rounds = self.repository.list_rounds(run.analysis_id)
+        candidates = [item for item in rounds if item.status == "preprocessed"]
+        if not candidates:
+            if any(
+                item.status in {
+                    "model_completed",
+                    "model_failed",
+                    "tip_completed",
+                    "tip_only",
+                    "tip_invalid",
+                }
+                for item in rounds
+            ):
+                return self._require_run(run.analysis_id)
+            raise AnalysisError("沒有通過前處理的 Round 可建立三維模型。")
+
+        completed = sum(item.status == "model_completed" for item in rounds)
+        failed = sum(item.status in {"failed", "model_failed"} for item in rounds)
+        for index, round_item in enumerate(candidates, start=1):
+            self._check_cancel(cancel_event)
+            model_id = f"{run.analysis_id}:{round_item.mode_id}:{round_item.round_id}:model"
+            running_model = RoundModelResult(
+                analysis_id=run.analysis_id,
+                round_key=round_item.round_key,
+                model_id=model_id,
+                backend=backend_name,
+                backend_version=str(readiness.get("backend_version") or "unknown"),
+                status="processing",
+                source_view_ids=[],
+            )
+            self.repository.upsert_round_model(running_model)
+            reconstructing_round = round_item.model_copy(
+                update={"status": "reconstructing", "failure_reason": None}
+            )
+            self.repository.update_round(reconstructing_round)
+            artifacts.write_round_model_result(running_model)
+            last_worker_log_bucket = -1
+
+            def update_worker_progress(
+                stage: str,
+                progress: float,
+                message: str | None,
+            ) -> None:
+                nonlocal last_worker_log_bucket
+                self._check_cancel(cancel_event)
+                overall = ((index - 1) + progress) / max(len(candidates), 1)
+                current = self._require_run(run.analysis_id)
+                self._set_state(
+                    current,
+                    status="reconstructing",
+                    stage=stage,
+                    current_frame=index,
+                    total_frames=len(candidates),
+                    progress=0.32 + overall * 0.36,
+                )
+                log_bucket = int(min(max(progress, 0.0), 1.0) * 20)
+                if message and log_bucket != last_worker_log_bucket:
+                    last_worker_log_bucket = log_bucket
+                    self._log(current, "INFO", f"{round_item.round_id}：{message}")
+
+            try:
+                job = self._round_reconstruction_job(
+                    run,
+                    round_item.round_key,
+                )
+                worker_result = run_reconstruction_worker(
+                    job,
+                    round_artifact_directory(
+                        artifacts.root,
+                        round_item.round_key,
+                    ),
+                    cancel_event,
+                    progress_callback=update_worker_progress,
+                )
+                relative_path = lambda value: (
+                    str(Path(value).resolve().relative_to(artifacts.root))
+                    if value
+                    else None
+                )
+                completed_model = running_model.model_copy(
+                    update={
+                        "status": "completed",
+                        "source_view_ids": list(
+                            worker_result.get("source_view_ids") or []
+                        ),
+                        "model_path": relative_path(
+                            worker_result.get("gaussian_model_path")
+                        ),
+                        "point_cloud_path": relative_path(
+                            worker_result.get("point_cloud_path")
+                        ),
+                        "preview_paths": [
+                            path
+                            for path in (
+                                relative_path(item)
+                                for item in worker_result.get(
+                                    "preview_paths",
+                                    [],
+                                )
+                            )
+                            if path is not None
+                        ],
+                        "gaussian_count": worker_result.get("gaussian_count"),
+                        "point_count": worker_result.get("point_count"),
+                        "training_iterations": worker_result.get(
+                            "training_iterations"
+                        ),
+                        "training_duration_seconds": worker_result.get(
+                            "training_duration_seconds"
+                        ),
+                        "model_quality": {
+                            **dict(worker_result.get("model_quality") or {}),
+                            "checkpoint_path": relative_path(
+                                worker_result.get("checkpoint_path")
+                            ),
+                        },
+                        "failure_reason": None,
+                    }
+                )
+                self.repository.upsert_round_model(completed_model)
+                self.repository.update_round(
+                    reconstructing_round.model_copy(
+                        update={
+                            "status": "model_completed",
+                            "model_result_id": model_id,
+                            "failure_reason": None,
+                        }
+                    )
+                )
+                artifacts.write_round_model_result(completed_model)
+                completed += 1
+                self._log(
+                    run,
+                    "INFO",
+                    f"{round_item.round_id} 三維模型建立完成。",
+                )
+            except OperationCancelledError:
+                checkpoint = (
+                    round_artifact_directory(
+                        artifacts.root,
+                        round_item.round_key,
+                    )
+                    / "model"
+                    / "checkpoint"
+                    / "latest.pt"
+                )
+                cancelled_model = running_model.model_copy(
+                    update={
+                        "status": "cancelled",
+                        "model_quality": {
+                            "checkpoint_path": (
+                                str(checkpoint.relative_to(artifacts.root))
+                                if checkpoint.is_file()
+                                else None
+                            ),
+                        },
+                        "failure_reason": "三維模型工作已由使用者取消。",
+                    }
+                )
+                self.repository.upsert_round_model(cancelled_model)
+                self.repository.update_round(
+                    reconstructing_round.model_copy(
+                        update={
+                            "status": "cancelled",
+                            "failure_reason": cancelled_model.failure_reason,
+                        }
+                    )
+                )
+                artifacts.write_round_model_result(cancelled_model)
+                for pending in candidates[index:]:
+                    self.repository.update_round(
+                        pending.model_copy(
+                            update={
+                                "status": "cancelled",
+                                "failure_reason": "分析在執行本輪前已取消。",
+                            }
+                        )
+                    )
+                raise
+            except Exception as error:
+                reason = public_error_detail(error)
+                checkpoint = (
+                    round_artifact_directory(
+                        artifacts.root,
+                        round_item.round_key,
+                    )
+                    / "model"
+                    / "checkpoint"
+                    / "latest.pt"
+                )
+                failed_model = running_model.model_copy(
+                    update={
+                        "status": "failed",
+                        "model_quality": {
+                            "checkpoint_path": (
+                                str(checkpoint.relative_to(artifacts.root))
+                                if checkpoint.is_file()
+                                else None
+                            ),
+                        },
+                        "failure_reason": reason,
+                    }
+                )
+                self.repository.upsert_round_model(failed_model)
+                self.repository.update_round(
+                    reconstructing_round.model_copy(
+                        update={
+                            "status": "model_failed",
+                            "failure_reason": reason,
+                        }
+                    )
+                )
+                artifacts.write_round_model_result(failed_model)
+                failed += 1
+                self._log(
+                    run,
+                    "ERROR",
+                    f"{round_item.round_id} 三維模型建立失敗：{reason}",
+                )
+            self.repository.update_state(
+                run.analysis_id,
+                updated_at=utc_now_iso(),
+                completed_round_count=completed,
+                failed_round_count=failed,
+            )
+            artifacts.write_round_model_index(
+                self.repository.list_round_models(run.analysis_id)
+            )
+            artifacts.write_round_index(
+                self.repository.list_rounds(run.analysis_id),
+                self.repository.list_views(run.analysis_id),
+            )
+
+        if completed == 0:
+            self._log(
+                run,
+                "WARNING",
+                "所有 Round 的三維模型皆建立失敗，將保留相機姿態並繼續建立尖端標記。",
+            )
+        updated = self._require_run(run.analysis_id)
+        artifacts.write_run(updated)
+        return updated
+
+    def _run_tip_markers(
+        self,
+        run: AnalysisRun,
+        cancel_event: Event,
+    ) -> AnalysisRun:
+        self._check_cancel(cancel_event)
+        artifacts = self._artifacts(run)
+        try:
+            undistortion_manifest = artifacts.read_undistortion_manifest()
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise AnalysisError(
+                f"無法讀取去畸變影像清單：{error}"
+            ) from error
+
+        tip_settings = run.parameters.get("tip_analysis")
+        if not isinstance(tip_settings, Mapping):
+            raise AnalysisError("尖端標記設定格式無效。")
+        minimum_confidence = float(
+            tip_settings.get("minimum_confidence", 0.7)
+        )
+        minimum_supporting_views = int(
+            tip_settings.get("minimum_supporting_views", 2)
+        )
+        maximum_reprojection_error_px = float(
+            tip_settings.get("maximum_reprojection_error_px", 5.0)
+        )
+
+        rounds = self.repository.list_rounds(run.analysis_id)
+        views_by_round: dict[str, list] = {}
+        for view in self.repository.list_views(run.analysis_id):
+            views_by_round.setdefault(view.round_key, []).append(view)
+        poses_by_round: dict[str, list[AnalysisCameraPoseResult]] = {}
+        for pose in self.repository.list_camera_poses(run.analysis_id):
+            poses_by_round.setdefault(pose.round_key, []).append(pose)
+        models_by_round = {
+            item.round_key: item
+            for item in self.repository.list_round_models(run.analysis_id)
+        }
+        existing_landmarks = {
+            item.round_key: item
+            for item in self.repository.list_tip_landmarks(run.analysis_id)
+        }
+        processable_statuses = (
+            {"model_completed", "model_failed"}
+            if run.method_name == "round_multiview"
+            else {"ready_tip_only"}
+        )
+        candidates = [
+            item
+            for item in rounds
+            if item.status in processable_statuses
+        ]
+        candidate_keys = {
+            item.round_key
+            for item in candidates
+        }
+        previous_by_mode: dict[str, TipLandmark] = {}
+        processed_index = 0
+        for round_item in rounds:
+            if round_item.round_key not in candidate_keys:
+                previous = existing_landmarks.get(round_item.round_key)
+                if previous is not None and previous.valid:
+                    previous_by_mode[round_item.mode_id] = previous
+                continue
+            processed_index += 1
+            self._check_cancel(cancel_event)
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                status="processing",
+                stage="detecting_tip_candidates",
+                current_frame=processed_index,
+                total_frames=len(candidates),
+                progress=0.68 + (
+                    (processed_index - 1) / max(len(candidates), 1)
+                ) * 0.20,
+            )
+            model_result = models_by_round.get(round_item.round_key)
+            if model_result is not None and model_result.status != "completed":
+                model_result = None
+            try:
+                result = analyze_round_tip(
+                    analysis_id=run.analysis_id,
+                    round_item=round_item,
+                    views=views_by_round.get(round_item.round_key, ()),
+                    poses=poses_by_round.get(round_item.round_key, ()),
+                    intrinsics_snapshot=run.intrinsics_snapshot,
+                    undistortion_manifest=undistortion_manifest,
+                    artifacts_root=artifacts.root,
+                    model_result=model_result,
+                    previous_landmark=previous_by_mode.get(round_item.mode_id),
+                    minimum_confidence=minimum_confidence,
+                    minimum_supporting_views=minimum_supporting_views,
+                    maximum_reprojection_error_px=(
+                        maximum_reprojection_error_px
+                    ),
+                    use_skeleton_refinement=bool(
+                        tip_settings.get("use_skeleton_refinement", True)
+                    ),
+                    use_temporal_prior=bool(
+                        tip_settings.get("use_temporal_prior", True)
+                    ),
+                    save_reprojection_overlays=bool(
+                        tip_settings.get("save_reprojection_overlays", True)
+                    ),
+                    cancel_check=lambda: self._check_cancel(cancel_event),
+                )
+                landmark = result.landmark
+                if result.model_result is not None:
+                    self.repository.upsert_round_model(result.model_result)
+                    artifacts.write_round_model_result(result.model_result)
+                    models_by_round[round_item.round_key] = result.model_result
+                self.repository.replace_tip_observations(
+                    run.analysis_id,
+                    round_item.round_key,
+                    result.observations,
+                )
+                if result.warnings:
+                    self._log(
+                        current,
+                        "WARNING",
+                        f"{round_item.round_id} 尖端標記警告："
+                        + "；".join(result.warnings),
+                    )
+            except OperationCancelledError:
+                raise
+            except Exception as error:
+                reason = public_error_detail(error)
+                landmark = TipLandmark(
+                    analysis_id=run.analysis_id,
+                    round_key=round_item.round_key,
+                    tip_id=f"{round_item.round_key}:tip",
+                    record_id=round_item.record_id,
+                    mode_id=round_item.mode_id,
+                    round_id=round_item.round_id,
+                    timestamp=round_item.started_at,
+                    confidence=0.0,
+                    valid=False,
+                    source="invalid",
+                    detection_type="invalid",
+                    failure_reason=reason,
+                )
+                self.repository.replace_tip_observations(
+                    run.analysis_id,
+                    round_item.round_key,
+                    (),
+                )
+                artifacts.write_tip_landmark(
+                    landmark,
+                    quality={"failure_reason": reason},
+                )
+                self._log(
+                    current,
+                    "ERROR",
+                    f"{round_item.round_id} 尖端標記失敗：{reason}",
+                )
+
+            self.repository.upsert_tip_landmark(landmark)
+            existing_landmarks[round_item.round_key] = landmark
+            if landmark.valid:
+                previous_by_mode[round_item.mode_id] = landmark
+            model_failed = (
+                run.method_name == "round_multiview"
+                and (
+                    models_by_round.get(round_item.round_key) is None
+                    or models_by_round[round_item.round_key].status != "completed"
+                )
+            )
+            if landmark.valid and not model_failed:
+                round_status = "tip_completed"
+                failure_reason = None
+            elif landmark.valid:
+                round_status = "tip_only"
+                failure_reason = round_item.failure_reason
+            else:
+                round_status = "tip_invalid"
+                failure_reason = landmark.failure_reason
+                if round_item.failure_reason:
+                    failure_reason = (
+                        f"{round_item.failure_reason}；{failure_reason}"
+                    )
+            self.repository.update_round(
+                round_item.model_copy(
+                    update={
+                        "status": round_status,
+                        "tip_landmark_id": landmark.tip_id,
+                        "failure_reason": failure_reason,
+                    }
+                )
+            )
+
+        resolved_rounds = self.repository.list_rounds(run.analysis_id)
+        resolved_landmarks = self.repository.list_tip_landmarks(
+            run.analysis_id
+        )
+        trajectory = link_tip_trajectory(
+            resolved_rounds,
+            resolved_landmarks,
+        )
+        self.repository.replace_tip_trajectory(
+            run.analysis_id,
+            trajectory.points,
+        )
+        artifacts.write_tip_trajectory(
+            trajectory.points,
+            trajectory.quality,
+        )
+        artifacts.write_formal_summaries(
+            resolved_rounds,
+            self.repository.list_round_models(run.analysis_id),
+            resolved_landmarks,
+            trajectory.quality,
+        )
+        artifacts.write_round_model_index(
+            self.repository.list_round_models(run.analysis_id)
+        )
+        artifacts.write_round_index(
+            resolved_rounds,
+            self.repository.list_views(run.analysis_id),
+        )
+
+        valid_count = sum(item.valid for item in resolved_landmarks)
+        successful_round_count = sum(
+            item.status == "tip_completed"
+            for item in resolved_rounds
+        )
+        failed_round_count = sum(
+            item.status in {
+                "failed",
+                "model_failed",
+                "tip_only",
+                "tip_invalid",
+            }
+            for item in resolved_rounds
+        )
+        trajectory_status = "completed" if valid_count else "unavailable"
+        self.repository.update_state(
+            run.analysis_id,
+            updated_at=utc_now_iso(),
+            completed_round_count=successful_round_count,
+            failed_round_count=failed_round_count,
+            tip_marker_count=valid_count,
+            trajectory_status=trajectory_status,
+        )
+        current = self._require_run(run.analysis_id)
+        artifacts.write_run(current)
+        if valid_count == 0:
+            raise AnalysisError("所有 Round 都無法建立有效的三維尖端標記。")
+
+        wait_for_review = bool(
+            tip_settings.get("wait_for_low_confidence_review", True)
+        )
+        needs_review = bool(
+            run.parameters.get("manual_review_required", True)
+        ) or (
+            wait_for_review
+            and any(not item.valid for item in resolved_landmarks)
+        )
+        if needs_review:
+            completed = self._set_state(
+                current,
+                status="needs_review",
+                stage="waiting_for_review",
+                current_frame=len(resolved_rounds),
+                total_frames=len(resolved_rounds),
+                progress=0.92,
+                manual_review_completed=False,
+                clear_error=True,
+            )
+            self._log(completed, "INFO", "尖端標記已建立，等待人工確認。")
+            return completed
+
+        final_status = (
+            "partially_completed"
+            if failed_round_count > 0
+            else "completed"
+        )
+        completed = self._set_state(
+            current,
+            status=final_status,
+            stage="completed",
+            current_frame=len(resolved_rounds),
+            total_frames=len(resolved_rounds),
+            progress=1.0,
+            manual_review_completed=True,
+            clear_error=True,
+        )
+        self._log(
+            completed,
+            "INFO",
+            f"分析完成，共建立 {valid_count} 個三維尖端標記。",
+        )
+        return completed
+
     def _run_job(self, analysis_id: str, cancel_event: Event) -> None:
         run = self._require_run(analysis_id)
         try:
             self._check_cancel(cancel_event)
             if run.status == "processing":
-                self._run_pose_alignment(run, cancel_event)
-                run = self._require_run(analysis_id)
-                self._run_detection(run, cancel_event)
-                run = self._require_run(analysis_id)
-                if bool(run.parameters.get("manual_review_required", True)):
-                    self._set_state(
-                        run,
-                        status="needs_review",
-                        stage="waiting_for_review",
-                        current_frame=run.total_frames,
-                        progress=0.70,
-                        manual_review_completed=False,
-                        clear_error=True,
-                    )
-                    self._log(run, "INFO", "自動偵測完成，等待人工檢查。")
-                    return
-                run = self._set_state(
-                    run,
-                    status="reconstructing",
-                    stage="triangulating",
-                    current_frame=0,
-                    progress=0.72,
-                    manual_review_completed=False,
-                    clear_error=True,
-                )
-                self._run_reconstruction(run, cancel_event)
-                return
-            if run.status == "reconstructing":
-                self._run_reconstruction(run, cancel_event)
+                run = self._run_round_preprocessing(run, cancel_event)
+                run = self._run_round_models(run, cancel_event)
+                self._run_tip_markers(run, cancel_event)
                 return
             raise AnalysisError(
                 "分析背景工作收到不支援的狀態："
@@ -2306,1211 +2961,3 @@ class AnalysisService:
                 context="分析紀錄失敗",
                 report_error=True,
             )
-
-    def _run_pose_alignment(
-        self,
-        run: AnalysisRun,
-        cancel_event: Event,
-    ) -> AnalysisRun:
-        self._check_cancel(cancel_event)
-        validation = self._validation_for_run(run)
-        self._verify_frozen_manifest(run, validation)
-        intrinsics = self._intrinsics_for_run(run)
-        pose_settings = self._pose_settings_for_run(run)
-        self._log(run, "INFO", "開始偵測本次資料集的 ArUco 基準。")
-
-        def update_pose_stage(stage: str, progress: float) -> None:
-            self._check_cancel(cancel_event)
-            current = self._require_run(run.analysis_id)
-            self._set_state(
-                current,
-                stage=stage,
-                current_frame=0,
-                progress=progress,
-            )
-
-        result = align_dataset_camera_poses(
-            validation.frames,
-            intrinsics,
-            pose_settings,
-            required_camera_ids=self._required_camera_ids(run.method_name),
-            debug_directory=self._artifacts(run).root / "pose_debug",
-            stage_callback=update_pose_stage,
-            cancel_check=lambda: self._check_cancel(cancel_event),
-        )
-        self._check_cancel(cancel_event)
-        payload = result.model_dump(mode="json")
-        self._artifacts(run).write_pose_alignment(result)
-        self.repository.update_pose_alignment(
-            run.analysis_id,
-            camera_pose_results=payload["camera_poses"],
-            pose_estimation_version=result.pose_estimation_version,
-            pose_quality=payload["quality"],
-            updated_at=utc_now_iso(),
-        )
-        updated = self._require_run(run.analysis_id)
-        self._artifacts(updated).write_run(updated)
-        failures = result.quality.required_camera_failures
-        if failures:
-            raise AnalysisError(
-                "必要相機無法由本次資料集建立姿態："
-                + ", ".join(failures)
-            )
-        if result.quality.resolved_image_count <= 0:
-            raise AnalysisError("本次資料集沒有可用的相機姿態。")
-        self._log(
-            updated,
-            "INFO",
-            "相機姿態估算完成："
-            f"{result.quality.resolved_image_count}/"
-            f"{result.quality.total_image_count} 張已解析。",
-        )
-        return updated
-
-    @staticmethod
-    def _decode_image(path: Path) -> np.ndarray:
-        try:
-            encoded = np.fromfile(path, dtype=np.uint8)
-            image = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
-        except (OSError, ValueError) as error:
-            raise AnalysisError(f"影像無法讀取：{path.name}（{error}）") from error
-        if image is None or image.size == 0:
-            raise AnalysisError(f"影像無法解碼：{path.name}")
-        return image
-
-    @staticmethod
-    def _write_image_atomic(path: Path, image: np.ndarray, extension: str) -> None:
-        success, encoded = cv2.imencode(extension, image)
-        if not success:
-            raise AnalysisError(f"分析影像輸出編碼失敗：{path.name}")
-        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_bytes(encoded.tobytes())
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
-
-    @staticmethod
-    def _rectification_maps(
-        geometry: RuntimeAnalysisGeometry,
-        adaptation: CameraPairResolutionAdaptation,
-    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-        values = {
-            "top": (
-                adaptation.top.camera_matrix,
-                geometry.top_distortion_coefficients,
-                geometry.top_rectification_rotation,
-                adaptation.top.projection_matrix,
-                adaptation.top.resolution,
-            ),
-            "side": (
-                adaptation.side.camera_matrix,
-                geometry.side_distortion_coefficients,
-                geometry.side_rectification_rotation,
-                adaptation.side.projection_matrix,
-                adaptation.side.resolution,
-            ),
-        }
-        maps = {}
-        for camera_id, values_for_camera in values.items():
-            camera, distortion, rotation, projection, size = values_for_camera
-            arguments = (
-                np.asarray(camera, dtype=np.float64),
-                np.asarray(distortion, dtype=np.float64),
-                np.asarray(rotation, dtype=np.float64),
-                np.asarray(projection, dtype=np.float64)[:, :3],
-                size,
-                cv2.CV_32FC1,
-            )
-            if geometry.camera_projection_models.get(camera_id) == "fisheye":
-                map_x, map_y = cv2.fisheye.initUndistortRectifyMap(*arguments)
-            else:
-                map_x, map_y = cv2.initUndistortRectifyMap(*arguments)
-            maps[camera_id] = map_x, map_y
-        return maps
-
-    def _rectified_frame(
-        self,
-        run: AnalysisRun,
-        pair: AnalysisFramePair,
-        camera_id: Literal["top", "side"],
-        maps: dict[str, tuple[np.ndarray, np.ndarray]],
-    ) -> np.ndarray:
-        image = self._decode_image(
-            self.get_frame_image_path(
-                run.analysis_id,
-                pair.frame_id,
-                camera_id,
-            )
-        )
-        map_x, map_y = maps[camera_id]
-        return cv2.remap(
-            image,
-            map_x,
-            map_y,
-            interpolation=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-        )
-
-    @staticmethod
-    def _make_segmenter(
-        analysis: AnalysisSettings,
-        camera_id: Literal["top", "side"],
-    ) -> Mog2BackgroundSegmenter:
-        segmentation = analysis.segmentation
-        minimum_area = (
-            segmentation.minimum_top_contour_area_px
-            if camera_id == "top"
-            else segmentation.minimum_side_contour_area_px
-        )
-        assert segmentation.history is not None
-        assert segmentation.variance_threshold is not None
-        assert segmentation.initialization_frames is not None
-        assert minimum_area is not None
-        assert analysis.lighting_change.lighting_change_area_px is not None
-        assert analysis.lighting_change.lighting_change_est_time_frames is not None
-        return Mog2BackgroundSegmenter(
-            history=segmentation.history,
-            variance_threshold=segmentation.variance_threshold,
-            detect_shadows=segmentation.detect_shadows,
-            initialization_frames=segmentation.initialization_frames,
-            opening_kernel_size=segmentation.opening_kernel_size,
-            closing_kernel_size=segmentation.closing_kernel_size,
-            erosion_kernel_size=segmentation.erosion_kernel_size,
-            minimum_contour_area_px=minimum_area,
-            lighting_change_area_px=(
-                analysis.lighting_change.lighting_change_area_px
-            ),
-            lighting_change_est_time_frames=(
-                analysis.lighting_change.lighting_change_est_time_frames
-            ),
-        )
-
-    @staticmethod
-    def _updated_roi(
-        hard_bound: tuple[int, int, int, int],
-        contour: list[list[float]],
-        margin: int | None,
-    ) -> tuple[int, int, int, int]:
-        if not contour or margin is None:
-            return hard_bound
-        bound_x, bound_y, bound_width, bound_height = hard_bound
-        bound_right = bound_x + bound_width
-        bound_bottom = bound_y + bound_height
-        x, y, width, height = cv2.boundingRect(
-            np.rint(np.asarray(contour)).astype(np.int32)
-        )
-        left = max(bound_x, x - margin)
-        top = max(bound_y, y - margin)
-        right = min(bound_right, x + width + margin)
-        bottom = min(bound_bottom, y + height + margin)
-        if right <= left or bottom <= top:
-            return hard_bound
-        return left, top, right - left, bottom - top
-
-    @staticmethod
-    def _status_detection(
-        frame_id: int,
-        camera_id: Literal["top", "side"],
-        timestamp: str | None,
-        status: str,
-    ) -> DetectionResult:
-        detection_type = (
-            status
-            if status in {"background_initialization", "lighting_transition"}
-            else "Missing"
-        )
-        return DetectionResult(
-            frame_id=frame_id,
-            camera_id=camera_id,
-            timestamp=timestamp,
-            detection_type=detection_type,
-            valid=False,
-            status_reason=status,
-        )
-
-    @staticmethod
-    def _mask_in_frame(
-        mask: np.ndarray,
-        frame_shape: tuple[int, int],
-        origin: tuple[int, int],
-    ) -> np.ndarray:
-        height, width = frame_shape
-        full = np.zeros((height, width), dtype=np.uint8)
-        x, y = origin
-        mask_height, mask_width = mask.shape[:2]
-        full[y:y + mask_height, x:x + mask_width] = mask
-        return full
-
-    @staticmethod
-    def _render_overlay(
-        image: np.ndarray,
-        detection: DetectionResult,
-    ) -> np.ndarray:
-        overlay = image.copy()
-        if detection.contour:
-            contour = np.rint(np.asarray(detection.contour)).astype(np.int32)
-            cv2.polylines(overlay, [contour], True, (80, 220, 160), 1)
-        if detection.epipolar_line:
-            a, b, c = detection.epipolar_line
-            height, width = overlay.shape[:2]
-            if abs(b) > 1e-12:
-                y0 = int(round(-c / b))
-                y1 = int(round(-(a * (width - 1) + c) / b))
-                cv2.line(overlay, (0, y0), (width - 1, y1), (40, 220, 250), 1)
-            elif abs(a) > 1e-12:
-                x = int(round(-c / a))
-                cv2.line(overlay, (x, 0), (x, height - 1), (40, 220, 250), 1)
-        if detection.minimum_path:
-            path = np.rint(
-                np.asarray([[point.x_px, point.y_px] for point in detection.minimum_path])
-            ).astype(np.int32)
-            if len(path) > 1:
-                cv2.polylines(overlay, [path], False, (255, 160, 40), 2)
-        for point in detection.candidate_points:
-            cv2.circle(
-                overlay,
-                (int(round(point.x_px)), int(round(point.y_px))),
-                4,
-                (30, 80, 255),
-                1,
-            )
-        if detection.selected_point:
-            cv2.circle(
-                overlay,
-                (
-                    int(round(detection.selected_point.x_px)),
-                    int(round(detection.selected_point.y_px)),
-                ),
-                5,
-                (70, 255, 120),
-                2,
-            )
-        return overlay
-
-    def _store_frame_artifacts(
-        self,
-        run: AnalysisRun,
-        camera_id: Literal["top", "side"],
-        frame_id: int,
-        image: np.ndarray,
-        mask: np.ndarray,
-        detection: DetectionResult,
-    ) -> None:
-        root = self._artifacts(run).root
-        self._write_image_atomic(
-            root / "masks" / camera_id / f"{frame_id:06d}.png",
-            mask,
-            ".png",
-        )
-        self._write_image_atomic(
-            root / "overlays" / camera_id / f"{frame_id:06d}.jpg",
-            self._render_overlay(image, detection),
-            ".jpg",
-        )
-
-    def _store_detection(
-        self,
-        run: AnalysisRun,
-        detection: DetectionResult,
-    ) -> StoredDetection:
-        stored = StoredDetection(
-            analysis_id=run.analysis_id,
-            frame_id=detection.frame_id,
-            camera_id=detection.camera_id,
-            automatic_detection=detection,
-            resolved_detection=detection.model_copy(deep=True),
-            updated_at=utc_now_iso(),
-        )
-        self.repository.upsert_detection(stored)
-        return stored
-
-    def _run_detection(self, run: AnalysisRun, cancel_event: Event) -> None:
-        analysis = self._analysis_settings(run)
-        geometry = self._geometry_for_run(run)
-        pairs = self.repository.list_frame_pairs(run.analysis_id)
-        if not pairs:
-            raise AnalysisError("分析紀錄沒有已驗證的影格配對。")
-        camera_resolutions = self._camera_resolutions(run)
-        adaptation = self._adapted_geometry(
-            geometry,
-            camera_resolutions,
-        )
-        maps = self._rectification_maps(geometry, adaptation)
-        rectified_fundamental = _fundamental_from_projections(
-            adaptation.top.projection_matrix,
-            adaptation.side.projection_matrix,
-        )
-        top_segmenter = self._make_segmenter(analysis, "top")
-        side_segmenter = self._make_segmenter(analysis, "side")
-        top_settings = analysis.top_detection
-        side_settings = analysis.side_detection
-        top_hard_roi = _roi(top_settings.roi or ())
-        side_hard_roi = _roi(side_settings.roi or ())
-        top_roi = top_hard_roi
-        side_roi = side_hard_roi
-        top_previous: tuple[float, float] | None = None
-        side_previous: tuple[float, float] | None = None
-        learning_rate = analysis.segmentation.learning_rate
-        assert learning_rate is not None
-
-        self._log(run, "INFO", "開始 MOG2、俯視與側視經典尖端偵測。")
-        for index, pair in enumerate(pairs, start=1):
-            self._check_cancel(cancel_event)
-            if pair.pair_status not in PAIRABLE_STATUSES:
-                for camera_id, timestamp in (
-                    ("top", pair.top_timestamp),
-                    ("side", pair.side_timestamp),
-                ):
-                    self._store_detection(
-                        run,
-                        self._status_detection(
-                            pair.frame_id,
-                            camera_id,
-                            timestamp,
-                            "unpaired",
-                        ),
-                    )
-                self._set_state(
-                    run,
-                    stage="detecting_side_tip",
-                    current_frame=pair.frame_id,
-                    progress=0.05 + 0.55 * index / len(pairs),
-                )
-                continue
-
-            top_image = self._rectified_frame(run, pair, "top", maps)
-            side_image = self._rectified_frame(run, pair, "side", maps)
-            top_segment = top_segmenter.process(
-                top_image,
-                roi=top_roi,
-                learning_rate=learning_rate,
-            )
-            side_segment = side_segmenter.process(
-                side_image,
-                roi=side_roi,
-                learning_rate=learning_rate,
-            )
-
-            if top_segment.status != "ready":
-                top_detection = self._status_detection(
-                    pair.frame_id,
-                    "top",
-                    pair.top_timestamp,
-                    top_segment.status,
-                )
-            else:
-                candidates = top_tip_candidates(
-                    top_segment.contours,
-                    plant_base=_point(top_settings.plant_base or ()),
-                    num_selected_points=int(top_settings.num_selected_points or 0),
-                    roi_origin=top_segment.roi_origin,
-                )
-                selected = select_temporal_candidate(
-                    candidates.candidate_points,
-                    top_previous,
-                )
-                selected_point = (
-                    Point2D(x_px=selected.selected[0], y_px=selected.selected[1])
-                    if selected.selected
-                    else None
-                )
-                selected_contour = next(
-                    (
-                        contour
-                        for point, contour in zip(
-                            candidates.candidate_points,
-                            candidates.selected_contours,
-                        )
-                        if selected.selected is not None
-                        and np.allclose(point, selected.selected)
-                    ),
-                    None,
-                )
-                global_contour = (
-                    _shift_contour(
-                        selected_contour,
-                        top_segment.roi_origin,
-                    )
-                    if selected_contour is not None
-                    else []
-                )
-                top_detection = DetectionResult(
-                    frame_id=pair.frame_id,
-                    camera_id="top",
-                    timestamp=pair.top_timestamp,
-                    candidate_points=[
-                        Point2D(x_px=point[0], y_px=point[1])
-                        for point in candidates.candidate_points
-                    ],
-                    selected_point=selected_point,
-                    detection_type=selected.detection_type,
-                    valid=selected_point is not None,
-                    contour=global_contour,
-                    status_reason=(
-                        "manual_initialization_required"
-                        if selected.requires_manual_initialization
-                        else None
-                    ),
-                )
-                if selected.selected:
-                    top_previous = selected.selected
-                if top_settings.update_roi and global_contour:
-                    top_roi = self._updated_roi(
-                        top_hard_roi,
-                        global_contour,
-                        top_settings.roi_update_margin_px,
-                    )
-            top_mask = self._mask_in_frame(
-                top_segment.mask,
-                top_image.shape[:2],
-                top_segment.roi_origin,
-            )
-            self._store_detection(run, top_detection)
-            self._store_frame_artifacts(
-                run,
-                "top",
-                pair.frame_id,
-                top_image,
-                top_mask,
-                top_detection,
-            )
-            self._set_state(
-                run,
-                stage="detecting_top_tip",
-                current_frame=pair.frame_id,
-                progress=0.05 + 0.275 * index / len(pairs),
-            )
-            self._check_cancel(cancel_event)
-
-            epipolar_line: tuple[float, float, float] | None = None
-            minimum_paths = []
-            selected_contours: list[np.ndarray] = []
-            if side_segment.status != "ready":
-                side_detection = self._status_detection(
-                    pair.frame_id,
-                    "side",
-                    pair.side_timestamp,
-                    side_segment.status,
-                )
-            elif not top_detection.valid or top_detection.selected_point is None:
-                side_detection = self._status_detection(
-                    pair.frame_id,
-                    "side",
-                    pair.side_timestamp,
-                    "top_tip_missing",
-                )
-            else:
-                epipolar_line = epipolar_line_from_top_point(
-                    rectified_fundamental,
-                    (
-                        top_detection.selected_point.x_px,
-                        top_detection.selected_point.y_px,
-                    ),
-                )
-                assert side_settings.maximum_epipolar_distance_px is not None
-                assert side_settings.minimum_path_connectivity is not None
-                candidates = side_tip_candidates(
-                    side_segment.contours,
-                    image_shape=side_segment.mask.shape[:2],
-                    plant_base=_point(side_settings.plant_base or ()),
-                    epipolar_line=epipolar_line,
-                    maximum_epipolar_distance_px=(
-                        side_settings.maximum_epipolar_distance_px
-                    ),
-                    num_selected_points=int(side_settings.num_selected_points or 0),
-                    connectivity=side_settings.minimum_path_connectivity,
-                    roi_origin=side_segment.roi_origin,
-                )
-                minimum_paths = candidates.minimum_paths
-                selected_contours = candidates.selected_contours
-                selected = select_temporal_candidate(
-                    candidates.candidate_points,
-                    side_previous,
-                )
-                selected_point = (
-                    Point2D(x_px=selected.selected[0], y_px=selected.selected[1])
-                    if selected.selected
-                    else None
-                )
-                selected_path = next(
-                    (
-                        path
-                        for path in minimum_paths
-                        if selected.selected is not None
-                        and np.allclose(path.candidate_point, selected.selected)
-                    ),
-                    None,
-                )
-                selected_contour = next(
-                    (
-                        contour
-                        for contour in selected_contours
-                        if selected.selected is not None
-                        and cv2.pointPolygonTest(
-                            contour,
-                            (
-                                selected.selected[0] - side_segment.roi_origin[0],
-                                selected.selected[1] - side_segment.roi_origin[1],
-                            ),
-                            False,
-                        )
-                        >= 0
-                    ),
-                    None,
-                )
-                global_contour = (
-                    _shift_contour(
-                        selected_contour,
-                        side_segment.roi_origin,
-                    )
-                    if selected_contour is not None
-                    else []
-                )
-                side_detection = DetectionResult(
-                    frame_id=pair.frame_id,
-                    camera_id="side",
-                    timestamp=pair.side_timestamp,
-                    candidate_points=[
-                        Point2D(x_px=point[0], y_px=point[1])
-                        for point in candidates.candidate_points
-                    ],
-                    selected_point=selected_point,
-                    detection_type=selected.detection_type,
-                    valid=selected_point is not None,
-                    contour=global_contour,
-                    epipolar_line=list(epipolar_line),
-                    minimum_path=(
-                        [Point2D(x_px=x, y_px=y) for x, y in selected_path.path]
-                        if selected_path
-                        else []
-                    ),
-                    status_reason=(
-                        "manual_initialization_required"
-                        if selected.requires_manual_initialization
-                        else (
-                            "minimum_path_unavailable"
-                            if not candidates.candidate_points
-                            else None
-                        )
-                    ),
-                )
-                if selected.selected:
-                    side_previous = selected.selected
-                if side_settings.update_roi and global_contour:
-                    side_roi = self._updated_roi(
-                        side_hard_roi,
-                        global_contour,
-                        side_settings.roi_update_margin_px,
-                    )
-            side_mask = self._mask_in_frame(
-                side_segment.mask,
-                side_image.shape[:2],
-                side_segment.roi_origin,
-            )
-            self._store_detection(run, side_detection)
-            self._store_frame_artifacts(
-                run,
-                "side",
-                pair.frame_id,
-                side_image,
-                side_mask,
-                side_detection,
-            )
-            self._set_state(
-                run,
-                stage="detecting_side_tip",
-                current_frame=pair.frame_id,
-                progress=0.05 + 0.55 * index / len(pairs),
-            )
-
-        self._check_cancel(cancel_event)
-        self._set_state(run, stage="interpolating", progress=0.62)
-        for camera_id in ("top", "side"):
-            self._interpolate_camera(run, camera_id)
-        self._resolve_all(run)
-        self._write_detection_exports(run)
-        self._artifacts(run).write_corrections(
-            self.repository.list_corrections(run.analysis_id)
-        )
-        self._set_state(
-            run,
-            stage="interpolating",
-            current_frame=len(pairs),
-            progress=0.68,
-        )
-
-    def _interpolate_camera(
-        self,
-        run: AnalysisRun,
-        camera_id: Literal["top", "side"],
-    ) -> None:
-        self.repository.upsert_detections(
-            self._interpolated_camera_detections(run, camera_id)
-        )
-
-    def _interpolated_camera_detections(
-        self,
-        run: AnalysisRun,
-        camera_id: Literal["top", "side"],
-        correction_items: Iterable[ManualCorrection] | None = None,
-    ) -> list[StoredDetection]:
-        analysis = self._analysis_settings(run)
-        records = self.repository.list_detections(run.analysis_id, camera_id)
-        corrections = {
-            (item.frame_id, item.camera_id): item
-            for item in (
-                correction_items
-                if correction_items is not None
-                else self.repository.list_corrections(run.analysis_id)
-            )
-        }
-        points = []
-        for record in records:
-            correction = corrections.get((record.frame_id, camera_id))
-            automatic = record.automatic_detection
-            if correction is not None and correction.invalid:
-                selected = None
-                detection_type = "Invalid"
-                valid = False
-                barrier = "Invalid"
-            elif correction is not None:
-                selected = Point2D(
-                    x_px=float(correction.corrected_x_px),
-                    y_px=float(correction.corrected_y_px),
-                )
-                detection_type = "Manual"
-                valid = True
-                barrier = None
-            else:
-                selected = automatic.selected_point if automatic else None
-                detection_type = (
-                    automatic.detection_type if automatic else "Missing"
-                )
-                status_reason = (
-                    automatic.status_reason if automatic else "missing"
-                )
-                valid = bool(automatic and automatic.valid)
-                barrier = status_reason if status_reason in {
-                    "camera_disconnected",
-                    "record_interrupted",
-                    "unpaired",
-                    "lighting_transition",
-                    "background_initialization",
-                } else None
-            points.append(
-                TrackPoint(
-                    frame_id=record.frame_id,
-                    timestamp=automatic.timestamp if automatic else None,
-                    x_px=selected.x_px if selected else None,
-                    y_px=selected.y_px if selected else None,
-                    detection_type=detection_type,
-                    valid=valid,
-                    barrier=barrier,
-                )
-            )
-        interpolated = interpolate_missing_track(
-            points,
-            maximum_gap_seconds=analysis.interpolation.maximum_gap_seconds,
-        )
-        by_frame = {item.frame_id: item for item in interpolated}
-        updates = []
-        for record in records:
-            point = by_frame[record.frame_id]
-            interpolated_detection = None
-            if point.detection_type == "Interpolated":
-                interpolated_detection = DetectionResult(
-                    frame_id=point.frame_id,
-                    camera_id=camera_id,
-                    timestamp=point.timestamp,
-                    selected_point=Point2D(
-                        x_px=float(point.x_px),
-                        y_px=float(point.y_px),
-                    ),
-                    detection_type="Interpolated",
-                    valid=True,
-                    status_reason="linear_interpolation",
-                )
-            updated = record.model_copy(
-                update={
-                    "interpolated_detection": interpolated_detection,
-                    "updated_at": utc_now_iso(),
-                },
-                deep=True,
-            )
-            updates.append(
-                self._apply_correction(
-                    updated,
-                    corrections.get((record.frame_id, camera_id)),
-                )
-            )
-        return updates
-
-    def _resolve_all(self, run: AnalysisRun) -> None:
-        corrections = {
-            (item.frame_id, item.camera_id): item
-            for item in self.repository.list_corrections(run.analysis_id)
-        }
-        updates = []
-        for stored in self.repository.list_detections(run.analysis_id):
-            correction = corrections.get((stored.frame_id, stored.camera_id))
-            updates.append(
-                self._apply_correction(stored, correction)
-            )
-        self.repository.upsert_detections(updates)
-
-    def _write_detection_exports(self, run: AnalysisRun) -> None:
-        artifacts = self._artifacts(run)
-        for camera_id in ("top", "side"):
-            artifacts.write_detections(
-                camera_id,
-                self.repository.list_detections(run.analysis_id, camera_id),
-            )
-
-    @staticmethod
-    def _category(value: str) -> str:
-        return value if value in DETECTION_CATEGORIES else "Missing"
-
-    @staticmethod
-    def _category_payload(counter: Counter, total: int) -> dict[str, dict[str, float | int]]:
-        return {
-            category: {
-                "count": int(counter.get(category, 0)),
-                "ratio": float(counter.get(category, 0) / total) if total else 0.0,
-            }
-            for category in DETECTION_CATEGORIES
-        }
-
-    def _detection_summary(
-        self,
-        run: AnalysisRun,
-        reprojection: dict[str, float | int],
-    ) -> dict[str, Any]:
-        counters = {
-            "top": Counter(),
-            "side": Counter(),
-            "rotating": Counter(),
-        }
-        totals = {"top": 0, "side": 0, "rotating": 0}
-        for stored in self.repository.list_detections(run.analysis_id):
-            resolved = stored.resolved_detection
-            category = self._category(
-                resolved.detection_type if resolved else "Missing"
-            )
-            counters[stored.camera_id][category] += 1
-            totals[stored.camera_id] += 1
-        overall = counters["top"] + counters["side"] + counters["rotating"]
-        overall_total = totals["top"] + totals["side"] + totals["rotating"]
-        return {
-            "top": self._category_payload(counters["top"], totals["top"]),
-            "side": self._category_payload(counters["side"], totals["side"]),
-            "rotating": self._category_payload(
-                counters["rotating"],
-                totals["rotating"],
-            ),
-            "overall": self._category_payload(overall, overall_total),
-            "reprojection": reprojection,
-            "paper_comparison_notice": (
-                "論文報告值僅供方法比較，不代表本次結果通過或保證相同表現。"
-            ),
-        }
-
-    def _run_reconstruction(self, run: AnalysisRun, cancel_event: Event) -> None:
-        self._check_cancel(cancel_event)
-        geometry = self._geometry_for_run(run)
-        for camera_id in ("top", "side"):
-            self._interpolate_camera(run, camera_id)
-        self._resolve_all(run)
-        self._write_detection_exports(run)
-        self._artifacts(run).write_corrections(
-            self.repository.list_corrections(run.analysis_id)
-        )
-        camera_resolutions = self._camera_resolutions(run)
-        adaptation = self._adapted_geometry(
-            geometry,
-            camera_resolutions,
-        )
-        top_projection = adaptation.top.projection_matrix
-        side_projection = adaptation.side.projection_matrix
-        world_transform = np.asarray(
-            geometry.world_transform_matrix,
-            dtype=np.float64,
-        )
-        stereo_from_world = np.linalg.inv(world_transform)
-        top_world_projection = top_projection @ stereo_from_world
-        side_world_projection = side_projection @ stereo_from_world
-        uses_rotating = run.method_name == "top_side_rotating"
-        intrinsics_by_camera = self._intrinsics_for_run(run)
-        rotating_intrinsics = (
-            intrinsics_by_camera.get("rotating")
-            if uses_rotating
-            else None
-        )
-        rotating_camera_matrix = (
-            self._scaled_intrinsic_matrix(
-                rotating_intrinsics,
-                camera_resolutions["rotating"],
-            )
-            if rotating_intrinsics is not None
-            else None
-        )
-        analysis = self._analysis_settings(run)
-        threshold = analysis.reprojection.high_error_threshold_px
-        pairs = self.repository.list_frame_pairs(run.analysis_id)
-        detections = {
-            (stored.frame_id, stored.camera_id): stored
-            for stored in self.repository.list_detections(run.analysis_id)
-        }
-        reconstructed: list[dict[str, Any]] = []
-        total = len(pairs)
-        self._set_state(run, stage="triangulating", current_frame=0, progress=0.72)
-        for index, pair in enumerate(pairs, start=1):
-            self._check_cancel(cancel_event)
-            top = detections.get((pair.frame_id, "top"))
-            side = detections.get((pair.frame_id, "side"))
-            top_result = top.resolved_detection if top else None
-            side_result = side.resolved_detection if side else None
-            if (
-                pair.pair_status not in PAIRABLE_STATUSES
-                or top_result is None
-                or side_result is None
-                or not top_result.valid
-                or not side_result.valid
-                or top_result.selected_point is None
-                or side_result.selected_point is None
-            ):
-                continue
-            top_point = (
-                top_result.selected_point.x_px,
-                top_result.selected_point.y_px,
-            )
-            side_point = (
-                side_result.selected_point.x_px,
-                side_result.selected_point.y_px,
-            )
-            try:
-                stereo_point = np.asarray(
-                    triangulate_point(
-                        top_projection,
-                        side_projection,
-                        top_point,
-                        side_point,
-                    ),
-                    dtype=np.float64,
-                )
-                world_point = apply_world_transform(
-                    stereo_point.reshape(1, 3),
-                    world_transform,
-                )[0]
-            except ValueError as error:
-                self._log(
-                    run,
-                    "WARNING",
-                    f"影格 {pair.frame_id} 三角化失敗，保留為無效：{error}",
-                )
-                continue
-            rotating_result = None
-            rotating_point = None
-            rotating_error = None
-            rotating_used = False
-            refined_world_point = (
-                world_point.copy()
-                if uses_rotating
-                else None
-            )
-            if (
-                uses_rotating
-                and pair.rotating_capture_id is not None
-            ):
-                rotating_pose = self._camera_pose_for_input(
-                    run,
-                    "rotating",
-                    pair.rotating_capture_id,
-                )
-                if rotating_pose is None:
-                    rotating_result = DetectionResult(
-                        frame_id=pair.frame_id,
-                        camera_id="rotating",
-                        timestamp=pair.rotating_timestamp,
-                        detection_type="Missing",
-                        valid=False,
-                        status_reason="rotating_camera_pose_unresolved",
-                    )
-                    self._store_detection(run, rotating_result)
-                    self._log(
-                        run,
-                        "WARNING",
-                        f"影格 {pair.frame_id} 的環繞相機姿態未解析，"
-                        "保留頂+側基準結果。",
-                    )
-                elif (
-                    rotating_intrinsics is not None
-                    and rotating_camera_matrix is not None
-                ):
-                    try:
-                        rotating_image = self._decode_image(
-                            self.get_frame_image_path(
-                                run.analysis_id,
-                                pair.frame_id,
-                                "rotating",
-                            )
-                        )
-                        predicted_point = self._project_world_point(
-                            world_point,
-                            rotating_pose,
-                            rotating_intrinsics,
-                            rotating_camera_matrix,
-                        )
-                        observation = detect_rotating_tip_near_projection(
-                            rotating_image,
-                            predicted_point,
-                        )
-                        if observation.point is not None:
-                            rotating_point = observation.point
-                            undistorted_point = self._undistort_camera_point(
-                                observation.point,
-                                rotating_intrinsics,
-                                rotating_camera_matrix,
-                            )
-                            multiview = robust_multiview_triangulate(
-                                (
-                                    top_world_projection,
-                                    side_world_projection,
-                                    rotating_camera_matrix
-                                    @ rotating_pose[:3, :],
-                                ),
-                                (top_point, side_point, undistorted_point),
-                                confidence=(
-                                    1.0,
-                                    1.0,
-                                    observation.confidence,
-                                ),
-                                rejection_threshold_px=max(8.0, threshold),
-                            )
-                            rotating_error = multiview.reprojection_errors_px[2]
-                            rotating_used = multiview.used_observations[2]
-                            if rotating_used:
-                                refined_world_point = multiview.point
-                            rotating_result = DetectionResult(
-                                frame_id=pair.frame_id,
-                                camera_id="rotating",
-                                timestamp=pair.rotating_timestamp,
-                                candidate_points=[
-                                    Point2D(
-                                        x_px=observation.point[0],
-                                        y_px=observation.point[1],
-                                    )
-                                ],
-                                selected_point=Point2D(
-                                    x_px=observation.point[0],
-                                    y_px=observation.point[1],
-                                ),
-                                detection_type=(
-                                    "Automatic"
-                                    if rotating_used
-                                    else "Invalid"
-                                ),
-                                valid=rotating_used,
-                                status_reason=(
-                                    None
-                                    if rotating_used
-                                    else "rotating_observation_rejected"
-                                ),
-                            )
-                        else:
-                            rotating_result = DetectionResult(
-                                frame_id=pair.frame_id,
-                                camera_id="rotating",
-                                timestamp=pair.rotating_timestamp,
-                                detection_type="Missing",
-                                valid=False,
-                                status_reason="rotating_tip_not_found",
-                            )
-                        self._store_detection(run, rotating_result)
-                        self._store_frame_artifacts(
-                            run,
-                            "rotating",
-                            pair.frame_id,
-                            rotating_image,
-                            np.zeros(
-                                rotating_image.shape[:2],
-                                dtype=np.uint8,
-                            ),
-                            rotating_result,
-                        )
-                    except Exception as error:
-                        self._log(
-                            run,
-                            "WARNING",
-                            f"影格 {pair.frame_id} 的環繞觀測未採用：{error}",
-                        )
-            reconstructed.append({
-                "pair": pair,
-                "top": top_result,
-                "side": side_result,
-                "top_point": top_point,
-                "side_point": side_point,
-                "stereo_point": stereo_point,
-                "world_point": world_point,
-                "refined_world_point": refined_world_point,
-                "rotating": rotating_result,
-                "rotating_point": rotating_point,
-                "rotating_error": rotating_error,
-                "rotating_used": rotating_used,
-            })
-            self._set_state(
-                run,
-                stage="triangulating",
-                current_frame=pair.frame_id,
-                progress=0.72 + 0.10 * index / max(total, 1),
-            )
-        if not reconstructed:
-            raise AnalysisError("沒有同時具備有效俯視與側視位置的影格，無法三角化。")
-
-        self._check_cancel(cancel_event)
-        self._set_state(
-            run,
-            stage="calculating_reprojection_error",
-            progress=0.84,
-        )
-        stereo_points = np.asarray(
-            [item["stereo_point"] for item in reconstructed],
-            dtype=np.float64,
-        )
-        top_observed = np.asarray(
-            [item["top_point"] for item in reconstructed],
-            dtype=np.float64,
-        )
-        side_observed = np.asarray(
-            [item["side_point"] for item in reconstructed],
-            dtype=np.float64,
-        )
-        top_errors = reprojection_errors(
-            top_projection,
-            stereo_points,
-            top_observed,
-        )
-        side_errors = reprojection_errors(
-            side_projection,
-            stereo_points,
-            side_observed,
-        )
-        statistics = summarize_reprojection_errors(
-            top_errors,
-            side_errors,
-            high_error_threshold_px=threshold,
-        )
-        trajectory_rows = []
-        error_rows = []
-        for item, top_error, side_error in zip(
-            reconstructed,
-            top_errors,
-            side_errors,
-        ):
-            pair = item["pair"]
-            top_result = item["top"]
-            side_result = item["side"]
-            world = item["world_point"]
-            refined_world = item["refined_world_point"]
-            rotating_point = item["rotating_point"]
-            rotating_error = item["rotating_error"]
-            rotating_used = item["rotating_used"]
-            high_error = max(float(top_error), float(side_error)) > threshold
-            baseline_overall = float((top_error + side_error) / 2.0)
-            refined_overall = (
-                float((top_error + side_error + rotating_error) / 3.0)
-                if rotating_used and rotating_error is not None
-                else baseline_overall
-            )
-            trajectory_rows.append({
-                "frame_id": pair.frame_id,
-                "cycle_id": pair.cycle_id,
-                "timestamp": pair.top_timestamp or pair.side_timestamp,
-                "top_x_px": item["top_point"][0],
-                "top_y_px": item["top_point"][1],
-                "side_x_px": item["side_point"][0],
-                "side_y_px": item["side_point"][1],
-                "rotating_x_px": (
-                    rotating_point[0]
-                    if rotating_point is not None
-                    else None
-                ),
-                "rotating_y_px": (
-                    rotating_point[1]
-                    if rotating_point is not None
-                    else None
-                ),
-                "rotating_angle_deg": pair.rotating_angle_deg,
-                "x_mm": float(world[0]),
-                "y_mm": float(world[1]),
-                "z_mm": float(world[2]),
-                "refined_x_mm": (
-                    float(refined_world[0])
-                    if refined_world is not None
-                    else None
-                ),
-                "refined_y_mm": (
-                    float(refined_world[1])
-                    if refined_world is not None
-                    else None
-                ),
-                "refined_z_mm": (
-                    float(refined_world[2])
-                    if refined_world is not None
-                    else None
-                ),
-                "top_detection_type": self._category(top_result.detection_type),
-                "side_detection_type": self._category(side_result.detection_type),
-                "top_reprojection_error_px": float(top_error),
-                "side_reprojection_error_px": float(side_error),
-                "rotating_reprojection_error_px": rotating_error,
-                "rotating_used": rotating_used,
-                "valid": True,
-            })
-            error_rows.append({
-                "frame_id": pair.frame_id,
-                "top_error_px": float(top_error),
-                "side_error_px": float(side_error),
-                "rotating_error_px": rotating_error,
-                "overall_error_px": baseline_overall,
-                "refined_overall_error_px": refined_overall,
-                "high_error": high_error,
-            })
-
-        self._check_cancel(cancel_event)
-        self._set_state(run, stage="exporting", progress=0.94)
-        artifacts = self._artifacts(run)
-        artifacts.write_trajectory(trajectory_rows)
-        artifacts.write_reprojection_errors(error_rows)
-        reprojection_summary = {
-            "top_mean_px": statistics.top_mean_px,
-            "side_mean_px": statistics.side_mean_px,
-            "overall_mean_px": statistics.overall_mean_px,
-            "overall_std_px": statistics.overall_std_px,
-            "maximum_error_px": statistics.maximum_error_px,
-            "high_error_threshold_px": threshold,
-            "high_error_count": statistics.high_error_count,
-            "high_error_ratio": statistics.high_error_ratio,
-        }
-        artifacts.write_detection_summary(
-            self._detection_summary(run, reprojection_summary)
-        )
-        self.repository.update_average_reprojection_error(
-            run.analysis_id,
-            statistics.overall_mean_px,
-        )
-        self._check_cancel(cancel_event)
-        completed = self._set_state(
-            run,
-            status="completed",
-            stage="completed",
-            current_frame=run.total_frames,
-            progress=1.0,
-            clear_error=True,
-        )
-        self._log(
-            completed,
-            "INFO",
-            f"分析完成，共輸出 {len(trajectory_rows)} 個有效三維點。",
-        )

@@ -6,11 +6,11 @@ import {
   FiArrowLeft,
   FiArrowRight,
   FiCheckCircle,
-  FiHome,
   FiPlay,
   FiRefreshCw,
   FiSave,
 } from "react-icons/fi";
+import { PiHouseFill } from "react-icons/pi";
 
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
@@ -22,9 +22,8 @@ import useNotificationsContext from "@/features/Notifications/hooks/useNotificat
 
 import { ANALYSIS_SETUP_STEPS } from "./analysisConfig";
 import AnalysisAvailableRecords from "./components/AnalysisAvailableRecords";
-import AnalysisSetupParametersStep from "./components/AnalysisSetupParametersStep";
 import AnalysisSetupProgress from "./components/AnalysisSetupProgress";
-import AnalysisSetupRangeStep from "./components/AnalysisSetupRangeStep";
+import AnalysisSetupReconstructionStep from "./components/AnalysisSetupReconstructionStep";
 import AnalysisSetupSourcesStep from "./components/AnalysisSetupSourcesStep";
 import AnalysisSetupSummaryStep from "./components/AnalysisSetupSummaryStep";
 import useAnalysisSetup from "./hooks/useAnalysisSetup";
@@ -52,8 +51,6 @@ export default function AnalysisNew({
     updateSetup,
     updateCameraSource,
     updateModeSelection,
-    scanSources,
-    updateRoi,
     updateParameter,
     goToStep,
     nextStep,
@@ -128,22 +125,12 @@ export default function AnalysisNew({
           scanning={sourceScanning}
           onCameraSourceChange={updateCameraSource}
           onModeSelectionChange={updateModeSelection}
-          onScan={scanSources}
         />
       );
     }
     if (currentStep === 3) {
       return (
-        <AnalysisSetupRangeStep
-          setup={setup}
-          onChange={updateSetup}
-          onRoiChange={updateRoi}
-        />
-      );
-    }
-    if (currentStep === 4) {
-      return (
-        <AnalysisSetupParametersStep
+        <AnalysisSetupReconstructionStep
           method={setup.method}
           parameters={setup.parameters}
           manualReviewRequired={setup.manualReviewRequired}
@@ -199,14 +186,21 @@ export default function AnalysisNew({
       );
     }
 
-    if (["processing", "needs_review", "reviewing", "reconstructing", "completed"].includes(createdRun.status)) {
+    if ([
+      "processing",
+      "needs_review",
+      "reviewing",
+      "reconstructing",
+      "completed",
+      "partially_completed",
+    ].includes(createdRun.status)) {
       return (
         <Button
           className="ml-auto"
           variant="primary"
           onClick={() => router.push("/analysis")}
         >
-          <FiHome
+          <PiHouseFill
             className="size-4 shrink-0"
             aria-hidden="true"
           />
@@ -251,7 +245,7 @@ export default function AnalysisNew({
                   </Button>
                 ) : null}
                 <Button onClick={() => router.push("/analysis")}>
-                  <FiHome
+                  <PiHouseFill
                     className="size-4 shrink-0"
                     aria-hidden="true"
                   />

@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FiHome,
   FiRefreshCw,
   FiX,
 } from "react-icons/fi";
+import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
@@ -20,8 +20,11 @@ import useNotificationsContext from "@/features/Notifications/hooks/useNotificat
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
 import AnalysisRunMetadata from "./components/AnalysisRunMetadata";
+import AnalysisRunRoundOverview from "./components/AnalysisRunRoundOverview";
 import useAnalysisRun from "./hooks/useAnalysisRun";
-import { analysisRunDisplay } from "./lib/analysisRunUtils";
+import {
+  analysisRunDisplay,
+} from "./lib/analysisRunUtils";
 
 export default function AnalysisRun({
   analysisId,
@@ -31,7 +34,7 @@ export default function AnalysisRun({
   const {
     run,
     progress,
-    framePairs,
+    formalData,
     loading,
     loadError,
     pendingAction,
@@ -123,7 +126,7 @@ export default function AnalysisRun({
                 disabled={Boolean(pendingAction)}
                 onClick={() => router.push("/analysis")}
               >
-                <FiHome
+                <PiHouseFill
                   className="size-4 shrink-0"
                   aria-hidden="true"
                 />
@@ -184,7 +187,7 @@ export default function AnalysisRun({
                   <StatusCard
                     title="分析進度"
                     content={`${display.progressPercent}%`}
-                    note={`${effectiveRun.current_frame} / ${effectiveRun.total_frames} 影格`}
+                    note={`${effectiveRun.current_frame} / ${effectiveRun.total_frames} 輪`}
                   />
                   <StatusCard
                     title="人工檢查"
@@ -276,9 +279,11 @@ export default function AnalysisRun({
                 ) : null}
 
                 <AnalysisRunMetadata
-                  framePairs={framePairs}
+                  formalData={formalData}
                   run={effectiveRun}
                 />
+
+                <AnalysisRunRoundOverview formalData={formalData} />
 
                 <AnalysisRunActions
                   exportPending={exportPending}
@@ -295,7 +300,7 @@ export default function AnalysisRun({
                   )}
                   onSkipReview={() => {
                     const confirmed = window.confirm(
-                      "略過後將直接使用自動、估計與插值結果進行三維重建，並記錄此次未完成人工修正。確定繼續嗎？",
+                      "略過後將直接採用目前的自動尖端標記結果，並記錄此次未完成人工確認。確定繼續嗎？",
                     );
                     if (confirmed) {
                       void performAction("reconstruct_without_review");

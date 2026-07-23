@@ -22,7 +22,6 @@ import {
 import {
   normalizeAnalysisProgress,
   normalizeAnalysisRun,
-  normalizeFramePairs,
 } from "../lib/analysisRunUtils";
 
 const POLL_INTERVAL_MS = 2_500;
@@ -37,7 +36,7 @@ export default function useAnalysisRun({
 }) {
   const [run, setRun] = useState(null);
   const [progress, setProgress] = useState(null);
-  const [framePairs, setFramePairs] = useState([]);
+  const [formalData, setFormalData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
@@ -75,17 +74,17 @@ export default function useAnalysisRun({
     setLoadError("");
 
     try {
-      const [runPayload, progressPayload, pairsPayload] = await loadAnalysisRunBundle(
+      const bundle = await loadAnalysisRunBundle(
         analysisId,
         controller.signal,
       );
       if (!mountedRef.current || generation !== loadGenerationRef.current) return false;
 
-      const normalizedRun = normalizeAnalysisRun(runPayload);
+      const normalizedRun = normalizeAnalysisRun(bundle.run);
       runStatusRef.current = normalizedRun.status;
       setRun(normalizedRun);
-      setProgress(normalizeAnalysisProgress(progressPayload));
-      setFramePairs(normalizeFramePairs(pairsPayload));
+      setProgress(normalizeAnalysisProgress(bundle.progress));
+      setFormalData(bundle.formalData);
       setLoadError("");
       if (confirmMutation) {
         setMutationOutcomeUnknown(false);
@@ -246,7 +245,7 @@ export default function useAnalysisRun({
   return {
     run,
     progress,
-    framePairs,
+    formalData,
     loading,
     loadError,
     pendingAction,

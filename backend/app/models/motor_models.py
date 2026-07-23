@@ -16,7 +16,6 @@ class MotorStatus(BaseModel):
     velocity_limit_deg_s: float
     acceleration_deg_s2: float
     current_limit_amp: float
-    holding_current_amp: float
     last_error: str | None = None
 
 
@@ -26,6 +25,5 @@ class MoveRequest(BaseModel):
 
 class MotorSettingsUpdate(BaseModel):
     current_limit_amp: float | None = Field(default=None, gt=0)
-    holding_current_amp: float | None = Field(default=None, ge=0)
     velocity_limit_deg_s: float | None = Field(default=None, gt=0)
     acceleration_deg_s2: float | None = Field(default=None, gt=0)

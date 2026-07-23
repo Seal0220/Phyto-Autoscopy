@@ -6,19 +6,20 @@ from fastapi.responses import FileResponse
 from app.core.state import AppContext, get_context
 from app.models.analysis_models import (
     AnalysisCreateRequest,
-    AnalysisFrameDetail,
-    AnalysisFramePair,
     AnalysisProgress,
+    AnalysisRound,
     AnalysisReconstructRequest,
     AnalysisRun,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
     AnalysisSourceSummary,
-    DetectionSummary,
-    ManualCorrection,
-    ManualCorrectionRequest,
-    ReprojectionErrorRecord,
-    TrajectoryPoint,
+    AnalysisView,
+    RoundModelResult,
+    TipCorrection,
+    TipCorrectionRequest,
+    TipLandmark,
+    TipObservation2D,
+    TipTrajectoryPoint,
 )
 from app.security.auth import Principal, get_request_principal
 
@@ -49,6 +50,13 @@ def list_analysis_runs(
     return context.analysis_service.list_runs(record_id=record_id)
 
 
+@router.get("/backends", response_model=list[dict])
+def list_analysis_reconstruction_backends(
+    context: AppContext = Depends(get_context),
+) -> list[dict]:
+    return context.analysis_service.list_reconstruction_backends()
+
+
 @router.post("", response_model=AnalysisRun)
 def create_analysis_run(
     request: AnalysisCreateRequest,
@@ -71,6 +79,169 @@ def get_analysis_run(
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
     return context.analysis_service.get_run(analysis_id)
+
+
+@router.get("/{analysis_id}/rounds", response_model=list[AnalysisRound])
+def list_analysis_rounds(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> list[AnalysisRound]:
+    return context.analysis_service.list_rounds(analysis_id)
+
+
+@router.get("/{analysis_id}/views", response_model=list[AnalysisView])
+def list_analysis_views(
+    analysis_id: str,
+    round_key: str | None = None,
+    context: AppContext = Depends(get_context),
+) -> list[AnalysisView]:
+    return context.analysis_service.list_views(
+        analysis_id,
+        round_key,
+    )
+
+
+@router.get(
+    "/{analysis_id}/round-models",
+    response_model=list[RoundModelResult],
+)
+def list_analysis_round_models(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> list[RoundModelResult]:
+    return context.analysis_service.list_round_models(analysis_id)
+
+
+@router.get(
+    "/{analysis_id}/tip-landmarks",
+    response_model=list[TipLandmark],
+)
+def list_analysis_tip_landmarks(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> list[TipLandmark]:
+    return context.analysis_service.list_tip_landmarks(analysis_id)
+
+
+@router.get(
+    "/{analysis_id}/tip-observations",
+    response_model=list[TipObservation2D],
+)
+def list_analysis_tip_observations(
+    analysis_id: str,
+    round_key: str | None = None,
+    context: AppContext = Depends(get_context),
+) -> list[TipObservation2D]:
+    return context.analysis_service.list_tip_observations(
+        analysis_id,
+        round_key,
+    )
+
+
+@router.get(
+    "/{analysis_id}/tip-trajectory",
+    response_model=list[TipTrajectoryPoint],
+)
+def list_analysis_tip_trajectory(
+    analysis_id: str,
+    mode_id: str | None = None,
+    context: AppContext = Depends(get_context),
+) -> list[TipTrajectoryPoint]:
+    return context.analysis_service.list_tip_trajectory(
+        analysis_id,
+        mode_id,
+    )
+
+
+@router.get(
+    "/{analysis_id}/tip-trajectory-quality",
+    response_model=dict,
+)
+def get_analysis_tip_trajectory_quality(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> dict:
+    return context.analysis_service.get_tip_trajectory_quality(analysis_id)
+
+
+@router.get(
+    "/{analysis_id}/tip-corrections",
+    response_model=list[TipCorrection],
+)
+def list_analysis_tip_corrections(
+    analysis_id: str,
+    round_key: str | None = None,
+    context: AppContext = Depends(get_context),
+) -> list[TipCorrection]:
+    return context.analysis_service.list_tip_corrections(
+        analysis_id,
+        round_key,
+    )
+
+
+@router.post(
+    "/{analysis_id}/tip-corrections",
+    response_model=TipCorrection,
+)
+def save_analysis_tip_correction(
+    analysis_id: str,
+    request: TipCorrectionRequest,
+    context: AppContext = Depends(get_context),
+    principal: Principal = Depends(get_request_principal),
+) -> TipCorrection:
+    return context.analysis_service.save_tip_correction(
+        analysis_id,
+        request,
+        actor_id=principal.actor,
+    )
+
+
+@router.delete(
+    "/{analysis_id}/tip-corrections/{correction_id}",
+)
+def delete_analysis_tip_correction(
+    analysis_id: str,
+    correction_id: str,
+    context: AppContext = Depends(get_context),
+) -> dict[str, str]:
+    context.analysis_service.delete_tip_correction(
+        analysis_id,
+        correction_id,
+    )
+    return {"deleted": correction_id}
+
+
+@router.get(
+    "/{analysis_id}/views/{view_id}/image",
+)
+def get_analysis_view_image(
+    analysis_id: str,
+    view_id: str,
+    coordinate_space: str = "undistorted",
+    context: AppContext = Depends(get_context),
+) -> FileResponse:
+    path = context.analysis_service.get_view_image_path(
+        analysis_id,
+        view_id,
+        coordinate_space,
+    )
+    return FileResponse(path)
+
+
+@router.get(
+    "/{analysis_id}/artifacts/{artifact_path:path}",
+)
+def get_analysis_artifact(
+    analysis_id: str,
+    artifact_path: str,
+    context: AppContext = Depends(get_context),
+) -> FileResponse:
+    return FileResponse(
+        context.analysis_service.get_artifact_path(
+            analysis_id,
+            artifact_path,
+        )
+    )
 
 
 @router.delete("/{analysis_id}")
@@ -102,8 +273,12 @@ def start_analysis_run(
 def cancel_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
+    principal: Principal = Depends(get_request_principal),
 ) -> AnalysisRun:
-    return context.analysis_service.cancel(analysis_id)
+    return context.analysis_service.cancel(
+        analysis_id,
+        actor_id=principal.actor,
+    )
 
 
 @router.post("/{analysis_id}/retry", response_model=AnalysisRun)
@@ -152,129 +327,6 @@ def get_analysis_progress(
     context: AppContext = Depends(get_context),
 ) -> AnalysisProgress:
     return context.analysis_service.get_progress(analysis_id)
-
-
-@router.get(
-    "/{analysis_id}/frames",
-    response_model=list[AnalysisFrameDetail],
-)
-def list_analysis_frames(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[AnalysisFrameDetail]:
-    return context.analysis_service.list_frames(analysis_id)
-
-
-@router.get(
-    "/{analysis_id}/frames/{frame_id}",
-    response_model=AnalysisFrameDetail,
-)
-def get_analysis_frame(
-    analysis_id: str,
-    frame_id: int,
-    context: AppContext = Depends(get_context),
-) -> AnalysisFrameDetail:
-    return context.analysis_service.get_frame_detail(analysis_id, frame_id)
-
-
-@router.get("/{analysis_id}/frames/{frame_id}/images/{camera_id}")
-def get_analysis_frame_image(
-    analysis_id: str,
-    frame_id: int,
-    camera_id: str,
-    context: AppContext = Depends(get_context),
-) -> FileResponse:
-    path = context.analysis_service.get_frame_image_path(
-        analysis_id,
-        frame_id,
-        camera_id,
-    )
-    return FileResponse(path)
-
-
-@router.get(
-    "/{analysis_id}/frame-pairs",
-    response_model=list[AnalysisFramePair],
-)
-def list_analysis_frame_pairs(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[AnalysisFramePair]:
-    return context.analysis_service.list_frame_pairs(analysis_id)
-
-
-@router.get(
-    "/{analysis_id}/corrections",
-    response_model=list[ManualCorrection],
-)
-def list_analysis_corrections(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[ManualCorrection]:
-    return context.analysis_service.list_corrections(analysis_id)
-
-
-@router.post(
-    "/{analysis_id}/corrections",
-    response_model=ManualCorrection,
-)
-def save_analysis_correction(
-    analysis_id: str,
-    request: ManualCorrectionRequest,
-    context: AppContext = Depends(get_context),
-    principal: Principal = Depends(get_request_principal),
-) -> ManualCorrection:
-    return context.analysis_service.save_correction(
-        analysis_id,
-        request,
-        actor_id=principal.actor,
-    )
-
-
-@router.delete("/{analysis_id}/corrections/{correction_id}")
-def delete_analysis_correction(
-    analysis_id: str,
-    correction_id: str,
-    context: AppContext = Depends(get_context),
-) -> dict[str, str]:
-    context.analysis_service.delete_correction(
-        analysis_id,
-        correction_id,
-    )
-    return {"deleted": correction_id}
-
-
-@router.get(
-    "/{analysis_id}/trajectory",
-    response_model=list[TrajectoryPoint],
-)
-def get_analysis_trajectory(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[TrajectoryPoint]:
-    return context.analysis_service.get_trajectory(analysis_id)
-
-
-@router.get(
-    "/{analysis_id}/reprojection-errors",
-    response_model=list[ReprojectionErrorRecord],
-)
-def get_analysis_reprojection_errors(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> list[ReprojectionErrorRecord]:
-    return context.analysis_service.get_reprojection_errors(analysis_id)
-
-
-@router.get(
-    "/{analysis_id}/detection-summary",
-    response_model=DetectionSummary,
-)
-def get_analysis_detection_summary(
-    analysis_id: str,
-    context: AppContext = Depends(get_context),
-) -> DetectionSummary:
-    return context.analysis_service.get_detection_summary(analysis_id)
 
 
 @router.get("/{analysis_id}/export")

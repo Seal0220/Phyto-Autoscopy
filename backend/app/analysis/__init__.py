@@ -1,4 +1,3 @@
-from app.analysis.frame_pairing import pair_capture_frames
 from app.analysis.record_validator import (
     CaptureFrame,
     CaptureRecordValidation,
@@ -9,15 +8,15 @@ from app.analysis.record_validator import (
 )
 
 ANALYSIS_METHODS = {
-    "top_side": {
-        "name": "top_side",
+    "round_multiview": {
+        "name": "round_multiview",
         "version": "1.0.0",
-        "label": "頂+側",
+        "label": "每輪多視角三維重建",
     },
-    "top_side_rotating": {
-        "name": "top_side_rotating",
-        "version": "1.0.0",
-        "label": "頂+側+環繞",
+    "top_side_tip_only": {
+        "name": "top_side_tip_only",
+        "version": "2.0.0",
+        "label": "雙鏡頭尖端分析",
     },
 }
 
@@ -34,7 +33,6 @@ __all__ = [
     "CaptureRecordValidator",
     "RecordValidationIssue",
     "extract_capture_group",
-    "pair_capture_frames",
     "validate_capture_record",
     "ANALYSIS_METHODS",
     "analysis_method",

@@ -104,7 +104,6 @@ class MotorSettings(BaseModel):
     microstep_division: int = 16
     current_limit_amp: float = 1.5
     maximum_current_limit_amp: float = 2.4
-    holding_current_amp: float = 0.3
     velocity_limit_deg_s: float = 3.0
     maximum_velocity_limit_deg_s: float = 6.0
     acceleration_deg_s2: float = 3.0
@@ -144,121 +143,27 @@ class ScheduleSettings(BaseModel):
     return_to_origin: bool = True
 
 
-class AnalysisMethodSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: Literal["top_side"] = "top_side"
-    reference: str = "Ruiz-Melero et al. 2024"
-
-
-class SynchronizationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    primary_key: Literal["cycle_id"] = "cycle_id"
-    timestamp_tolerance_ms: int = Field(default=1000, ge=0)
-    manual_frame_offset: int = 0
-    keep_unpaired_frames: bool = True
-
-
-class SegmentationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    method: Literal["mog2"] = "mog2"
-    history: int | None = Field(default=None, ge=1)
-    variance_threshold: float | None = Field(default=None, gt=0)
-    detect_shadows: bool = False
-    learning_rate: float | None = Field(default=None, ge=-1, le=1)
-    initialization_frames: int | None = Field(default=None, ge=1)
-    opening_kernel_size: int | None = Field(default=None, ge=1)
-    closing_kernel_size: int | None = Field(default=None, ge=1)
-    erosion_kernel_size: int | None = Field(default=None, ge=1)
-    minimum_top_contour_area_px: float | None = Field(default=None, ge=0)
-    minimum_side_contour_area_px: float | None = Field(default=None, ge=0)
-
-    @field_validator(
-        "opening_kernel_size",
-        "closing_kernel_size",
-        "erosion_kernel_size",
-    )
-    @classmethod
-    def kernel_must_be_odd(cls, value: int | None) -> int | None:
-        if value is not None and value % 2 == 0:
-            raise ValueError("Morphology kernel 大小必須是正奇數。")
-        return value
-
-
-class LightingChangeSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    lighting_change_area_px: float | None = Field(default=None, ge=0)
-    lighting_change_est_time_frames: int | None = Field(default=None, ge=1)
-
-
-class DetectionRoiSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    roi: list[int] | None = None
-    plant_base: list[float] | None = None
-    num_selected_points: int | None = Field(default=None, ge=1)
-    update_roi: bool = True
-    roi_update_margin_px: int | None = Field(default=None, ge=0)
-
-    @field_validator("roi")
-    @classmethod
-    def validate_roi(cls, value: list[int] | None) -> list[int] | None:
-        if value is None:
-            return value
-        if len(value) != 4:
-            raise ValueError("ROI 必須為 [x, y, width, height]。")
-        if value[0] < 0 or value[1] < 0 or value[2] <= 0 or value[3] <= 0:
-            raise ValueError("ROI 位置不可為負值，且寬高必須大於零。")
-        return value
-
-    @field_validator("plant_base")
-    @classmethod
-    def validate_plant_base(
-        cls,
-        value: list[float] | None,
-    ) -> list[float] | None:
-        if value is not None and len(value) != 2:
-            raise ValueError("植物基部必須為 [x, y]。")
-        return value
-
-
-class SideDetectionSettings(DetectionRoiSettings):
-    maximum_epipolar_distance_px: float | None = Field(default=None, gt=0)
-    minimum_path_connectivity: Literal[4, 8] | None = None
-    minimum_path_edge_weight: Literal["inverse_distance_transform"] | None = None
-
-
-class InterpolationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    method: Literal["linear"] = "linear"
-    maximum_gap_seconds: float | None = Field(default=None, gt=0)
-
-
-class ReprojectionSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    high_error_threshold_px: float = Field(
-        default=10.0,
-        ge=10.0,
-        le=10.0,
-    )
-
-
 class AnalysisSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class ReconstructionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    method: AnalysisMethodSettings = Field(default_factory=AnalysisMethodSettings)
-    synchronization: SynchronizationSettings = Field(default_factory=SynchronizationSettings)
-    segmentation: SegmentationSettings = Field(default_factory=SegmentationSettings)
-    lighting_change: LightingChangeSettings = Field(default_factory=LightingChangeSettings)
-    top_detection: DetectionRoiSettings = Field(default_factory=DetectionRoiSettings)
-    side_detection: SideDetectionSettings = Field(default_factory=SideDetectionSettings)
-    interpolation: InterpolationSettings = Field(default_factory=InterpolationSettings)
-    reprojection: ReprojectionSettings = Field(default_factory=ReprojectionSettings)
+    backend: Literal["gsplat_3dgs", "graphdeco_3dgs"] = "gsplat_3dgs"
+    available_backends: list[Literal["gsplat_3dgs", "graphdeco_3dgs"]] = Field(
+        default_factory=lambda: ["gsplat_3dgs", "graphdeco_3dgs"]
+    )
+    device: Literal["cuda"] = "cuda"
+    fallback_device: None = None
+    quality_preset: Literal["preview", "standard", "high"] = "standard"
+    save_checkpoint: bool = True
+    export_gaussians: bool = True
+    export_point_cloud: bool = True
+    export_plant_point_cloud: bool = True
+    export_render_preview: bool = True
+    use_pose_refinement: bool = True
+    use_plant_mask: bool = True
 
 
 class CalibrationQualitySettings(BaseModel):
@@ -387,6 +292,9 @@ class AppSettings(BaseModel):
     motor: MotorSettings = Field(default_factory=MotorSettings)
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    reconstruction: ReconstructionSettings = Field(
+        default_factory=ReconstructionSettings
+    )
     calibration: CalibrationSettings = Field(default_factory=CalibrationSettings)
     pose_alignment: PoseAlignmentSettings = Field(default_factory=PoseAlignmentSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
@@ -475,6 +383,7 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     for file_name in (
         "schedule.json",
         "analysis.json",
+        "reconstruction.json",
         "calibration.json",
         "pose_alignment.json",
         "logging.json",
@@ -494,6 +403,7 @@ def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | P
         "motor": "motor.json",
         "schedule": "schedule.json",
         "analysis": "analysis.json",
+        "reconstruction": "reconstruction.json",
         "calibration": "calibration.json",
         "pose_alignment": "pose_alignment.json",
         "logging": "logging.json",

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import (
-    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -21,62 +20,43 @@ AnalysisStatus = Literal[
     "reviewing",
     "reconstructing",
     "completed",
+    "partially_completed",
     "failed",
     "cancelled",
 ]
 
 AnalysisStage = Literal[
     "validating",
-    "pairing_frames",
+    "grouping_rounds",
+    "snapshotting_intrinsics",
+    "undistorting_images",
     "detecting_aruco",
     "estimating_camera_poses",
     "refining_camera_poses",
-    "initializing_background",
-    "detecting_top_tip",
-    "detecting_side_tip",
-    "interpolating",
+    "selecting_reconstruction_views",
+    "extracting_features",
+    "matching_features",
+    "initializing_round_geometry",
+    "detecting_tip_candidates",
+    "reconstructing_round_model",
+    "isolating_plant_model",
+    "extracting_model_point_cloud",
+    "extracting_model_skeleton",
+    "triangulating_tip_marker",
+    "refining_tip_marker",
+    "linking_tip_trajectory",
+    "calculating_quality_metrics",
     "waiting_for_review",
-    "triangulating",
-    "calculating_reprojection_error",
     "exporting",
     "completed",
 ]
 
-PairStatus = Literal[
-    "paired",
-    "top_missing",
-    "side_missing",
-    "outside_tolerance",
-    "manually_aligned",
-]
-
-AnalysisMethod = Literal[
-    "top_side",
-    "top_side_rotating",
+NewAnalysisMethod = Literal[
+    "round_multiview",
+    "top_side_tip_only",
 ]
 
 CameraIdentifier = Literal["top", "side", "rotating"]
-
-DetectionType = Literal[
-    "Automatic",
-    "Estimated",
-    "Interpolated",
-    "Manual",
-    "Missing",
-    "Invalid",
-    "background_initialization",
-    "lighting_transition",
-]
-
-
-class Roi(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
-    width: int = Field(gt=0)
-    height: int = Field(gt=0)
-
 
 class AnalysisCameraSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -88,9 +68,9 @@ class AnalysisCameraSource(BaseModel):
 class AnalysisCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    record_id: str | None = Field(default=None, min_length=1, max_length=160)
+    record_id: str = Field(min_length=1, max_length=160)
     mode_ids: list[str] = Field(default_factory=list, max_length=20)
-    method: AnalysisMethod = "top_side"
+    method: NewAnalysisMethod = "top_side_tip_only"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource] = Field(
         default_factory=lambda: {
             "top": AnalysisCameraSource(enabled=True),
@@ -98,30 +78,21 @@ class AnalysisCreateRequest(BaseModel):
             "rotating": AnalysisCameraSource(enabled=False),
         }
     )
-    start_frame: int | None = Field(default=None, ge=1)
-    end_frame: int | None = Field(default=None, ge=1)
-    top_roi: Roi | None = None
-    side_roi: Roi | None = None
-    manual_frame_offset: int | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     manual_review_required: bool = True
 
     @model_validator(mode="after")
-    def validate_frame_range(self) -> "AnalysisCreateRequest":
+    def validate_sources(self) -> "AnalysisCreateRequest":
         if len(self.mode_ids) != len(set(self.mode_ids)):
             raise ValueError("分析擷取模式不可重複。")
-        if (
-            self.start_frame is not None
-            and self.end_frame is not None
-            and self.end_frame < self.start_frame
-        ):
-            raise ValueError("結束影格不可小於起始影格。")
+        if not self.mode_ids:
+            raise ValueError("請至少選擇一個擷取模式。")
         unknown = set(self.camera_sources).difference({"top", "side", "rotating"})
         if unknown:
             raise ValueError("相機來源包含不支援的識別碼。")
         required = (
             ("top", "side", "rotating")
-            if self.method == "top_side_rotating"
+            if self.method == "round_multiview"
             else ("top", "side")
         )
         missing = [
@@ -131,31 +102,39 @@ class AnalysisCreateRequest(BaseModel):
             or not self.camera_sources[camera_id].enabled
         ]
         if missing:
-            label = "頂+側+環繞" if self.method == "top_side_rotating" else "頂+側"
+            label = (
+                "每輪多視角三維重建"
+                if self.method == "round_multiview"
+                else "雙鏡頭尖端分析"
+            )
             raise ValueError(
                 f"{label}方法必須啟用：{', '.join(missing)}。"
             )
-        if self.record_id is None:
-            missing_paths = [
-                camera_id
-                for camera_id in required
-                if not self.camera_sources[camera_id].path.strip()
-            ]
-            if missing_paths:
-                raise ValueError(
-                    "未自動帶入紀錄時必須填寫相機目錄："
-                    + ", ".join(missing_paths)
-                )
         return self
 
 
 class AnalysisSourcePreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    record_id: str | None = Field(default=None, min_length=1, max_length=160)
+    record_id: str = Field(min_length=1, max_length=160)
     mode_ids: list[str] = Field(default_factory=list, max_length=20)
-    method: AnalysisMethod = "top_side"
+    method: NewAnalysisMethod = "top_side_tip_only"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource]
+
+
+class AnalysisRoundReadiness(BaseModel):
+    round_key: str
+    mode_id: str
+    round_id: str
+    status: str
+    view_count: int = 0
+    top_view_count: int = 0
+    side_view_count: int = 0
+    rotating_view_count: int = 0
+    angular_coverage_deg: float | None = None
+    duration_seconds: float | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class AnalysisSourcePreview(BaseModel):
@@ -167,6 +146,15 @@ class AnalysisSourcePreview(BaseModel):
     rotating_pairable_frame_count: int = 0
     total_frame_count: int = 0
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    round_count: int = 0
+    ready_round_count: int = 0
+    incomplete_round_count: int = 0
+    total_view_count: int = 0
+    round_readiness: list[AnalysisRoundReadiness] = Field(default_factory=list)
+    intrinsics_readiness: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    aruco_readiness: dict[str, Any] = Field(default_factory=dict)
+    backend_readiness: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalysisReconstructRequest(BaseModel):
@@ -183,6 +171,16 @@ class AnalysisRun(BaseModel):
     camera_pose_results: list[dict[str, Any]] = Field(default_factory=list)
     pose_estimation_version: str | None = None
     pose_quality: dict[str, Any] = Field(default_factory=dict)
+    reconstruction_backend: str | None = None
+    reconstruction_backend_version: str | None = None
+    reconstruction_environment: dict[str, Any] = Field(default_factory=dict)
+    round_count: int = 0
+    completed_round_count: int = 0
+    failed_round_count: int = 0
+    tip_marker_count: int = 0
+    trajectory_status: str | None = None
+    cancel_requested_at: str | None = None
+    cancel_requested_by: str | None = None
     method_name: str
     method_version: str
     git_commit: str
@@ -232,169 +230,221 @@ class AnalysisSourceSummary(BaseModel):
     analysis_runs: list[AnalysisRun] = Field(default_factory=list)
 
 
-class AnalysisFramePair(BaseModel):
-    pair_id: str
-    frame_id: int
-    cycle_id: int | None = None
-    top_frame_id: int | None = Field(
-        default=None,
-        validation_alias=AliasChoices("top_frame_id", "top_capture_id"),
-    )
-    side_frame_id: int | None = Field(
-        default=None,
-        validation_alias=AliasChoices("side_frame_id", "side_capture_id"),
-    )
-    rotating_frame_id: int | None = None
-    top_timestamp: str | None = None
-    side_timestamp: str | None = None
-    rotating_timestamp: str | None = None
-    rotating_angle_deg: float | None = None
-    rotating_timestamp_delta_ms: float | None = None
-    timestamp_delta_ms: float | None = None
-    frame_offset: int = 0
-    pair_status: PairStatus
-
-    @property
-    def top_capture_id(self) -> int | None:
-        """Compatibility name for the SQLite captures foreign key."""
-
-        return self.top_frame_id
-
-    @property
-    def side_capture_id(self) -> int | None:
-        """Compatibility name for the SQLite captures foreign key."""
-
-        return self.side_frame_id
-
-    @property
-    def rotating_capture_id(self) -> int | None:
-        return self.rotating_frame_id
+class AnalysisRound(BaseModel):
+    analysis_id: str
+    round_key: str
+    record_id: str
+    mode_id: str
+    round_id: str
+    started_at: str | None = None
+    ended_at: str | None = None
+    duration_seconds: float | None = None
+    status: str
+    view_count: int = 0
+    top_view_count: int = 0
+    side_view_count: int = 0
+    rotating_view_count: int = 0
+    angular_coverage_deg: float | None = None
+    static_scene_score: float | None = None
+    model_result_id: str | None = None
+    tip_landmark_id: str | None = None
+    failure_reason: str | None = None
 
 
-class Point2D(BaseModel):
+class AnalysisView(BaseModel):
+    analysis_id: str
+    round_key: str
+    view_id: str
+    capture_id: int
+    camera_id: CameraIdentifier
+    snapshot_id: str | None = None
+    timestamp: str
+    relative_path: str
+    absolute_path: str
+    angle_deg: float | None = None
+    motor_position_deg: float | None = None
+    image_width: int
+    image_height: int
+    image_sha256: str
+    selected_for_reconstruction: bool = False
+    exclusion_reason: str | None = None
+    pose_status: str | None = None
+    pose_reprojection_error_px: float | None = None
+
+
+class CameraPoseResult(BaseModel):
+    analysis_id: str
+    round_key: str
+    view_id: str
+    camera_id: CameraIdentifier
+    rotation_matrix: list[list[float]] | None = None
+    translation_vector_mm: list[float] | None = None
+    camera_center_world_mm: list[float] | None = None
+    detected_marker_ids: list[int] = Field(default_factory=list)
+    detected_corner_count: int = 0
+    aruco_reprojection_error_px: float | None = None
+    refinement_reprojection_error_px: float | None = None
+    pose_source: str
+    valid: bool
+    failure_reason: str | None = None
+
+
+class RoundModelResult(BaseModel):
+    analysis_id: str
+    round_key: str
+    model_id: str
+    backend: str
+    backend_version: str
+    status: str
+    source_view_ids: list[str] = Field(default_factory=list)
+    model_path: str | None = None
+    point_cloud_path: str | None = None
+    plant_point_cloud_path: str | None = None
+    skeleton_path: str | None = None
+    preview_paths: list[str] = Field(default_factory=list)
+    gaussian_count: int | None = None
+    point_count: int | None = None
+    training_iterations: int | None = None
+    training_duration_seconds: float | None = None
+    model_quality: dict[str, Any] = Field(default_factory=dict)
+    failure_reason: str | None = None
+
+
+class TipLandmark(BaseModel):
+    analysis_id: str
+    round_key: str
+    tip_id: str
+    record_id: str = ""
+    mode_id: str = ""
+    round_id: str = ""
+    timestamp: str | None = None
+    x_mm: float | None = None
+    y_mm: float | None = None
+    z_mm: float | None = None
+    confidence: float = Field(ge=0, le=1)
+    valid: bool
+    source: str
+    supporting_view_ids: list[str] = Field(default_factory=list)
+    visible_view_count: int = 0
+    mean_reprojection_error_px: float | None = None
+    maximum_reprojection_error_px: float | None = None
+    distance_to_model_mm: float | None = None
+    distance_to_skeleton_mm: float | None = None
+    temporal_distance_mm: float | None = None
+    detection_type: str
+    manually_corrected: bool = False
+    failure_reason: str | None = None
+
+
+class TipObservation2D(BaseModel):
+    analysis_id: str
+    round_key: str
+    view_id: str
+    candidate_id: str
+    x_px: float
+    y_px: float
+    confidence: float = Field(ge=0, le=1)
+    visibility_confidence: float = Field(ge=0, le=1)
+    selected: bool = False
+    rejection_reason: str | None = None
+
+
+class TipTrajectoryPoint(BaseModel):
+    analysis_id: str
+    record_id: str
+    mode_id: str
+    round_key: str
+    round_id: str
+    point_index: int = Field(ge=0)
+    timestamp: str | None = None
+    x_mm: float | None = None
+    y_mm: float | None = None
+    z_mm: float | None = None
+    confidence: float = Field(ge=0, le=1)
+    valid: bool
+    detection_type: Literal[
+        "measured",
+        "estimated",
+        "interpolated",
+        "manual",
+        "invalid",
+    ]
+    visible_view_count: int = 0
+    mean_reprojection_error_px: float | None = None
+    manually_corrected: bool = False
+    elapsed_seconds: float | None = None
+    adjacent_distance_mm: float | None = None
+    speed_mm_per_second: float | None = None
+    acceleration_mm_per_second2: float | None = None
+    direction_x: float | None = None
+    direction_y: float | None = None
+    direction_z: float | None = None
+    horizontal_displacement_mm: float | None = None
+    vertical_displacement_mm: float | None = None
+    path_length_mm: float | None = None
+    curvature_per_mm: float | None = None
+    missing_segment: bool = False
+
+
+class TipCorrectionObservation(BaseModel):
+    view_id: str = Field(min_length=1, max_length=240)
     x_px: float
     y_px: float
 
 
-class DetectionResult(BaseModel):
-    frame_id: int
-    camera_id: CameraIdentifier
-    timestamp: str | None = None
-    candidate_points: list[Point2D] = Field(default_factory=list)
-    selected_point: Point2D | None = None
-    detection_type: DetectionType
-    valid: bool
-    contour: list[list[float]] = Field(default_factory=list)
-    epipolar_line: list[float] | None = None
-    minimum_path: list[Point2D] = Field(default_factory=list)
-    status_reason: str | None = None
-
-
-class StoredDetection(BaseModel):
-    analysis_id: str
-    frame_id: int
-    camera_id: CameraIdentifier
-    automatic_detection: DetectionResult | None = None
-    interpolated_detection: DetectionResult | None = None
-    resolved_detection: DetectionResult | None = None
-    updated_at: str
-
-
-class ManualCorrectionRequest(BaseModel):
+class TipCorrectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    frame_id: int = Field(ge=1)
-    camera_id: Literal["top", "side"]
-    corrected_x_px: float | None = None
-    corrected_y_px: float | None = None
-    reason: str | None = Field(default=None, max_length=500)
+    round_key: str = Field(min_length=1, max_length=320)
+    observations: list[TipCorrectionObservation] = Field(
+        default_factory=list,
+        max_length=64,
+    )
+    corrected_point_mm: list[float] | None = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+    )
     invalid: bool = False
+    reason: str = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
-    def validate_point(self) -> "ManualCorrectionRequest":
-        has_x = self.corrected_x_px is not None
-        has_y = self.corrected_y_px is not None
-        if not self.invalid and (not has_x or not has_y):
-            raise ValueError("人工修正必須同時提供 X 與 Y 座標。")
-        if has_x != has_y:
-            raise ValueError("人工修正必須同時提供 X 與 Y 座標。")
+    def validate_correction(self) -> "TipCorrectionRequest":
+        if self.invalid:
+            if self.observations or self.corrected_point_mm is not None:
+                raise ValueError("無效標記不可同時提供修正座標。")
+            return self
+        if self.corrected_point_mm is not None:
+            if self.observations:
+                raise ValueError("二維與三維修正不可同時送出。")
+            return self
+        unique_views = {item.view_id for item in self.observations}
+        if len(unique_views) < 2:
+            raise ValueError("二維修正至少需要兩個不同視角。")
+        if len(unique_views) != len(self.observations):
+            raise ValueError("每個視角只能提供一個人工尖端位置。")
         return self
 
 
-class ManualCorrection(BaseModel):
+class TipCorrection(BaseModel):
     correction_id: str
     analysis_id: str
-    frame_id: int
-    camera_id: CameraIdentifier
-    automatic_x_px: float | None = None
-    automatic_y_px: float | None = None
-    corrected_x_px: float | None = None
-    corrected_y_px: float | None = None
+    round_key: str
     operator_id: str
     created_at: str
-    reason: str | None = None
+    reason: str
+    correction_type: Literal["views", "point", "invalid"] = "views"
     invalid: bool = False
-
-
-class AnalysisFrameDetail(BaseModel):
-    pair: AnalysisFramePair
-    top_image_url: str | None = None
-    side_image_url: str | None = None
-    rotating_image_url: str | None = None
-    top_detection: StoredDetection | None = None
-    side_detection: StoredDetection | None = None
-    rotating_detection: StoredDetection | None = None
-    corrections: list[ManualCorrection] = Field(default_factory=list)
-
-
-class TrajectoryPoint(BaseModel):
-    frame_id: int
-    cycle_id: int | None = None
-    timestamp: str | None = None
-    top_x_px: float
-    top_y_px: float
-    side_x_px: float
-    side_y_px: float
-    rotating_x_px: float | None = None
-    rotating_y_px: float | None = None
-    rotating_angle_deg: float | None = None
-    x_mm: float
-    y_mm: float
-    z_mm: float
-    refined_x_mm: float | None = None
-    refined_y_mm: float | None = None
-    refined_z_mm: float | None = None
-    top_detection_type: str
-    side_detection_type: str
-    top_reprojection_error_px: float
-    side_reprojection_error_px: float
-    rotating_reprojection_error_px: float | None = None
-    rotating_used: bool = False
-    valid: bool
-
-
-class ReprojectionErrorRecord(BaseModel):
-    frame_id: int
-    top_error_px: float
-    side_error_px: float
-    rotating_error_px: float | None = None
-    refined_overall_error_px: float | None = None
-    overall_error_px: float
-    high_error: bool
-
-
-class DetectionCategoryStats(BaseModel):
-    count: int = 0
-    ratio: float = 0.0
-
-
-class DetectionSummary(BaseModel):
-    top: dict[str, DetectionCategoryStats]
-    side: dict[str, DetectionCategoryStats]
-    rotating: dict[str, DetectionCategoryStats] = Field(default_factory=dict)
-    overall: dict[str, DetectionCategoryStats]
-    reprojection: dict[str, float | int]
-    paper_comparison_notice: str
+    automatic_tip: TipLandmark
+    corrected_tip: TipLandmark
+    supporting_views: list[str] = Field(default_factory=list)
+    projected_observations: list[TipCorrectionObservation] = Field(
+        default_factory=list
+    )
+    reprojection_before_px: float | None = None
+    reprojection_after_px: float | None = None
+    confidence_before: float
+    confidence_after: float
 
 
 class AnalysisProgress(BaseModel):

@@ -1,1 +1,1 @@
-"""Traditional MOG2 segmentation primitives."""
+"""Single-image plant segmentation for Round-based analysis."""

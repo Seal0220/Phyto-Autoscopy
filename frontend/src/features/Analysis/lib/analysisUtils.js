@@ -3,75 +3,8 @@ import {
   ANALYSIS_PARAMETER_DEFAULTS,
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STATUS_META,
-  HIGH_REPROJECTION_ERROR_THRESHOLD_PX,
 } from "../analysisConfig.js";
 import { formatDateTime } from "@/lib/formatUtils";
-
-const REQUIRED_PARAMETER_FIELDS = [
-  ["segmentationHistory", "背景歷史影格數"],
-  ["segmentationVarianceThreshold", "變異門檻"],
-  ["segmentationLearningRate", "學習率"],
-  ["segmentationInitializationFrames", "背景初始化影格數"],
-  ["minimumTopContourArea", "俯視最小輪廓面積"],
-  ["minimumSideContourArea", "側視最小輪廓面積"],
-  ["lightingChangeArea", "光照切換面積門檻"],
-  ["lightingChangeEstimateFrames", "光照穩定等待"],
-  ["topPlantBaseX", "俯視植物基部 X"],
-  ["topPlantBaseY", "俯視植物基部 Y"],
-  ["topSelectedPoints", "俯視候選輪廓數"],
-  ["sidePlantBaseX", "側視植物基部 X"],
-  ["sidePlantBaseY", "側視植物基部 Y"],
-  ["sideSelectedPoints", "側視候選輪廓數"],
-  ["maximumEpipolarDistance", "Epipolar 最大距離"],
-  ["minimumPathConnectivity", "Minimum Path 鄰接方式"],
-  ["maximumInterpolationGapSeconds", "最大插值缺口"],
-];
-
-const INTEGER_PARAMETER_FIELDS = new Set([
-  "segmentationHistory",
-  "segmentationInitializationFrames",
-  "openingKernelSize",
-  "closingKernelSize",
-  "erosionKernelSize",
-  "lightingChangeEstimateFrames",
-  "topSelectedPoints",
-  "topRoiUpdateMargin",
-  "sideSelectedPoints",
-  "sideRoiUpdateMargin",
-  "minimumPathConnectivity",
-]);
-
-const NON_NEGATIVE_PARAMETER_FIELDS = new Set([
-  "minimumTopContourArea",
-  "minimumSideContourArea",
-  "lightingChangeArea",
-  "topPlantBaseX",
-  "topPlantBaseY",
-  "topRoiUpdateMargin",
-  "sidePlantBaseX",
-  "sidePlantBaseY",
-  "sideRoiUpdateMargin",
-]);
-
-const POSITIVE_PARAMETER_FIELDS = new Set([
-  "segmentationHistory",
-  "segmentationVarianceThreshold",
-  "segmentationInitializationFrames",
-  "openingKernelSize",
-  "closingKernelSize",
-  "erosionKernelSize",
-  "lightingChangeEstimateFrames",
-  "topSelectedPoints",
-  "sideSelectedPoints",
-  "maximumEpipolarDistance",
-  "maximumInterpolationGapSeconds",
-]);
-
-const ODD_KERNEL_FIELDS = [
-  "openingKernelSize",
-  "closingKernelSize",
-  "erosionKernelSize",
-];
 
 function arrayFromPayload(
   payload,
@@ -94,12 +27,6 @@ function numberOrZero(value) {
 
 function stringOrEmpty(value) {
   return typeof value === "string" ? value : "";
-}
-
-function optionalNumber(value) {
-  return String(value ?? "").trim() === ""
-    ? null
-    : Number(value);
 }
 
 function normalizeResolution(value) {
@@ -378,7 +305,7 @@ export function createInitialAnalysisSetup(recordId = "") {
     captureConfiguration: {},
     availableModes: [],
     selectedModeIds: [],
-    method: "top_side_rotating",
+    method: "round_multiview",
     cameraSources: {
       top: {
         enabled: true,
@@ -390,21 +317,6 @@ export function createInitialAnalysisSetup(recordId = "") {
         enabled: true,
       },
     },
-    startFrame: "1",
-    endFrame: "",
-    manualFrameOffset: "0",
-    topRoi: {
-      x: "",
-      y: "",
-      width: "",
-      height: "",
-    },
-    sideRoi: {
-      x: "",
-      y: "",
-      width: "",
-      height: "",
-    },
     parameters: {
       ...ANALYSIS_PARAMETER_DEFAULTS,
     },
@@ -412,17 +324,10 @@ export function createInitialAnalysisSetup(recordId = "") {
   };
 }
 
-export function analysisDefaultEndFrame(source) {
-  const total = Number(source?.total_frame_count);
-  return Number.isInteger(total) && total > 0
-    ? String(total)
-    : "";
-}
-
 export function analysisMethodFromCameraSources(cameraSources) {
   return cameraSources?.rotating?.enabled
-    ? "top_side_rotating"
-    : "top_side";
+    ? "round_multiview"
+    : "top_side_tip_only";
 }
 
 export function analysisCameraSourceRequired(cameraId) {
@@ -458,7 +363,6 @@ export function analysisSetupFromRecord(
       ? source.capture_configuration
       : {},
     method: analysisMethodFromCameraSources(cameraSources),
-    endFrame: analysisDefaultEndFrame(source),
     availableModes,
     selectedModeIds: analysisDefaultSelectedModeIds(availableModes),
     cameraSources,
@@ -509,53 +413,6 @@ function parseRequiredNumber(
   return parsed;
 }
 
-function parseRoi(
-  roi,
-  label,
-) {
-  return {
-    x: parseRequiredNumber(roi.x, `${label} X`, {
-      integer: true,
-      minimum: 0,
-    }),
-    y: parseRequiredNumber(roi.y, `${label} Y`, {
-      integer: true,
-      minimum: 0,
-    }),
-    width: parseRequiredNumber(roi.width, `${label}寬度`, {
-      integer: true,
-      minimum: 1,
-    }),
-    height: parseRequiredNumber(roi.height, `${label}高度`, {
-      integer: true,
-      minimum: 1,
-    }),
-  };
-}
-
-function validateRoiBounds(
-  roi,
-  label,
-  resolution,
-) {
-  const imageWidth = Number(resolution?.[0]);
-  const imageHeight = Number(resolution?.[1]);
-  if (
-    !Number.isFinite(imageWidth)
-    || !Number.isFinite(imageHeight)
-    || imageWidth <= 0
-    || imageHeight <= 0
-  ) {
-    return;
-  }
-  if (
-    roi.x + roi.width > imageWidth
-    || roi.y + roi.height > imageHeight
-  ) {
-    throw new Error(`${label} 不可超出 ${imageWidth} × ${imageHeight} 的分析影像範圍。`);
-  }
-}
-
 export function validateAnalysisSetupStep(
   setup,
   step,
@@ -578,7 +435,7 @@ export function validateAnalysisSetupStep(
     ) {
       throw new Error("請至少選擇一個擷取模式。");
     }
-    const required = setup.method === "top_side_rotating"
+    const required = setup.method === "round_multiview"
       ? ["top", "side", "rotating"]
       : ["top", "side"];
     for (const cameraId of required) {
@@ -594,212 +451,134 @@ export function validateAnalysisSetupStep(
       );
     }
     if (
-      setup.method === "top_side_rotating"
-      && Number(setup.sourcePreview.rotating_pairable_frame_count) <= 0
+      setup.method === "round_multiview"
+      && Number(setup.sourcePreview.ready_round_count) <= 0
     ) {
-      throw new Error("請重新掃描並確認至少有一組包含旋臂視角的同步影格。");
+      throw new Error("請重新掃描並確認至少有一個可用的多視角 Round。");
     }
     return true;
   }
 
   if (step === 3) {
-    const source = setup.sourcePreview;
-    const startFrame = parseRequiredNumber(setup.startFrame, "起始影格", {
-      integer: true,
-      minimum: 1,
-    });
-    const endFrame = parseRequiredNumber(setup.endFrame, "結束影格", {
-      integer: true,
-      minimum: 1,
-    });
-    if (endFrame < startFrame) throw new Error("結束影格不可小於起始影格。");
-    if (
-      Number.isInteger(source?.total_frame_count)
-      && source.total_frame_count > 0
-      && endFrame > source.total_frame_count
-    ) {
-      throw new Error(`結束影格不可超過此紀錄的 ${source.total_frame_count} 組影格。`);
-    }
-    parseRequiredNumber(setup.manualFrameOffset, "人工影格偏移", {
-      integer: true,
-    });
-    const topRoi = parseRoi(setup.topRoi, "俯視 ROI");
-    const sideRoi = parseRoi(setup.sideRoi, "側視 ROI");
-    validateRoiBounds(
-      topRoi,
-      "俯視 ROI",
-      source?.camera_resolutions?.top,
+    parseRequiredNumber(
+      setup.parameters.minimumTipConfidence,
+      "最低尖端標記信心",
+      {
+        minimum: 0,
+        maximum: 1,
+      },
     );
-    validateRoiBounds(
-      sideRoi,
-      "側視 ROI",
-      source?.camera_resolutions?.side,
+    parseRequiredNumber(
+      setup.parameters.minimumSupportingViews,
+      "最低支持視角數",
+      {
+        integer: true,
+        minimum: 2,
+      },
     );
-    return true;
-  }
-
-  if (step === 4) {
-    for (const [key, label] of REQUIRED_PARAMETER_FIELDS) {
-      const value = setup.parameters[key];
-      const minimum = NON_NEGATIVE_PARAMETER_FIELDS.has(key)
-          ? 0
-          : undefined;
-      parseRequiredNumber(value, label, {
-        integer: INTEGER_PARAMETER_FIELDS.has(key),
-        minimum,
-        positive: POSITIVE_PARAMETER_FIELDS.has(key),
-      });
-    }
-
-    for (const key of ODD_KERNEL_FIELDS) {
-      if (String(setup.parameters[key] ?? "").trim() === "") continue;
-      parseRequiredNumber(
-        setup.parameters[key],
-        key === "openingKernelSize"
-          ? "開運算核心"
-          : key === "closingKernelSize"
-            ? "閉運算核心"
-            : "侵蝕核心",
-        {
-          integer: true,
-          positive: true,
-        },
-      );
-    }
-
-    if (setup.parameters.topUpdateRoi) {
-      parseRequiredNumber(
-        setup.parameters.topRoiUpdateMargin,
-        "俯視 ROI 更新邊距",
-        {
-          integer: true,
-          minimum: 0,
-        },
-      );
-    }
-    if (setup.parameters.sideUpdateRoi) {
-      parseRequiredNumber(
-        setup.parameters.sideRoiUpdateMargin,
-        "側視 ROI 更新邊距",
-        {
-          integer: true,
-          minimum: 0,
-        },
-      );
-    }
-
-    const learningRate = Number(setup.parameters.segmentationLearningRate);
-    if (learningRate < -1 || learningRate > 1) {
-      throw new Error("學習率必須介於 -1 與 1 之間。");
-    }
-    for (const key of ODD_KERNEL_FIELDS) {
-      const value = optionalNumber(setup.parameters[key]);
-      if (value !== null && value % 2 === 0) {
-        throw new Error("Morphology 核心大小必須是正奇數。");
-      }
-    }
-    if (![4, 8].includes(Number(setup.parameters.minimumPathConnectivity))) {
-      throw new Error("Minimum Path 鄰接方式只能選擇 4 鄰接或 8 鄰接。");
+    parseRequiredNumber(
+      setup.parameters.maximumTipReprojectionError,
+      "最大重投影誤差",
+      {
+        positive: true,
+      },
+    );
+    if (!["preview", "standard", "high"].includes(
+      setup.parameters.qualityPreset,
+    )) {
+      throw new Error("請選擇有效的模型品質。");
     }
     return true;
   }
 
-  for (const prerequisite of [1, 2, 3, 4]) {
+  for (const prerequisite of [1, 2, 3]) {
     validateAnalysisSetupStep(
       setup,
       prerequisite,
+    );
+  }
+  for (const [cameraId, source] of Object.entries(setup.cameraSources)) {
+    if (!source.enabled) continue;
+    if (!setup.sourcePreview?.intrinsics_readiness?.[cameraId]?.ready) {
+      throw new Error(`${cameraId} 尚未建立可用的相機內參。`);
+    }
+  }
+  if (!setup.sourcePreview?.aruco_readiness?.ready) {
+    throw new Error("ArUco 世界座標基準尚未就緒。");
+  }
+  if (
+    setup.method === "round_multiview"
+    && !setup.sourcePreview?.backend_readiness?.available
+  ) {
+    throw new Error(
+      setup.sourcePreview?.backend_readiness?.errors?.[0]
+      || "目前沒有可用的三維模型建立後端。",
     );
   }
   return true;
 }
 
 export function buildAnalysisCreatePayload(setup) {
-  const topRoi = parseRoi(setup.topRoi, "俯視 ROI");
-  const sideRoi = parseRoi(setup.sideRoi, "側視 ROI");
   const parameters = setup.parameters;
 
   return {
-    record_id: setup.recordId || null,
+    record_id: setup.recordId,
     mode_ids: setup.selectedModeIds,
     method: setup.method,
     camera_sources: analysisCameraSourcesPayload(setup),
-    start_frame: Number(setup.startFrame),
-    end_frame: Number(setup.endFrame),
-    top_roi: topRoi,
-    side_roi: sideRoi,
-    manual_frame_offset: Number(setup.manualFrameOffset),
     parameters: {
-      method: {
-        name: setup.method,
-        reference: ANALYSIS_METHODS[setup.method].reference,
+      reconstruction: {
+        backend: parameters.reconstructionBackend,
+        quality_preset: parameters.qualityPreset,
+        save_checkpoint: Boolean(parameters.saveCheckpoints),
+        export_gaussians: Boolean(parameters.saveGaussianModel),
+        export_point_cloud: Boolean(parameters.exportScenePointCloud),
+        export_plant_point_cloud: Boolean(parameters.exportPlantPointCloud),
+        export_render_preview: Boolean(parameters.saveModelPreviews),
+        use_pose_refinement: Boolean(parameters.useBundleAdjustment),
+        use_plant_mask: Boolean(parameters.usePlantMaskInLoss),
       },
-      synchronization: {
-        primary_key: "cycle_id",
-        timestamp_tolerance_ms: 1000,
-        manual_frame_offset: Number(setup.manualFrameOffset),
-        keep_unpaired_frames: true,
+      pose_strategy: {
+        use_aruco_world_pose: true,
+        use_bundle_adjustment: Boolean(parameters.useBundleAdjustment),
       },
-      segmentation: {
-        method: "mog2",
-        history: Number(parameters.segmentationHistory),
-        variance_threshold: Number(parameters.segmentationVarianceThreshold),
-        detect_shadows: Boolean(parameters.segmentationDetectShadows),
-        learning_rate: Number(parameters.segmentationLearningRate),
-        initialization_frames: Number(parameters.segmentationInitializationFrames),
-        opening_kernel_size: optionalNumber(parameters.openingKernelSize),
-        closing_kernel_size: optionalNumber(parameters.closingKernelSize),
-        erosion_kernel_size: optionalNumber(parameters.erosionKernelSize),
-        minimum_top_contour_area_px: Number(parameters.minimumTopContourArea),
-        minimum_side_contour_area_px: Number(parameters.minimumSideContourArea),
+      background: {
+        generate_plant_mask: Boolean(parameters.generatePlantMask),
+        use_plant_mask_in_loss: Boolean(parameters.usePlantMaskInLoss),
+        preserve_scene_model: Boolean(parameters.preserveSceneModel),
+        export_plant_model: Boolean(parameters.exportPlantModel),
+        save_background_model: Boolean(parameters.saveBackgroundModel),
       },
-      lighting_change: {
-        lighting_change_area_px: Number(parameters.lightingChangeArea),
-        lighting_change_est_time_frames: Number(parameters.lightingChangeEstimateFrames),
+      tip_analysis: {
+        minimum_confidence: Number(parameters.minimumTipConfidence),
+        minimum_supporting_views: Number(parameters.minimumSupportingViews),
+        maximum_reprojection_error_px: Number(
+          parameters.maximumTipReprojectionError,
+        ),
+        use_skeleton_refinement: Boolean(parameters.useSkeletonRefinement),
+        use_temporal_prior: Boolean(parameters.useTemporalPrior),
+        wait_for_low_confidence_review: Boolean(
+          parameters.waitForLowConfidenceReview,
+        ),
+        export_all_2d_candidates: Boolean(parameters.exportAll2dCandidates),
+        save_reprojection_overlays: Boolean(
+          parameters.saveReprojectionOverlays,
+        ),
       },
-      top_detection: {
-        roi: [topRoi.x, topRoi.y, topRoi.width, topRoi.height],
-        plant_base: [
-          Number(parameters.topPlantBaseX),
-          Number(parameters.topPlantBaseY),
-        ],
-        num_selected_points: Number(parameters.topSelectedPoints),
-        update_roi: Boolean(parameters.topUpdateRoi),
-        roi_update_margin_px: parameters.topUpdateRoi
-          ? Number(parameters.topRoiUpdateMargin)
-          : null,
-      },
-      side_detection: {
-        roi: [sideRoi.x, sideRoi.y, sideRoi.width, sideRoi.height],
-        plant_base: [
-          Number(parameters.sidePlantBaseX),
-          Number(parameters.sidePlantBaseY),
-        ],
-        num_selected_points: Number(parameters.sideSelectedPoints),
-        update_roi: Boolean(parameters.sideUpdateRoi),
-        roi_update_margin_px: parameters.sideUpdateRoi
-          ? Number(parameters.sideRoiUpdateMargin)
-          : null,
-        maximum_epipolar_distance_px: Number(parameters.maximumEpipolarDistance),
-        minimum_path_connectivity: Number(parameters.minimumPathConnectivity),
-        minimum_path_edge_weight: "inverse_distance_transform",
-      },
-      interpolation: {
-        method: "linear",
-        maximum_gap_seconds: Number(parameters.maximumInterpolationGapSeconds),
-      },
-      reprojection: {
-        high_error_threshold_px: HIGH_REPROJECTION_ERROR_THRESHOLD_PX,
+      outputs: {
+        save_gaussian_model: Boolean(parameters.saveGaussianModel),
+        export_scene_point_cloud: Boolean(parameters.exportScenePointCloud),
+        export_plant_point_cloud: Boolean(parameters.exportPlantPointCloud),
+        export_skeleton: Boolean(parameters.exportSkeleton),
+        export_tip_markers: Boolean(parameters.exportTipMarkers),
+        export_trajectory_csv: Boolean(parameters.exportTrajectoryCsv),
+        save_model_previews: Boolean(parameters.saveModelPreviews),
+        save_diagnostics: Boolean(parameters.saveDiagnostics),
+        save_checkpoints: Boolean(parameters.saveCheckpoints),
       },
     },
     manual_review_required: Boolean(setup.manualReviewRequired),
   };
-}
-
-export function analysisFrameCount(setup) {
-  const start = Number(setup.startFrame);
-  const end = Number(setup.endFrame);
-  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return 0;
-  return end - start + 1;
 }
 
 export function normalizeCreatedAnalysisRun(

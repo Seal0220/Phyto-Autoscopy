@@ -41,7 +41,6 @@ class MockMotorController:
             velocity_limit_deg_s=self.settings.velocity_limit_deg_s,
             acceleration_deg_s2=self.settings.acceleration_deg_s2,
             current_limit_amp=self.settings.current_limit_amp,
-            holding_current_amp=self.settings.holding_current_amp,
             last_error=self.state.last_error,
         )
 

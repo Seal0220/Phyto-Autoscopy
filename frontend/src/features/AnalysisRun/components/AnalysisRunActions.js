@@ -27,6 +27,10 @@ export default function AnalysisRunActions({
   status,
 }) {
   const available = analysisRunActionAvailability(status);
+  let skipReviewLabel = "略過人工確認並完成";
+  if (pendingAction === "reconstruct_without_review") {
+    skipReviewLabel = "完成分析中…";
+  }
 
   return (
     <ActionRow className="w-full">
@@ -114,10 +118,7 @@ export default function AnalysisRunActions({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          {pendingAction === "reconstruct_without_review"
-            ? "啟動重建中…"
-            : "略過人工修正並重建"
-          }
+          {skipReviewLabel}
         </Button>
       ) : null}
       {available.results ? (

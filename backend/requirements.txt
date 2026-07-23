@@ -12,3 +12,8 @@ pydantic
 sqlalchemy
 pytest
 httpx
+torch>=2.1
+gsplat>=1.5,<2
+pycolmap>=3.13,<4
+open3d>=0.19,<1
+networkx>=3.2,<4

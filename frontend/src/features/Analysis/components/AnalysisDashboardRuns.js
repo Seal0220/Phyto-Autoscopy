@@ -171,7 +171,12 @@ export default function AnalysisDashboardRuns({
                   />
                   查看分析
                 </Button>
-                {["needs_review", "reviewing", "completed"].includes(run.status) ? (
+                {[
+                  "needs_review",
+                  "reviewing",
+                  "completed",
+                  "partially_completed",
+                ].includes(run.status) ? (
                   <Button
                     variant="primary"
                     onClick={() => onReview(run.analysis_id)}
@@ -180,10 +185,13 @@ export default function AnalysisDashboardRuns({
                       className="size-4 shrink-0"
                       aria-hidden="true"
                     />
-                    {run.status === "completed" ? "查看修正" : "繼續修正"}
+                    {["completed", "partially_completed"].includes(run.status)
+                      ? "查看修正"
+                      : "繼續修正"
+                    }
                   </Button>
                 ) : null}
-                {run.status === "completed" ? (
+                {["completed", "partially_completed"].includes(run.status) ? (
                   <Button onClick={() => onResults(run.analysis_id)}>
                     <FiEye
                       className="size-4 shrink-0"
@@ -192,7 +200,7 @@ export default function AnalysisDashboardRuns({
                     查看結果
                   </Button>
                 ) : null}
-                {run.status === "completed" ? (
+                {["completed", "partially_completed"].includes(run.status) ? (
                   <Button
                     variant="primary"
                     disabled={exportingIds.has(run.analysis_id)}

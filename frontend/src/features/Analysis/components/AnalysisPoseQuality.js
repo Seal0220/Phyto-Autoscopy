@@ -1,5 +1,7 @@
 import { StatusPill } from "@/components/panels/Panel";
 
+import { ANALYSIS_CAMERA_LABELS } from "../analysisConfig";
+
 const ALIGNMENT_STATUS = {
   success: {
     label: "成功",
@@ -13,12 +15,6 @@ const ALIGNMENT_STATUS = {
     label: "失敗",
     tone: "offline",
   },
-};
-
-const CAMERA_LABELS = {
-  top: "俯視角",
-  side: "側視角",
-  rotating: "旋臂視角",
 };
 
 const POSE_SOURCE_LABELS = {
@@ -105,10 +101,10 @@ function PoseRow({ pose }) {
     <li className="grid min-w-0 gap-2 border-b border-white/15 py-3 last:border-b-0">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-xs font-black text-neutral-200">
-          {CAMERA_LABELS[pose.camera_id] || pose.camera_id || "未知相機"}
+          {ANALYSIS_CAMERA_LABELS[pose.camera_id] || pose.camera_id || "未知相機"}
         </span>
         <StatusPill tone={pose.resolved ? "success" : "offline"}>
-          {POSE_SOURCE_LABELS[pose.source] || pose.source || "未解"}
+          {POSE_SOURCE_LABELS[pose.source] || (pose.source ? "未知來源" : "未解")}
         </StatusPill>
         <span className="min-w-0 break-all text-xs font-semibold text-neutral-400">
           {pose.relative_path || `影像 ${pose.input_id ?? "—"}`}
@@ -216,7 +212,7 @@ export default function AnalysisPoseQuality({
       {fixedCameraSummaries.map(([cameraId, dispersion]) => (
         <PoseSummary
           key={cameraId}
-          title={`${CAMERA_LABELS[cameraId] || cameraId}固定姿態離散程度`}
+          title={`${ANALYSIS_CAMERA_LABELS[cameraId] || cameraId}固定姿態離散程度`}
           metrics={[
             {
               label: "採用樣本",

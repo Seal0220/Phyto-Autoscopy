@@ -33,8 +33,8 @@ def test_reconstruct_api_accepts_explicit_review_completion_state(
             return AnalysisRun(
                 analysis_id=analysis_id,
                 record_id="record-test",
-                method_name="top_side",
-                method_version="1",
+                method_name="round_multiview",
+                method_version="1.0.0",
                 git_commit="test",
                 parameters={},
                 created_at="2026-07-17T00:00:00+00:00",
@@ -42,7 +42,7 @@ def test_reconstruct_api_accepts_explicit_review_completion_state(
                 created_by="pytest-operator",
                 output_path="analysis-test",
                 status="reconstructing",
-                stage="triangulating",
+                stage="reconstructing_round_model",
                 progress=0.72,
                 manual_review_completed=manual_review_completed,
             )

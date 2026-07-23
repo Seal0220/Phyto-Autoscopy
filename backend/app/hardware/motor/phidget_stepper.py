@@ -134,8 +134,6 @@ class PhidgetStepperController:
         self.safety.validate_velocity(self.settings.velocity_limit_deg_s)
         self.safety.validate_acceleration(self.settings.acceleration_deg_s2)
         self._stepper.setCurrentLimit(self.settings.current_limit_amp)
-        if hasattr(self._stepper, "setHoldingCurrentLimit"):
-            self._stepper.setHoldingCurrentLimit(self.settings.holding_current_amp)
         self._stepper.setVelocityLimit(self.profile.degrees_to_steps(self.settings.velocity_limit_deg_s))
         self._stepper.setAcceleration(self.profile.degrees_to_steps(self.settings.acceleration_deg_s2))
 
@@ -207,7 +205,6 @@ class PhidgetStepperController:
                 velocity_limit_deg_s=self.settings.velocity_limit_deg_s,
                 acceleration_deg_s2=self.settings.acceleration_deg_s2,
                 current_limit_amp=self.settings.current_limit_amp,
-                holding_current_amp=self.settings.holding_current_amp,
                 last_error=self.state.last_error,
             )
 

@@ -297,8 +297,6 @@ class CaptureRecordValidator:
         record: object,
         captures: Iterable[object] | None = None,
         *,
-        timestamp_tolerance_ms: float = 1000.0,
-        manual_frame_offset: int = 0,
         required_camera_ids: Iterable[str] = ("top", "side"),
         selected_mode_folders: Iterable[str] | None = None,
     ) -> CaptureRecordValidation:
@@ -593,46 +591,27 @@ class CaptureRecordValidator:
                 RecordValidationIssue("missing_rotating_frames", "紀錄缺少環繞影像。")
             )
 
-        pairable_frame_count = 0
-        rotating_pairable_frame_count = 0
-        total_frame_count = 0
-        if top_frames and side_frames:
-            from app.analysis.frame_pairing import pair_capture_frames
-
-            pairs = pair_capture_frames(
-                top_frames,
-                side_frames,
-                rotating_frames,
-                timestamp_tolerance_ms=timestamp_tolerance_ms,
-                manual_frame_offset=manual_frame_offset,
+        camera_groups = {
+            camera_id: {
+                frame.capture_group
+                for frame in frames
+                if frame.camera_id == camera_id and frame.capture_group
+            }
+            for camera_id in CANONICAL_CAMERA_IDS
+        }
+        fixed_groups = camera_groups["top"].intersection(
+            camera_groups["side"]
+        )
+        pairable_frame_count = len(fixed_groups)
+        rotating_pairable_frame_count = len(
+            fixed_groups.intersection(camera_groups["rotating"])
+        )
+        total_frame_count = len(
+            camera_groups["top"].union(
+                camera_groups["side"],
+                camera_groups["rotating"],
             )
-            pairable_frame_count = sum(
-                pair.pair_status in {"paired", "manually_aligned"}
-                for pair in pairs
-            )
-            total_frame_count = len(pairs)
-            rotating_pairable_frame_count = sum(
-                pair.pair_status in {"paired", "manually_aligned"}
-                and pair.rotating_frame_id is not None
-                for pair in pairs
-            )
-            if pairable_frame_count == 0:
-                issues.append(
-                    RecordValidationIssue(
-                        "no_pairable_frames",
-                        "俯視與側視影像沒有可用的同步配對。",
-                    )
-                )
-            if (
-                "rotating" in required_cameras
-                and rotating_pairable_frame_count == 0
-            ):
-                issues.append(
-                    RecordValidationIssue(
-                        "no_pairable_rotating_frames",
-                        "環繞影像沒有可加入雙鏡頭影格群組的同步配對。",
-                    )
-                )
+        )
 
         rejected_frame_count = source_frame_count - len(frames)
         not_ready_reasons = _deduplicate_messages(issues)
@@ -660,16 +639,12 @@ def validate_capture_record(
     captures: Iterable[object] | None = None,
     *,
     image_probe: ImageProbe | None = None,
-    timestamp_tolerance_ms: float = 1000.0,
-    manual_frame_offset: int = 0,
     required_camera_ids: Iterable[str] = ("top", "side"),
     selected_mode_folders: Iterable[str] | None = None,
 ) -> CaptureRecordValidation:
     return CaptureRecordValidator(image_probe=image_probe).validate(
         record,
         captures,
-        timestamp_tolerance_ms=timestamp_tolerance_ms,
-        manual_frame_offset=manual_frame_offset,
         required_camera_ids=required_camera_ids,
         selected_mode_folders=selected_mode_folders,
     )
