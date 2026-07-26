@@ -25,6 +25,7 @@ TIP_TRAJECTORY_FIELDS = (
     "record_id",
     "mode_id",
     "round_id",
+    "snapshot_id",
     "timestamp",
     "x_mm",
     "y_mm",
@@ -53,6 +54,7 @@ ROUND_SUMMARY_FIELDS = (
     "record_id",
     "mode_id",
     "round_id",
+    "snapshot_id",
     "status",
     "view_count",
     "top_view_count",
@@ -67,12 +69,7 @@ ROUND_SUMMARY_FIELDS = (
 
 @dataclass(frozen=True, slots=True)
 class AnalysisArtifacts:
-    """All generated paths for one run.
-
-    The duplicate root-level CSV/JSON files are intentional: section 26 of
-    GOAL-02 defines a flat export contract, while section 27 defines a grouped
-    on-disk layout. Both contracts are kept in sync atomically.
-    """
+    """Manage the traceable output tree for one formal Analysis Run."""
 
     root: Path
 
@@ -99,18 +96,21 @@ class AnalysisArtifacts:
 
     @property
     def log_path(self) -> Path:
-        return self.root / "logs" / "analysis.log"
+        return self.root / "logs" / "analysis.log.csv"
 
     def write_run(self, run: AnalysisRun) -> None:
         payload = run.model_dump(mode="json")
         write_json_atomic(self.root / "run.json", payload)
-        write_json_atomic(self.root / "analysis.json", payload)
+        (self.root / "analysis.json").unlink(missing_ok=True)
 
     def write_parameters(self, parameters: dict) -> None:
         write_json_atomic(self.root / "parameters.json", parameters)
 
     def write_input_manifest(self, payload: list[dict]) -> None:
         write_json_atomic(self.root / "input_manifest.json", payload)
+
+    def write_source_manifest(self, payload: list[dict]) -> None:
+        write_json_atomic(self.root / "source_manifest.json", payload)
 
     def write_round_index(
         self,
@@ -181,6 +181,17 @@ class AnalysisArtifacts:
             },
         )
 
+    def write_round_camera_poses(
+        self,
+        round_key: str,
+        poses: Iterable[CameraPoseResult],
+    ) -> None:
+        write_json_atomic(
+            round_artifact_directory(self.root, round_key)
+            / "camera_poses.json",
+            [item.model_dump(mode="json") for item in poses],
+        )
+
     def write_round_quality(
         self,
         round_key: str,
@@ -203,7 +214,7 @@ class AnalysisArtifacts:
             payload = json.load(handle)
         views = payload.get("views") if isinstance(payload, dict) else None
         if not isinstance(views, list):
-            raise ValueError("undistortion manifest views must be an array")
+            raise ValueError("去畸變影像清單的視角資料必須是陣列。")
         return [item for item in views if isinstance(item, dict)]
 
     def write_round_model_result(self, item: RoundModelResult) -> None:
@@ -211,6 +222,39 @@ class AnalysisArtifacts:
         write_json_atomic(
             directory / "model" / "result.json",
             item.model_dump(mode="json"),
+        )
+        metadata_path = directory / "model" / "model_metadata.json"
+        if not metadata_path.is_file():
+            return
+        try:
+            payload = json.loads(
+                metadata_path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        write_json_atomic(
+            metadata_path,
+            {
+                **payload,
+                "formal_result_status": item.status,
+                "gaussian_model_path": item.model_path,
+                "plant_gaussian_model_path": item.plant_model_path,
+                "background_gaussian_model_path": (
+                    item.background_model_path
+                ),
+                "point_cloud_path": item.point_cloud_path,
+                "plant_point_cloud_path": (
+                    item.plant_point_cloud_path
+                ),
+                "background_point_cloud_path": (
+                    item.background_point_cloud_path
+                ),
+                "skeleton_path": item.skeleton_path,
+                "preview_paths": item.preview_paths,
+                "formal_result": item.model_dump(mode="json"),
+            },
         )
 
     def write_round_model_index(
@@ -247,8 +291,8 @@ class AnalysisArtifacts:
             self.root / "tip_corrections.json",
             [item.model_dump(mode="json") for item in records],
         )
-        for path in (self.root / "rounds").glob(
-            "*/*/tip/corrections.json"
+        for path in (self.root / "rounds").rglob(
+            "tip/corrections.json"
         ):
             path.unlink(missing_ok=True)
         by_round: dict[str, list[TipCorrection]] = {}
@@ -270,7 +314,7 @@ class AnalysisArtifacts:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if not isinstance(payload, dict):
-            raise ValueError("intrinsics snapshot must be an object")
+            raise ValueError("相機內參快照必須是物件。")
         return payload
 
     def write_aruco_layout_snapshot(self, payload: dict) -> None:
@@ -281,7 +325,7 @@ class AnalysisArtifacts:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if not isinstance(payload, dict):
-            raise ValueError("ArUco layout snapshot must be an object")
+            raise ValueError("ArUco 佈局快照必須是物件。")
         return payload
 
     def write_pose_alignment(self, result: object) -> None:
@@ -316,6 +360,7 @@ class AnalysisArtifacts:
         *,
         pose_estimation_version: str,
         round_quality: list[dict],
+        fixed_camera_consistency: dict[str, dict],
     ) -> None:
         pose_items = list(poses)
         write_json_atomic(
@@ -334,6 +379,7 @@ class AnalysisArtifacts:
             self.root / "pose_quality.json",
             {
                 "coordinate_space": "undistorted",
+                "fixed_camera_consistency": fixed_camera_consistency,
                 "rounds": round_quality,
             },
         )
@@ -356,13 +402,15 @@ class AnalysisArtifacts:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
         if not isinstance(payload, list):
-            raise ValueError("camera poses must be an array")
+            raise ValueError("相機姿態資料必須是陣列。")
         return [item for item in payload if isinstance(item, dict)]
 
     def write_tip_trajectory(
         self,
         points: Iterable[TipTrajectoryPoint],
         quality: dict,
+        *,
+        export_csv: bool = True,
     ) -> None:
         records = list(points)
         rows = [
@@ -372,11 +420,17 @@ class AnalysisArtifacts:
             }
             for item in records
         ]
-        write_csv_atomic(
-            self.root / "trajectory" / "tip_marker_trajectory.csv",
-            TIP_TRAJECTORY_FIELDS,
-            rows,
+        csv_path = (
+            self.root / "trajectory" / "tip_marker_trajectory.csv"
         )
+        if export_csv:
+            write_csv_atomic(
+                csv_path,
+                TIP_TRAJECTORY_FIELDS,
+                rows,
+            )
+        else:
+            csv_path.unlink(missing_ok=True)
         write_json_atomic(
             self.root / "trajectory" / "tip_marker_trajectory.json",
             [item.model_dump(mode="json") for item in records],
@@ -412,6 +466,7 @@ class AnalysisArtifacts:
                 "record_id": item.record_id,
                 "mode_id": item.mode_id,
                 "round_id": item.round_id,
+                "snapshot_id": item.snapshot_id,
                 "status": item.status,
                 "view_count": item.view_count,
                 "top_view_count": item.top_view_count,
@@ -441,6 +496,22 @@ class AnalysisArtifacts:
                     "status": item.status,
                     "backend": item.backend,
                     "backend_version": item.backend_version,
+                    "repository_url": item.repository_url,
+                    "repository_commit": item.repository_commit,
+                    "license": item.license,
+                    "environment": item.environment,
+                    "model_path": item.model_path,
+                    "plant_model_path": item.plant_model_path,
+                    "background_model_path": item.background_model_path,
+                    "point_cloud_path": item.point_cloud_path,
+                    "plant_point_cloud_path": (
+                        item.plant_point_cloud_path
+                    ),
+                    "background_point_cloud_path": (
+                        item.background_point_cloud_path
+                    ),
+                    "skeleton_path": item.skeleton_path,
+                    "preview_paths": item.preview_paths,
                     "quality": item.model_quality,
                     "failure_reason": item.failure_reason,
                 }

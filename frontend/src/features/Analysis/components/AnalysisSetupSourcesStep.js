@@ -121,11 +121,11 @@ export default function AnalysisSetupSourcesStep({
       <hr />
       <section
         className="grid gap-4"
-        aria-labelledby="analysis-scan-result-title"
+        aria-labelledby="analysis-round-scan-title"
       >
         <SubsectionHeader
-          titleId="analysis-scan-result-title"
-          title="掃描配對"
+          titleId="analysis-round-scan-title"
+          title="Round 掃描"
           description={previewDescription}
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -143,7 +143,7 @@ export default function AnalysisSetupSourcesStep({
                   className="size-3.5"
                   aria-hidden="true"
                 />
-                Round 配置有效
+                Round 資料有效
               </StatusPill>
             ) : (
               <StatusPill tone="neutral">
@@ -210,6 +210,10 @@ export default function AnalysisSetupSourcesStep({
                 <div className="flex min-w-0 items-center justify-between gap-3">
                   <span className="min-w-0 truncate text-sm font-black text-white">
                     {round.mode_id} / {round.round_id}
+                    {round.snapshot_id
+                      ? ` / ${round.snapshot_id}`
+                      : ""
+                    }
                   </span>
                   <StatusPill
                     tone={round.errors.length > 0 ? "offline" : "success"}

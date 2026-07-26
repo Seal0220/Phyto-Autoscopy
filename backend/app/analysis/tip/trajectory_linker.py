@@ -89,6 +89,88 @@ def _seconds_between(
     return seconds if seconds > 0 else None
 
 
+def _round_timestamp(
+    round_item: AnalysisRound,
+    landmark: TipLandmark | None,
+) -> str | None:
+    return (
+        landmark.timestamp
+        if landmark is not None and landmark.timestamp
+        else round_item.started_at
+    )
+
+
+def _single_gap_interpolations(
+    rounds: Sequence[AnalysisRound],
+    landmarks: Sequence[TipLandmark | None],
+    positions: Sequence[np.ndarray | None],
+) -> dict[int, tuple[np.ndarray, float]]:
+    interpolated = {}
+    for index in range(1, len(rounds) - 1):
+        if positions[index] is not None:
+            continue
+        previous = positions[index - 1]
+        following = positions[index + 1]
+        if previous is None or following is None:
+            continue
+
+        previous_time = _parse_timestamp(
+            _round_timestamp(
+                rounds[index - 1],
+                landmarks[index - 1],
+            )
+        )
+        current_time = _parse_timestamp(
+            _round_timestamp(
+                rounds[index],
+                landmarks[index],
+            )
+        )
+        following_time = _parse_timestamp(
+            _round_timestamp(
+                rounds[index + 1],
+                landmarks[index + 1],
+            )
+        )
+        ratio = 0.5
+        if (
+            previous_time is not None
+            and current_time is not None
+            and following_time is not None
+        ):
+            try:
+                total_seconds = (
+                    following_time - previous_time
+                ).total_seconds()
+                current_seconds = (
+                    current_time - previous_time
+                ).total_seconds()
+            except TypeError:
+                total_seconds = 0.0
+                current_seconds = 0.0
+            if total_seconds > 0 and 0 < current_seconds < total_seconds:
+                ratio = current_seconds / total_seconds
+
+        neighboring_confidences = [
+            item.confidence
+            for item in (
+                landmarks[index - 1],
+                landmarks[index + 1],
+            )
+            if item is not None and item.valid
+        ]
+        confidence = (
+            min(neighboring_confidences) * 0.5
+            if neighboring_confidences
+            else 0.0
+        )
+        interpolated[index] = (
+            previous + (following - previous) * ratio,
+            float(np.clip(confidence, 0.0, 1.0)),
+        )
+    return interpolated
+
+
 def _nutation_metrics(
     positions: Sequence[np.ndarray],
     timestamps: Sequence[str | None],
@@ -152,7 +234,7 @@ def link_tip_trajectory(
     rounds: Sequence[AnalysisRound],
     landmarks: Sequence[TipLandmark],
 ) -> TipTrajectoryResult:
-    """Link formal tip markers without crossing modes or filling gaps."""
+    """Link markers by mode and fill only one-Round bounded gaps."""
 
     landmark_by_round = {
         item.round_key: item
@@ -166,6 +248,21 @@ def link_tip_trajectory(
     mode_quality: dict[str, dict[str, Any]] = {}
     for mode_id, mode_rounds in sorted(rounds_by_mode.items()):
         ordered = sorted(mode_rounds, key=_round_order)
+        ordered_landmarks = [
+            landmark_by_round.get(item.round_key)
+            for item in ordered
+        ]
+        resolved_positions = [
+            _position(item)
+            for item in ordered_landmarks
+        ]
+        interpolations = _single_gap_interpolations(
+            ordered,
+            ordered_landmarks,
+            resolved_positions,
+        )
+        for index, (position, _) in interpolations.items():
+            resolved_positions[index] = position
         first_valid_position: np.ndarray | None = None
         first_timestamp: str | None = None
         previous_position: np.ndarray | None = None
@@ -175,6 +272,8 @@ def link_tip_trajectory(
         previous_was_valid = False
         path_length = 0.0
         valid_count = 0
+        measured_count = 0
+        interpolated_count = 0
         valid_positions: list[np.ndarray] = []
         valid_timestamps: list[str | None] = []
         speeds: list[float] = []
@@ -182,14 +281,11 @@ def link_tip_trajectory(
         curvatures: list[float] = []
 
         for point_index, round_item in enumerate(ordered):
-            landmark = landmark_by_round.get(round_item.round_key)
-            position = _position(landmark)
+            landmark = ordered_landmarks[point_index]
+            position = resolved_positions[point_index]
+            interpolated = point_index in interpolations
             valid = position is not None
-            timestamp = (
-                landmark.timestamp
-                if landmark is not None and landmark.timestamp
-                else round_item.started_at
-            )
+            timestamp = _round_timestamp(round_item, landmark)
             elapsed = (
                 _seconds_between(timestamp, first_timestamp)
                 if first_timestamp is not None
@@ -234,33 +330,56 @@ def link_tip_trajectory(
                 if valid and first_valid_position is not None
                 else None
             )
+            if interpolated:
+                point_confidence = interpolations[point_index][1]
+                visible_view_count = 0
+                mean_reprojection_error_px = None
+                manually_corrected = False
+            else:
+                point_confidence = (
+                    landmark.confidence
+                    if landmark is not None
+                    else 0.0
+                )
+                visible_view_count = (
+                    landmark.visible_view_count
+                    if landmark is not None
+                    else 0
+                )
+                mean_reprojection_error_px = (
+                    landmark.mean_reprojection_error_px
+                    if landmark is not None
+                    else None
+                )
+                manually_corrected = (
+                    landmark.manually_corrected
+                    if landmark is not None
+                    else False
+                )
             points.append(TipTrajectoryPoint(
                 analysis_id=round_item.analysis_id,
                 record_id=round_item.record_id,
                 mode_id=mode_id,
                 round_key=round_item.round_key,
                 round_id=round_item.round_id,
+                snapshot_id=round_item.snapshot_id,
                 point_index=point_index,
                 timestamp=timestamp,
                 x_mm=float(position[0]) if valid else None,
                 y_mm=float(position[1]) if valid else None,
                 z_mm=float(position[2]) if valid else None,
-                confidence=landmark.confidence if landmark is not None else 0.0,
+                confidence=point_confidence,
                 valid=valid,
-                detection_type=_detection_type(landmark),
-                visible_view_count=(
-                    landmark.visible_view_count if landmark is not None else 0
+                detection_type=(
+                    "interpolated"
+                    if interpolated
+                    else _detection_type(landmark)
                 ),
+                visible_view_count=visible_view_count,
                 mean_reprojection_error_px=(
-                    landmark.mean_reprojection_error_px
-                    if landmark is not None
-                    else None
+                    mean_reprojection_error_px
                 ),
-                manually_corrected=(
-                    landmark.manually_corrected
-                    if landmark is not None
-                    else False
-                ),
+                manually_corrected=manually_corrected,
                 elapsed_seconds=elapsed,
                 adjacent_distance_mm=adjacent_distance,
                 speed_mm_per_second=speed,
@@ -284,6 +403,10 @@ def link_tip_trajectory(
             ))
             if valid:
                 valid_count += 1
+                if interpolated:
+                    interpolated_count += 1
+                else:
+                    measured_count += 1
                 valid_positions.append(position.copy())
                 valid_timestamps.append(timestamp)
                 if speed is not None:
@@ -332,8 +455,13 @@ def link_tip_trajectory(
         mode_quality[mode_id] = {
             "point_count": total_count,
             "valid_point_count": valid_count,
+            "measured_point_count": measured_count,
+            "interpolated_point_count": interpolated_count,
             "missing_point_count": total_count - valid_count,
             "valid_measurement_ratio": (
+                measured_count / total_count if total_count else 0.0
+            ),
+            "usable_point_ratio": (
                 valid_count / total_count if total_count else 0.0
             ),
             "path_length_mm": path_length,
@@ -367,15 +495,28 @@ def link_tip_trajectory(
 
     total = len(points)
     valid_total = sum(item.valid for item in points)
+    interpolated_total = sum(
+        item.detection_type == "interpolated"
+        for item in points
+    )
+    measured_total = valid_total - interpolated_total
     return TipTrajectoryResult(
         points=tuple(points),
         quality={
             "mode_count": len(mode_quality),
             "point_count": total,
             "valid_point_count": valid_total,
+            "measured_point_count": measured_total,
+            "interpolated_point_count": interpolated_total,
             "missing_point_count": total - valid_total,
-            "valid_measurement_ratio": valid_total / total if total else 0.0,
-            "interpolation_applied": False,
+            "valid_measurement_ratio": (
+                measured_total / total if total else 0.0
+            ),
+            "usable_point_ratio": (
+                valid_total / total if total else 0.0
+            ),
+            "interpolation_applied": interpolated_total > 0,
+            "maximum_interpolated_gap_rounds": 1,
             "modes": mode_quality,
         },
     )

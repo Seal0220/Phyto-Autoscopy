@@ -14,6 +14,19 @@ from typing import Any
 CANONICAL_CAMERA_IDS = frozenset({"top", "side", "rotating"})
 ACTIVE_RECORD_STATUSES = frozenset({"manual", "running", "paused", "stopping"})
 SUCCESS_CAPTURE_STATUSES = frozenset({"success"})
+BLOCKING_VALIDATION_ISSUE_CODES = frozenset({
+    "missing_record_id",
+    "missing_record_directory",
+    "record_active",
+    "invalid_record_metadata",
+    "record_id_mismatch",
+    "invalid_capture_index",
+    "missing_capture_metadata",
+    "inconsistent_camera_resolution",
+    "missing_top_frames",
+    "missing_side_frames",
+    "missing_rotating_frames",
+})
 
 _DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:[/\\]")
 _CAPTURE_FILE_PATTERN = re.compile(
@@ -76,9 +89,6 @@ class CaptureRecordValidation:
     record_metadata: Mapping[str, Any]
     source_frame_count: int
     rejected_frame_count: int
-    pairable_frame_count: int
-    total_frame_count: int
-    rotating_pairable_frame_count: int = 0
 
     @property
     def top_frames(self) -> tuple[CaptureFrame, ...]:
@@ -591,30 +601,12 @@ class CaptureRecordValidator:
                 RecordValidationIssue("missing_rotating_frames", "紀錄缺少環繞影像。")
             )
 
-        camera_groups = {
-            camera_id: {
-                frame.capture_group
-                for frame in frames
-                if frame.camera_id == camera_id and frame.capture_group
-            }
-            for camera_id in CANONICAL_CAMERA_IDS
-        }
-        fixed_groups = camera_groups["top"].intersection(
-            camera_groups["side"]
-        )
-        pairable_frame_count = len(fixed_groups)
-        rotating_pairable_frame_count = len(
-            fixed_groups.intersection(camera_groups["rotating"])
-        )
-        total_frame_count = len(
-            camera_groups["top"].union(
-                camera_groups["side"],
-                camera_groups["rotating"],
-            )
-        )
-
         rejected_frame_count = source_frame_count - len(frames)
-        not_ready_reasons = _deduplicate_messages(issues)
+        not_ready_reasons = _deduplicate_messages(
+            issue
+            for issue in issues
+            if issue.code in BLOCKING_VALIDATION_ISSUE_CODES
+        )
         return CaptureRecordValidation(
             record_id=record_id,
             record_status=record_status,
@@ -628,9 +620,6 @@ class CaptureRecordValidator:
             record_metadata=record_metadata,
             source_frame_count=source_frame_count,
             rejected_frame_count=rejected_frame_count,
-            pairable_frame_count=pairable_frame_count,
-            total_frame_count=total_frame_count,
-            rotating_pairable_frame_count=rotating_pairable_frame_count,
         )
 
 

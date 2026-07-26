@@ -984,7 +984,7 @@ ArUco 對齊在本 GOAL 中指：
 
 重構後正式方法：
 
-### `round_multiview`
+### `rotating`
 
 使用：
 
@@ -1002,7 +1002,7 @@ rotating
 - 每 Round 三維尖端標記
 - 跨 Round 尖端標記軌跡
 
-### `top_side_tip_only`
+### `fixed`
 
 僅使用：
 
@@ -1025,10 +1025,10 @@ side
 
 ```text
 rotating enabled
-→ round_multiview
+→ rotating
 
 rotating disabled
-→ top_side_tip_only
+→ fixed
 ```
 
 前端不必再額外顯示重複的分析方法按鈕。
@@ -2209,7 +2209,7 @@ tip_loss =
 
 ```text
 multiview_joint
-top_side_triangulation
+fixed_triangulation
 model_skeleton
 temporal_estimate
 manual
@@ -2222,7 +2222,7 @@ invalid
 multiview_joint
 → 多視角聯合分析
 
-top_side_triangulation
+fixed_triangulation
 → 俯視與側視三角化
 
 model_skeleton
@@ -2676,19 +2676,12 @@ class AnalysisCreateRequest(BaseModel):
 
 ```python
 AnalysisMethod = Literal[
-    "round_multiview",
-    "top_side_tip_only",
+    "fixed",
+    "rotating",
 ]
 ```
 
-舊方法值可保留於舊 Run 相容層：
-
-```text
-top_side
-top_side_rotating
-```
-
-但新 Analysis Run 不再建立為舊方法。
+不建立舊方法相容別名；其他識別碼的 Analysis Run 只保留於備份資料庫。
 
 ## 20.4 AnalysisRound
 
@@ -3144,7 +3137,7 @@ record_id,mode_id,round_id,timestamp,x_mm,y_mm,z_mm,confidence,valid,detection_t
 ## 24.2 Round 摘要
 
 ```csv
-record_id,mode_id,round_id,status,view_count,top_view_count,side_view_count,rotating_view_count,angular_coverage_deg,duration_seconds,model_status,tip_marker_status
+record_id,mode_id,round_id,snapshot_id,status,view_count,top_view_count,side_view_count,rotating_view_count,angular_coverage_deg,duration_seconds,model_status,tip_marker_status
 ```
 
 ## 24.3 使用者可見欄名
@@ -3353,14 +3346,8 @@ single rotating frame pairing
 detect_rotating_tip_near_projection 作為主要方法
 ```
 
-舊模組可暫時保留供：
-
-- 舊 Analysis Run
-- `top_side_tip_only`
-- 回歸測試
-- 方法比較
-
-但不得繼續成為 `round_multiview` 的執行核心。
+舊模組直接移除，不再提供舊 Analysis Run 相容層。`fixed` 與
+`rotating` 都使用正式的 Round、View、去畸變座標與尖端標記資料模型。
 
 ---
 
@@ -3523,7 +3510,7 @@ Migration 必須：
 - 新方法不覆蓋既有正式 Artifact
 - Reset、Cancel、Retry 對 Round 工作有效
 - 程式異常中止後可保留已完成 Round
-- 舊 `top_side` 與 `top_side_rotating` Run 不被重新解讀為新方法
+- 非 `fixed`／`rotating` 的舊 Run 不被重新解讀為新方法
 
 ---
 
@@ -3659,18 +3646,18 @@ Migration 必須：
 新增：
 
 ```text
-round_multiview
+rotating
 version: 1.0.0
 ```
 
 若保留固定雙相機尖端模式：
 
 ```text
-top_side_tip_only
+fixed
 version: 2.0.0
 ```
 
-舊方法 `top_side` 與 `top_side_rotating` 已自正式服務移除；歷史資料只保留於獨立備份資料庫。
+其他舊方法識別碼已自正式服務移除；歷史資料只保留於獨立備份資料庫。
 
 ---
 

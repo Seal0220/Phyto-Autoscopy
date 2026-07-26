@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import importlib.metadata
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
 from typing import Any, Mapping
@@ -19,16 +21,52 @@ from app.analysis.reconstruction.gsplat_trainer import (
     train_gsplat_model,
     world_space_splats,
 )
+from app.analysis.reconstruction.plant_isolation import (
+    classify_plant_points,
+    plant_isolation_views_from_dataset,
+)
 from app.analysis.reconstruction.sparse_initializer import (
     initialize_sparse_geometry,
 )
 from app.analysis.reconstruction.runtime_probe import probe_gsplat_runtime
 
 
+def _installed_gsplat_metadata() -> tuple[str, str | None]:
+    try:
+        distribution = importlib.metadata.distribution("gsplat")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown", None
+
+    commit = None
+    try:
+        direct_url = json.loads(
+            distribution.read_text("direct_url.json") or "{}"
+        )
+        vcs_info = (
+            direct_url.get("vcs_info")
+            if isinstance(direct_url, dict)
+            else None
+        )
+        if isinstance(vcs_info, dict):
+            candidate = str(vcs_info.get("commit_id") or "").strip()
+            commit = candidate or None
+    except (
+        OSError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
+        commit = None
+    return distribution.version, commit
+
+
 @dataclass(slots=True)
 class GsplatRoundResult:
     training: GsplatTrainingResult
     sparse: dict[str, Any]
+    plant_splat_mask: np.ndarray | None = None
+    plant_export_quality: dict[str, Any] = field(default_factory=dict)
 
 
 def _write_point_cloud(
@@ -56,14 +94,71 @@ def _write_point_cloud(
     return path
 
 
+def _export_splats(
+    output_path: Path,
+    splats: Mapping[str, Any],
+    selection: Any | None = None,
+) -> Path:
+    try:
+        from gsplat import export_splats
+    except ImportError as error:
+        raise RuntimeError("gsplat 不支援模型匯出。") from error
+
+    selected = {
+        name: value if selection is None else value[selection]
+        for name, value in splats.items()
+    }
+    if int(selected["means"].shape[0]) == 0:
+        raise ValueError("選取的 Gaussian 模型沒有可輸出的有效點。")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    export_splats(
+        means=selected["means"],
+        scales=selected["scales"],
+        quats=selected["quats"],
+        opacities=selected["opacities"],
+        sh0=selected["sh0"],
+        shN=selected["shN"],
+        format="ply",
+        save_to=str(output_path),
+    )
+    return output_path
+
+
+def _plant_splat_selection(
+    result: GsplatRoundResult,
+) -> np.ndarray:
+    if result.plant_splat_mask is not None:
+        return result.plant_splat_mask
+
+    splats = world_space_splats(result.training)
+    points = splats["means"].detach().cpu().numpy()
+    classification = classify_plant_points(
+        points,
+        plant_isolation_views_from_dataset(
+            result.training.dataset
+        ),
+    )
+    result.plant_splat_mask = classification.plant_mask
+    result.plant_export_quality = dict(classification.quality)
+    return result.plant_splat_mask
+
+
 class GsplatBackend:
     name = "gsplat_3dgs"
-    version = "1.0.0"
     repository_url = "https://github.com/nerfstudio-project/gsplat"
-    repository_commit = None
     license = "Apache-2.0"
+    capabilities = {
+        "scene_gaussian_export": True,
+        "plant_gaussian_export": True,
+        "background_gaussian_export": True,
+        "scene_point_cloud_export": True,
+        "render_preview_export": True,
+    }
 
     def __init__(self) -> None:
+        self.version, self.repository_commit = (
+            _installed_gsplat_metadata()
+        )
         self._cancel_event = Event()
         self._runtime_readiness: dict[str, Any] | None = None
 
@@ -91,6 +186,7 @@ class GsplatBackend:
             "repository_url": self.repository_url,
             "repository_commit": self.repository_commit,
             "license": self.license,
+            "capabilities": dict(self.capabilities),
             "available": not errors,
             "errors": errors,
             "warnings": warnings,
@@ -142,6 +238,12 @@ class GsplatBackend:
         sparse = initialize_sparse_geometry(
             dataset,
             requested_device="cuda",
+            use_constrained_bundle_adjustment=bool(
+                parameters.get(
+                    "use_constrained_bundle_adjustment",
+                    True,
+                )
+            ),
             progress_callback=sparse_progress,
             cancel_check=check_cancel,
         )
@@ -168,23 +270,42 @@ class GsplatBackend:
         result: GsplatRoundResult,
         output_path: Path,
     ) -> Path:
-        try:
-            from gsplat import export_splats
-        except ImportError as error:
-            raise RuntimeError("gsplat 不支援模型匯出。") from error
-        splats = world_space_splats(result.training)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        export_splats(
-            means=splats["means"],
-            scales=splats["scales"],
-            quats=splats["quats"],
-            opacities=splats["opacities"],
-            sh0=splats["sh0"],
-            shN=splats["shN"],
-            format="ply",
-            save_to=str(output_path),
+        return _export_splats(
+            output_path,
+            world_space_splats(result.training),
         )
-        return output_path
+
+    def export_plant_gaussians(
+        self,
+        result: GsplatRoundResult,
+        output_path: Path,
+    ) -> Path:
+        import torch
+
+        selection = torch.from_numpy(
+            _plant_splat_selection(result)
+        ).to(result.training.splats["means"].device)
+        return _export_splats(
+            output_path,
+            world_space_splats(result.training),
+            selection,
+        )
+
+    def export_background_gaussians(
+        self,
+        result: GsplatRoundResult,
+        output_path: Path,
+    ) -> Path:
+        import torch
+
+        selection = torch.from_numpy(
+            ~_plant_splat_selection(result)
+        ).to(result.training.splats["means"].device)
+        return _export_splats(
+            output_path,
+            world_space_splats(result.training),
+            selection,
+        )
 
     def export_point_cloud(
         self,

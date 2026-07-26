@@ -2,8 +2,6 @@ import {
   FiDownload,
   FiEdit3,
   FiEye,
-  FiRefreshCw,
-  FiX,
 } from "react-icons/fi";
 
 import ActionRow from "@/components/actions/ActionRow";
@@ -33,8 +31,6 @@ function reviewLabel(run) {
 export default function AnalysisDashboardRuns({
   runs,
   exportingIds,
-  exportFailure,
-  onClearExportError,
   onExport,
   onOpen,
   onReview,
@@ -44,40 +40,6 @@ export default function AnalysisDashboardRuns({
     <Panel aria-label="分析紀錄">
       <PanelHeader title="分析紀錄" />
       <div className="grid gap-3 p-5 max-sm:p-4">
-        {exportFailure ? (
-          <div
-            className="grid gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3"
-            role="alert"
-          >
-            <p className="m-0 break-all text-sm font-semibold text-rose-200">
-              {exportFailure.analysisId}：{exportFailure.message}
-            </p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button onClick={onClearExportError}>
-                <FiX
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                清除錯誤
-              </Button>
-              <Button
-                variant="primary"
-                disabled={exportingIds.has(exportFailure.analysisId)}
-                onClick={() => onExport(exportFailure.analysisId)}
-              >
-                <FiRefreshCw
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                {exportingIds.has(exportFailure.analysisId)
-                  ? "重新匯出中…"
-                  : "重新匯出"
-                }
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
         {runs.length ? runs.map((run) => {
           const status = analysisStatusMeta(run.status);
           const progress = analysisProgressPercent(run.progress);
@@ -129,8 +91,8 @@ export default function AnalysisDashboardRuns({
                   <span>{progress}%</span>
                   <span>
                     {run.total_frames > 0
-                      ? `${run.current_frame} / ${run.total_frames} 影格`
-                      : "尚未建立影格進度"
+                      ? `${run.current_frame} / ${run.total_frames} 輪`
+                      : "尚未建立輪次進度"
                     }
                   </span>
                 </div>

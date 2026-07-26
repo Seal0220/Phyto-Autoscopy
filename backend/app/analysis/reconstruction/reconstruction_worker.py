@@ -164,6 +164,14 @@ def run_reconstruction_worker(
         root,
         payload.get("gaussian_model_path"),
     )
+    payload["plant_gaussian_model_path"] = _assert_output_path(
+        root,
+        payload.get("plant_gaussian_model_path"),
+    )
+    payload["background_gaussian_model_path"] = _assert_output_path(
+        root,
+        payload.get("background_gaussian_model_path"),
+    )
     payload["point_cloud_path"] = _assert_output_path(
         root,
         payload.get("point_cloud_path"),

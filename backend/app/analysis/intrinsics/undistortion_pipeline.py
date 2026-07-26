@@ -70,7 +70,7 @@ def undistort_analysis_views(
         image_path = (
             round_root
             / "images"
-            / f"{safe_artifact_name(view.view_id)}.jpg"
+            / f"{safe_artifact_name(view.view_id)}.png"
         )
         mask_path = round_root / "valid_masks" / f"{view.camera_id}.png"
         _write_image(image_path, undistorted)

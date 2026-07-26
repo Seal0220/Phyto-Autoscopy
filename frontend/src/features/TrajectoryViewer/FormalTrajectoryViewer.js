@@ -5,14 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   FiDownload,
   FiEdit3,
-  FiX,
+  FiRefreshCw,
 } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
 import InformationGrid from "@/components/data/InformationGrid";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import InnerPanel from "@/components/panels/InnerPanel";
 import {
@@ -20,34 +19,32 @@ import {
   PanelHeader,
   StatusPill,
 } from "@/components/panels/Panel";
-import { ANALYSIS_METHODS } from "@/features/Analysis/analysisConfig";
+import {
+  ANALYSIS_METHODS,
+  ANALYSIS_MODEL_STATUS_META,
+  RECONSTRUCTION_BACKEND_LABELS,
+} from "@/features/Analysis/analysisConfig";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import { formatDateTime } from "@/lib/formatUtils";
 
 import FormalTrajectoryViewer3D from "./components/FormalTrajectoryViewer3D";
 import FormalTrajectoryCharts from "./components/FormalTrajectoryCharts";
+import TrajectoryViewerModelOutputs from "./components/TrajectoryViewerModelOutputs";
 import useFormalTrajectoryResults from "./hooks/useFormalTrajectoryResults";
-
-const DETECTION_LABELS = {
-  measured: "實際量測",
-  estimated: "模型估計",
-  interpolated: "插值",
-  manual: "人工修正",
-  invalid: "無效",
-};
-
-const ROTATION_LABELS = {
-  clockwise: "順時針",
-  counterclockwise: "逆時針",
-  stationary: "無明顯旋轉",
-};
+import {
+  TRAJECTORY_DETECTION_LABELS,
+  TRAJECTORY_ROTATION_LABELS,
+} from "./trajectoryViewerConfig";
 
 function displayNumber(
   value,
   suffix = "",
   digits = 2,
 ) {
+  if (value === null || value === undefined || value === "") {
+    return "尚無資料";
+  }
   const number = Number(value);
   return Number.isFinite(number)
     ? `${number.toFixed(digits)}${suffix}`
@@ -86,7 +83,6 @@ export default function FormalTrajectoryViewer({
     exportError,
     load,
     downloadExport,
-    clearExportError,
   } = useFormalTrajectoryResults({
     analysisId,
   });
@@ -123,6 +119,20 @@ export default function FormalTrajectoryViewer({
                 <StatusPill tone={runDisplay.status.tone}>
                   {runDisplay.status.label}
                 </StatusPill>
+              ) : null}
+              {loadError ? (
+                <Button
+                  disabled={loading}
+                  onClick={() => void load()}
+                >
+                  <FiRefreshCw
+                    className={`size-4 shrink-0 ${
+                      loading ? "animate-spin" : ""
+                    }`}
+                    aria-hidden="true"
+                  />
+                  {loading ? "重新讀取中…" : "重新讀取"}
+                </Button>
               ) : null}
               <Button
                 onClick={() => router.push(
@@ -162,38 +172,15 @@ export default function FormalTrajectoryViewer({
         />
 
         <div className="grid gap-4 p-5 max-sm:p-4">
-          {loadError ? (
-            <RetryMessage
-              message={loadError}
-              onRetry={() => void load()}
-              retrying={loading}
-            />
-          ) : null}
-
           {loading && !run ? (
             <div className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400">
               讀取每輪模型與尖端標記軌跡中…
             </div>
           ) : null}
 
-          {exportError ? (
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3">
-              <p className="m-0 text-sm font-semibold text-rose-200">
-                {exportError}
-              </p>
-              <Button onClick={clearExportError}>
-                <FiX
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                清除錯誤
-              </Button>
-            </div>
-          ) : null}
-
           {run ? (
             <>
-              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-4">
+              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-5">
                 <StatusCard
                   title="分析 Round"
                   content={rounds.length}
@@ -205,9 +192,14 @@ export default function FormalTrajectoryViewer({
                   note={`共 ${models.length} 個模型紀錄`}
                 />
                 <StatusCard
-                  title="有效尖端標記"
+                  title="可用軌跡點"
                   content={validPoints.length}
-                  note={`有效率 ${displayNumber(quality.valid_measurement_ratio * 100, "%", 1)}`}
+                  note={`實測率 ${displayNumber(quality.valid_measurement_ratio * 100, "%", 1)}`}
+                />
+                <StatusCard
+                  title="插值軌跡點"
+                  content={quality.interpolated_point_count || 0}
+                  note="只補單一缺失 Round"
                 />
                 <StatusCard
                   title="缺失區段"
@@ -238,7 +230,22 @@ export default function FormalTrajectoryViewer({
                     },
                     {
                       label: "模型後端",
-                      value: run.reconstruction_backend || "不建立模型",
+                      value: RECONSTRUCTION_BACKEND_LABELS[
+                        run.reconstruction_backend
+                      ] || "不建立模型",
+                    },
+                    {
+                      label: "模型後端版本",
+                      value: run.reconstruction_backend_version
+                        || "尚無資料",
+                    },
+                    {
+                      label: "平均重投影誤差",
+                      value: displayNumber(
+                        run.average_reprojection_error_px,
+                        " px",
+                        3,
+                      ),
                     },
                     {
                       label: "模式數量",
@@ -266,6 +273,11 @@ export default function FormalTrajectoryViewer({
               <FormalTrajectoryViewer3D trajectory={trajectory} />
 
               <FormalTrajectoryCharts trajectory={trajectory} />
+
+              <TrajectoryViewerModelOutputs
+                analysisId={analysisId}
+                models={models}
+              />
 
               <InnerPanel>
                 <SubsectionHeader
@@ -314,7 +326,12 @@ export default function FormalTrajectoryViewer({
                           },
                           {
                             label: "旋轉方向",
-                            value: ROTATION_LABELS[item.rotation_direction] || "尚無資料",
+                            value: (
+                              TRAJECTORY_ROTATION_LABELS[
+                                item.rotation_direction
+                              ]
+                              || "尚無資料"
+                            ),
                           },
                           {
                             label: "Nutation 半徑",
@@ -327,6 +344,18 @@ export default function FormalTrajectoryViewer({
                           {
                             label: "缺失區段",
                             value: `${item.missing_segment_count || 0} 段`,
+                          },
+                          {
+                            label: "插值點",
+                            value: `${item.interpolated_point_count || 0} 點`,
+                          },
+                          {
+                            label: "可用比例",
+                            value: displayNumber(
+                              item.usable_point_ratio * 100,
+                              "%",
+                              1,
+                            ),
                           },
                         ]}
                         rows={2}
@@ -357,6 +386,12 @@ export default function FormalTrajectoryViewer({
                   {rounds.map((item) => {
                     const model = modelsByRound.get(item.round_key);
                     const landmark = resolved.get(item.round_key);
+                    const modelStatus = ANALYSIS_MODEL_STATUS_META[
+                      model?.status
+                    ] || {
+                      label: "無模型",
+                      tone: "neutral",
+                    };
                     return (
                       <div
                         className="grid min-w-[72rem] grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.9fr_1.2fr_0.8fr_1fr] items-center gap-3 border-b border-white/10 px-3 py-2 text-xs font-semibold text-neutral-300 last:border-b-0"
@@ -366,8 +401,8 @@ export default function FormalTrajectoryViewer({
                           {item.mode_id}
                         </span>
                         <span>{item.round_id}</span>
-                        <StatusPill tone={model?.status === "completed" ? "success" : "warning"}>
-                          {model?.status === "completed" ? "完成" : "無模型"}
+                        <StatusPill tone={modelStatus.tone}>
+                          {modelStatus.label}
                         </StatusPill>
                         <StatusPill tone={landmark?.valid ? "success" : "offline"}>
                           {landmark?.valid ? "有效" : "無效"}
@@ -381,7 +416,12 @@ export default function FormalTrajectoryViewer({
                         </span>
                         <span>{displayNumber(landmark?.mean_reprojection_error_px, " px", 3)}</span>
                         <span className="truncate">
-                          {DETECTION_LABELS[landmark?.detection_type] || "尚無資料"}
+                          {
+                            TRAJECTORY_DETECTION_LABELS[
+                              landmark?.detection_type
+                            ]
+                            || "尚無資料"
+                          }
                         </span>
                       </div>
                     );

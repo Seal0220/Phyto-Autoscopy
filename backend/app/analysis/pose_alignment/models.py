@@ -10,6 +10,7 @@ PoseSource = Literal[
     "aruco_refined",
     "sfm",
     "motor_prior",
+    "interpolated",
     "unresolved",
 ]
 
@@ -47,6 +48,7 @@ class PoseQualitySummary(BaseModel):
     sfm_image_count: int
     sfm_registered_image_count: int
     motor_prior_image_count: int
+    interpolated_image_count: int
     average_aruco_reprojection_error_px: float | None = None
     sfm_registration_rate: float = 0.0
     fixed_camera_dispersion: dict[str, dict[str, float]] = Field(

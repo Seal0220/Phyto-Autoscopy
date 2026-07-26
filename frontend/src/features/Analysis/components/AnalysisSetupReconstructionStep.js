@@ -41,10 +41,28 @@ const OUTPUT_TOGGLES = [
   ["saveCheckpoints", "模型 Checkpoint"],
 ];
 
+const FIXED_TIP_TOGGLE_KEYS = new Set([
+  "useTemporalPrior",
+  "waitForLowConfidenceReview",
+  "exportAll2dCandidates",
+  "saveReprojectionOverlays",
+]);
+
+const FIXED_OUTPUT_KEYS = new Set([
+  "exportTipMarkers",
+  "exportTrajectoryCsv",
+  "saveDiagnostics",
+]);
+
+const REQUIRED_BACKGROUND_KEYS = new Set([
+  "generatePlantMask",
+]);
+
 function ToggleCollection({
   items,
   parameters,
   onChange,
+  disabledKeys,
 }) {
   return (
     <div className="grid gap-3 min-[720px]:grid-cols-2">
@@ -52,12 +70,16 @@ function ToggleCollection({
         <ToggleRow
           checked={Boolean(parameters[key])}
           description={description}
+          disabled={disabledKeys?.has(key)}
           key={key}
           label={label}
-          onClick={() => onChange(
-            key,
-            !parameters[key],
-          )}
+          onClick={disabledKeys?.has(key)
+            ? undefined
+            : () => onChange(
+              key,
+              !parameters[key],
+            )
+          }
         />
       ))}
     </div>
@@ -72,6 +94,13 @@ export default function AnalysisSetupReconstructionStep({
   onManualReviewChange,
 }) {
   const selectedMethod = ANALYSIS_METHODS[method];
+  const buildsRoundModels = method === "rotating";
+  const visibleTipToggles = buildsRoundModels
+    ? TIP_TOGGLES
+    : TIP_TOGGLES.filter(([key]) => FIXED_TIP_TOGGLE_KEYS.has(key));
+  const visibleOutputToggles = buildsRoundModels
+    ? OUTPUT_TOGGLES
+    : OUTPUT_TOGGLES.filter(([key]) => FIXED_OUTPUT_KEYS.has(key));
 
   return (
     <section
@@ -88,41 +117,43 @@ export default function AnalysisSetupReconstructionStep({
         </StatusPill>
       </SubsectionHeader>
 
-      <InnerPanel>
-        <SubsectionHeader
-          title="三維模型"
-          description="一般設定只選擇品質；底層訓練參數由品質模式管理。"
-          titleMode={1}
-        />
-        <div className="grid gap-3 min-[720px]:grid-cols-2">
-          <SelectInput
-            id="analysis-reconstruction-quality"
-            label="模型品質"
-            value={parameters.qualityPreset}
-            onValueChange={(value) => onChange(
-              "qualityPreset",
-              value,
-            )}
-            options={RECONSTRUCTION_QUALITY_OPTIONS}
+      {buildsRoundModels ? (
+        <InnerPanel>
+          <SubsectionHeader
+            title="三維模型"
+            description="一般設定只選擇品質；底層訓練參數由品質模式管理。"
+            titleMode={1}
           />
-          <InformationGrid
-            items={[
-              {
-                label: "模型後端",
-                value: parameters.reconstructionBackend === "gsplat_3dgs"
-                  ? "gsplat"
-                  : "Graphdeco",
-              },
-              {
-                label: "世界座標",
-                value: "ArUco／mm",
-              },
-            ]}
-            border="none"
-            rows={2}
-          />
-        </div>
-      </InnerPanel>
+          <div className="grid gap-3 min-[720px]:grid-cols-2">
+            <SelectInput
+              id="analysis-reconstruction-quality"
+              label="模型品質"
+              value={parameters.qualityPreset}
+              onValueChange={(value) => onChange(
+                "qualityPreset",
+                value,
+              )}
+              options={RECONSTRUCTION_QUALITY_OPTIONS}
+            />
+            <InformationGrid
+              items={[
+                {
+                  label: "模型後端",
+                  value: parameters.reconstructionBackend === "gsplat_3dgs"
+                    ? "gsplat"
+                    : "Graphdeco",
+                },
+                {
+                  label: "世界座標",
+                  value: "ArUco／mm",
+                },
+              ]}
+              border="none"
+              rows={2}
+            />
+          </div>
+        </InnerPanel>
+      ) : null}
 
       <InnerPanel>
         <SubsectionHeader
@@ -130,35 +161,48 @@ export default function AnalysisSetupReconstructionStep({
           description="ArUco 世界姿態固定啟用；多視角精修失敗時保留原始姿態與警告。"
           titleMode={1}
         />
-        <div className="grid gap-3 min-[720px]:grid-cols-2">
+        <div
+          className={`grid gap-3 ${
+            buildsRoundModels ? "min-[720px]:grid-cols-2" : ""
+          }`}
+        >
           <ToggleRow
             checked
             disabled
             label="使用 ArUco 世界姿態"
             description="每張去畸變影像都必須先註冊到公制世界座標。"
           />
-          <ToggleRow
-            checked={parameters.useBundleAdjustment}
-            label="多視角姿態精修"
-            description="使用特徵對應與受 ArUco 約束的 Bundle Adjustment 精修姿態。"
-            onClick={() => onChange(
-              "useBundleAdjustment",
-              !parameters.useBundleAdjustment,
-            )}
-          />
+          {buildsRoundModels ? (
+            <ToggleRow
+              checked={parameters.useBundleAdjustment}
+              label="多視角姿態精修"
+              description="使用特徵對應與受 ArUco 約束的 Bundle Adjustment 精修姿態。"
+              onClick={() => onChange(
+                "useBundleAdjustment",
+                !parameters.useBundleAdjustment,
+              )}
+            />
+          ) : null}
         </div>
       </InnerPanel>
 
       <InnerPanel>
         <SubsectionHeader
-          title="背景處理"
-          description="模型建立前保留必要背景特徵，完成後再建立獨立的純植物輸出。"
+          title={buildsRoundModels ? "背景處理" : "影像處理"}
+          description={buildsRoundModels
+            ? "模型建立前保留必要背景特徵，完成後再建立獨立的純植物輸出。"
+            : "由各去畸變影像建立植物遮罩，協助固定雙鏡頭的尖端候選分析。"
+          }
           titleMode={1}
         />
         <ToggleCollection
-          items={BACKGROUND_TOGGLES}
+          items={buildsRoundModels
+            ? BACKGROUND_TOGGLES
+            : [BACKGROUND_TOGGLES[0]]
+          }
           parameters={parameters}
           onChange={onChange}
+          disabledKeys={REQUIRED_BACKGROUND_KEYS}
         />
       </InnerPanel>
 
@@ -210,7 +254,7 @@ export default function AnalysisSetupReconstructionStep({
           />
         </div>
         <ToggleCollection
-          items={TIP_TOGGLES}
+          items={visibleTipToggles}
           parameters={parameters}
           onChange={onChange}
         />
@@ -229,7 +273,7 @@ export default function AnalysisSetupReconstructionStep({
           titleMode={1}
         />
         <div className="grid gap-3 min-[720px]:grid-cols-2 min-[1040px]:grid-cols-3">
-          {OUTPUT_TOGGLES.map(([key, label]) => (
+          {visibleOutputToggles.map(([key, label]) => (
             <ToggleRow
               checked={Boolean(parameters[key])}
               key={key}

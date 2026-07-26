@@ -1,13 +1,13 @@
 export const ANALYSIS_METHODS = {
-  round_multiview: {
-    label: "每輪多視角三維重建",
-    description: "俯視、側視與同一輪的全部有效旋臂視角共同建立三維模型與尖端標記。",
-    version: "1.0.0",
-  },
-  top_side_tip_only: {
+  fixed: {
     label: "雙鏡頭尖端分析",
     description: "使用俯視與側視影像建立三維尖端標記與跨輪軌跡，不宣稱建立完整環繞模型。",
     version: "2.0.0",
+  },
+  rotating: {
+    label: "每輪多視角三維重建",
+    description: "俯視、側視與同一輪的全部有效旋臂視角共同建立三維模型與尖端標記。",
+    version: "1.0.0",
   },
 };
 
@@ -15,6 +15,29 @@ export const ANALYSIS_CAMERA_LABELS = {
   top: "俯視角",
   side: "側視角",
   rotating: "旋臂視角",
+};
+
+export const ARUCO_SAMPLE_STATUS_META = {
+  resolved: {
+    label: "抽樣定位成功",
+    tone: "success",
+  },
+  partial: {
+    label: "部分抽樣成功",
+    tone: "warning",
+  },
+  markers_detected: {
+    label: "已偵測，定位失敗",
+    tone: "warning",
+  },
+  markers_missing: {
+    label: "未偵測到基準",
+    tone: "warning",
+  },
+  unavailable: {
+    label: "無法抽樣",
+    tone: "error",
+  },
 };
 
 export const ANALYSIS_SETUP_STEPS = [
@@ -123,6 +146,41 @@ export const RECONSTRUCTION_QUALITY_OPTIONS = [
     label: "高品質",
   },
 ];
+
+export const RECONSTRUCTION_BACKEND_LABELS = {
+  gsplat_3dgs: "gsplat 三維 Gaussian",
+  graphdeco_3dgs: "Graphdeco 研究對照",
+};
+
+export const ANALYSIS_MODEL_STATUS_META = {
+  processing: {
+    label: "建立中",
+    tone: "warning",
+  },
+  completed: {
+    label: "已完成",
+    tone: "success",
+  },
+  postprocessing_failed: {
+    label: "植物後處理失敗",
+    tone: "warning",
+  },
+  failed: {
+    label: "建立失敗",
+    tone: "offline",
+  },
+  cancelled: {
+    label: "已取消",
+    tone: "neutral",
+  },
+};
+
+export const RECONSTRUCTION_QUALITY_LABELS = Object.fromEntries(
+  RECONSTRUCTION_QUALITY_OPTIONS.map((option) => [
+    option.value,
+    option.label,
+  ]),
+);
 
 export const ANALYSIS_PARAMETER_DEFAULTS = {
   reconstructionBackend: "gsplat_3dgs",

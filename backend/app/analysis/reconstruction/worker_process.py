@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.reconstruction.backend import (
+    unsupported_reconstruction_outputs,
+)
 from app.analysis.reconstruction.backend_registry import (
     ReconstructionBackendRegistry,
 )
@@ -59,6 +62,35 @@ def execute_job(
     readiness = backend.check_availability()
     if not readiness.get("available"):
         raise RuntimeError("；".join(readiness.get("errors") or ["模型後端不可用。"]))
+    capabilities = readiness.get("capabilities")
+    if not isinstance(capabilities, Mapping):
+        capabilities = {}
+    requested_capabilities = {
+        "scene_gaussian_export": bool(
+            parameters.get("export_gaussians", True)
+        ),
+        "plant_gaussian_export": bool(
+            parameters.get("export_plant_gaussians", False)
+        ),
+        "background_gaussian_export": bool(
+            parameters.get("export_background_gaussians", False)
+        ),
+        "scene_point_cloud_export": bool(
+            parameters.get("export_point_cloud", True)
+        ),
+        "render_preview_export": bool(
+            parameters.get("export_render_preview", True)
+        ),
+    }
+    unsupported = unsupported_reconstruction_outputs(
+        capabilities,
+        requested_capabilities,
+    )
+    if unsupported:
+        raise RuntimeError(
+            "所選模型後端不支援要求的輸出："
+            + "、".join(unsupported)
+        )
 
     def check_cancel() -> None:
         if cancel_path.exists():
@@ -97,6 +129,8 @@ def execute_job(
 
         outputs: dict[str, Any] = {
             "gaussian_model_path": None,
+            "plant_gaussian_model_path": None,
+            "background_gaussian_model_path": None,
             "point_cloud_path": None,
             "preview_paths": [],
         }
@@ -106,6 +140,40 @@ def execute_job(
                 backend.export_gaussians(
                     training_result,
                     output_dir / "model" / "gaussians.ply",
+                )
+            )
+        if bool(parameters.get("export_plant_gaussians", False)):
+            exporter = getattr(
+                backend,
+                "export_plant_gaussians",
+                None,
+            )
+            if not callable(exporter):
+                raise RuntimeError(
+                    "所選模型後端不支援輸出純植物 Gaussian 模型。"
+                )
+            progress("isolating_plant_model", 0.95, "正在輸出純植物 Gaussian 模型。")
+            outputs["plant_gaussian_model_path"] = str(
+                exporter(
+                    training_result,
+                    output_dir / "model" / "plant_gaussians.ply",
+                )
+            )
+        if bool(parameters.get("export_background_gaussians", False)):
+            exporter = getattr(
+                backend,
+                "export_background_gaussians",
+                None,
+            )
+            if not callable(exporter):
+                raise RuntimeError(
+                    "所選模型後端不支援輸出背景 Gaussian 模型。"
+                )
+            progress("isolating_plant_model", 0.955, "正在輸出背景 Gaussian 模型。")
+            outputs["background_gaussian_model_path"] = str(
+                exporter(
+                    training_result,
+                    output_dir / "model" / "background_gaussians.ply",
                 )
             )
         if bool(parameters.get("export_point_cloud", True)):
@@ -130,6 +198,14 @@ def execute_job(
         training = getattr(training_result, "training", training_result)
         metrics = dict(_result_value(training, "metrics", {}) or {})
         sparse = dict(_result_value(training_result, "sparse", {}) or {})
+        plant_export_quality = dict(
+            _result_value(
+                training_result,
+                "plant_export_quality",
+                {},
+            )
+            or {}
+        )
         checkpoint_path = _result_value(training, "checkpoint_path")
         payload = {
             "status": "completed",
@@ -140,6 +216,7 @@ def execute_job(
             "repository_url": backend.repository_url,
             "repository_commit": backend.repository_commit,
             "license": backend.license,
+            "environment": dict(readiness.get("environment") or {}),
             "source_view_ids": [
                 str(item.get("view_id"))
                 for item in job.get("selected_views", [])
@@ -157,8 +234,12 @@ def execute_job(
             "model_quality": {
                 **metrics,
                 "sparse_initialization": sparse.get("quality", {}),
+                "plant_gaussian_export": plant_export_quality,
                 "backend_readiness": readiness,
             },
+            "refined_camera_poses": list(
+                sparse.get("refined_camera_poses") or []
+            ),
             "checkpoint_path": (
                 str(checkpoint_path)
                 if checkpoint_path is not None

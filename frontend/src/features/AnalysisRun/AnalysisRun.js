@@ -4,13 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   FiRefreshCw,
-  FiX,
 } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
@@ -46,8 +44,6 @@ export default function AnalysisRun({
     load,
     performAction,
     downloadExport,
-    clearMutationError,
-    clearExportError,
     resetSocketError,
   } = useAnalysisRun({
     analysisId,
@@ -122,46 +118,34 @@ export default function AnalysisRun({
           <PanelHeader
             title="分析紀錄"
             action={(
-              <Button
-                disabled={Boolean(pendingAction)}
-                onClick={() => router.push("/analysis")}
-              >
-                <PiHouseFill
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                返回分析首頁
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  disabled={loading}
+                  onClick={() => void load({
+                    confirmMutation: mutationOutcomeUnknown,
+                  })}
+                >
+                  <FiRefreshCw
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {loading ? "讀取中…" : "重新讀取"}
+                </Button>
+                <Button
+                  disabled={Boolean(pendingAction)}
+                  onClick={() => router.push("/analysis")}
+                >
+                  <PiHouseFill
+                    className="size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  返回分析首頁
+                </Button>
+              </div>
             )}
           />
 
           <div className="grid gap-4 p-5 max-sm:p-4">
-            {loadError ? (
-              <RetryMessage
-                message={loadError}
-                onRetry={() => void load()}
-                retrying={loading}
-              />
-            ) : null}
-
-            {socketError ? (
-              <div
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-amber-200/25 bg-amber-500/10 p-3"
-                role="status"
-              >
-                <p className="m-0 text-sm font-semibold text-amber-200">
-                  {socketError.message} 分析進度仍會定時重新讀取。
-                </p>
-                <Button onClick={resetSocketError}>
-                  <FiX
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  清除提示
-                </Button>
-              </div>
-            ) : null}
-
             {loading && !effectiveRun ? (
               <div
                 className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400"
@@ -224,57 +208,6 @@ export default function AnalysisRun({
                     role="alert"
                   >
                     {effectiveRun.last_error}
-                  </div>
-                ) : null}
-
-                {mutationError ? (
-                  <div
-                    className="grid gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3"
-                    role="alert"
-                  >
-                    <p className="m-0 text-sm font-semibold text-rose-200">
-                      {mutationError}
-                    </p>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {mutationOutcomeUnknown ? (
-                        <Button
-                          disabled={loading}
-                          onClick={() => void load({ confirmMutation: true })}
-                        >
-                          <FiRefreshCw
-                            className="size-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          重新讀取並確認
-                        </Button>
-                      ) : (
-                        <Button onClick={clearMutationError}>
-                          <FiX
-                            className="size-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          清除錯誤
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-
-                {exportError ? (
-                  <div
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3"
-                    role="alert"
-                  >
-                    <p className="m-0 text-sm font-semibold text-rose-200">
-                      {exportError}
-                    </p>
-                    <Button onClick={clearExportError}>
-                      <FiX
-                        className="size-4 shrink-0"
-                        aria-hidden="true"
-                      />
-                      清除錯誤
-                    </Button>
                   </div>
                 ) : null}
 

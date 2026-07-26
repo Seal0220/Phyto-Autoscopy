@@ -56,7 +56,7 @@ test("選擇紀錄會帶入根目錄並預設排除連續擷取模式", () => {
   assert.equal(setup.recordId, "record-1");
   assert.equal(setup.recordPath, "C:/captures/record-1");
   assert.deepEqual(setup.selectedModeIds, ["AngleInterval.01"]);
-  assert.equal(setup.method, "round_multiview");
+  assert.equal(setup.method, "rotating");
 });
 
 test("分析方法只依旋臂視角旗標推導", () => {
@@ -64,13 +64,13 @@ test("分析方法只依旋臂視角旗標推導", () => {
     analysisMethodFromCameraSources({
       rotating: { enabled: true },
     }),
-    "round_multiview",
+    "rotating",
   );
   assert.equal(
     analysisMethodFromCameraSources({
       rotating: { enabled: false },
     }),
-    "top_side_tip_only",
+    "fixed",
   );
 });
 
@@ -104,7 +104,7 @@ test("建立 payload 不包含舊影格範圍、偏移或 ROI", () => {
   const payload = buildAnalysisCreatePayload(readySetup());
   const serialized = JSON.stringify(payload);
 
-  assert.equal(payload.method, "round_multiview");
+  assert.equal(payload.method, "rotating");
   assert.deepEqual(payload.mode_ids, ["AngleInterval.01"]);
   assert.equal(payload.camera_sources.top.enabled, true);
   assert.equal(payload.camera_sources.side.enabled, true);

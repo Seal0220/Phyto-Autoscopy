@@ -153,7 +153,7 @@ GOAL-02 將在現有系統上加入「分析」區域。
 第一版分析方法固定為：
 
 ```text
-top_side
+fixed
 ```
 
 其技術內容必須對應論文方法，不自行更換為其他追蹤方式。
@@ -1924,7 +1924,7 @@ backend/config/calibration.json
 ```json
 {
   "method": {
-    "name": "top_side",
+    "name": "fixed",
     "reference": "Ruiz-Melero et al. 2024"
   },
   "synchronization": {

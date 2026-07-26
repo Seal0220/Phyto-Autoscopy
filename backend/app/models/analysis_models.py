@@ -52,8 +52,8 @@ AnalysisStage = Literal[
 ]
 
 NewAnalysisMethod = Literal[
-    "round_multiview",
-    "top_side_tip_only",
+    "fixed",
+    "rotating",
 ]
 
 CameraIdentifier = Literal["top", "side", "rotating"]
@@ -70,7 +70,7 @@ class AnalysisCreateRequest(BaseModel):
 
     record_id: str = Field(min_length=1, max_length=160)
     mode_ids: list[str] = Field(default_factory=list, max_length=20)
-    method: NewAnalysisMethod = "top_side_tip_only"
+    method: NewAnalysisMethod = "fixed"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource] = Field(
         default_factory=lambda: {
             "top": AnalysisCameraSource(enabled=True),
@@ -92,7 +92,7 @@ class AnalysisCreateRequest(BaseModel):
             raise ValueError("相機來源包含不支援的識別碼。")
         required = (
             ("top", "side", "rotating")
-            if self.method == "round_multiview"
+            if self.method == "rotating"
             else ("top", "side")
         )
         missing = [
@@ -104,7 +104,7 @@ class AnalysisCreateRequest(BaseModel):
         if missing:
             label = (
                 "每輪多視角三維重建"
-                if self.method == "round_multiview"
+                if self.method == "rotating"
                 else "雙鏡頭尖端分析"
             )
             raise ValueError(
@@ -118,7 +118,7 @@ class AnalysisSourcePreviewRequest(BaseModel):
 
     record_id: str = Field(min_length=1, max_length=160)
     mode_ids: list[str] = Field(default_factory=list, max_length=20)
-    method: NewAnalysisMethod = "top_side_tip_only"
+    method: NewAnalysisMethod = "fixed"
     camera_sources: dict[CameraIdentifier, AnalysisCameraSource]
 
 
@@ -126,6 +126,7 @@ class AnalysisRoundReadiness(BaseModel):
     round_key: str
     mode_id: str
     round_id: str
+    snapshot_id: str | None = None
     status: str
     view_count: int = 0
     top_view_count: int = 0
@@ -142,9 +143,6 @@ class AnalysisSourcePreview(BaseModel):
     camera_frame_counts: dict[str, int] = Field(default_factory=dict)
     camera_resolutions: dict[str, tuple[int, int]] = Field(default_factory=dict)
     camera_directories: dict[str, str] = Field(default_factory=dict)
-    pairable_frame_count: int = 0
-    rotating_pairable_frame_count: int = 0
-    total_frame_count: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     round_count: int = 0
@@ -218,8 +216,6 @@ class AnalysisSourceSummary(BaseModel):
     top_frame_count: int
     side_frame_count: int
     rotating_frame_count: int = 0
-    pairable_frame_count: int
-    total_frame_count: int
     total_image_count: int = Field(default=0, ge=0)
     camera_resolutions: dict[str, tuple[int, int]] = Field(default_factory=dict)
     camera_directories: dict[str, str] = Field(default_factory=dict)
@@ -236,6 +232,7 @@ class AnalysisRound(BaseModel):
     record_id: str
     mode_id: str
     round_id: str
+    snapshot_id: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
     duration_seconds: float | None = None
@@ -286,6 +283,9 @@ class CameraPoseResult(BaseModel):
     refinement_reprojection_error_px: float | None = None
     pose_source: str
     valid: bool
+    fixed_pose_translation_deviation_mm: float | None = None
+    fixed_pose_rotation_deviation_deg: float | None = None
+    quality_warnings: list[str] = Field(default_factory=list)
     failure_reason: str | None = None
 
 
@@ -295,11 +295,18 @@ class RoundModelResult(BaseModel):
     model_id: str
     backend: str
     backend_version: str
+    repository_url: str | None = None
+    repository_commit: str | None = None
+    license: str | None = None
+    environment: dict[str, Any] = Field(default_factory=dict)
     status: str
     source_view_ids: list[str] = Field(default_factory=list)
     model_path: str | None = None
+    plant_model_path: str | None = None
+    background_model_path: str | None = None
     point_cloud_path: str | None = None
     plant_point_cloud_path: str | None = None
+    background_point_cloud_path: str | None = None
     skeleton_path: str | None = None
     preview_paths: list[str] = Field(default_factory=list)
     gaussian_count: int | None = None
@@ -355,6 +362,7 @@ class TipTrajectoryPoint(BaseModel):
     mode_id: str
     round_key: str
     round_id: str
+    snapshot_id: str | None = None
     point_index: int = Field(ge=0)
     timestamp: str | None = None
     x_mm: float | None = None

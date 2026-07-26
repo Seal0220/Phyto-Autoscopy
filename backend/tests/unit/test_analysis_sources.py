@@ -53,17 +53,17 @@ def test_analysis_request_uses_only_formal_methods_and_selected_modes() -> None:
     request = AnalysisCreateRequest(
         record_id="record-1",
         mode_ids=["AngleInterval.01"],
-        method="round_multiview",
+        method="rotating",
         camera_sources=sources,
     )
 
-    assert request.method == "round_multiview"
+    assert request.method == "rotating"
     assert request.mode_ids == ["AngleInterval.01"]
     with pytest.raises(ValidationError):
         AnalysisCreateRequest(
             record_id="record-1",
             mode_ids=["AngleInterval.01"],
-            method="top_side",
+            method="legacy",
             camera_sources=sources,
         )
 
@@ -116,7 +116,7 @@ def test_round_grouping_preserves_all_rotating_views(tmp_path) -> None:
         mode_ids_by_folder={
             "AngleInterval.01": "AngleInterval.01",
         },
-        method="round_multiview",
+        method="rotating",
         enabled_camera_ids=("top", "side", "rotating"),
     )
 
@@ -150,7 +150,7 @@ def test_same_round_number_in_different_modes_never_merges(tmp_path) -> None:
             "AngleInterval.01": "AngleInterval.01",
             "SpecificAngles.01": "SpecificAngles.01",
         },
-        method="top_side_tip_only",
+        method="fixed",
         enabled_camera_ids=("top",),
     )
 

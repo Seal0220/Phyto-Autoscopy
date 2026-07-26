@@ -438,7 +438,7 @@ export default function useAnalysisSetup({
     const run = normalizeCreatedAnalysisRun(result, {
       record_id: setup.recordId,
       method_name: setup.method,
-      method_version: setup.method === "round_multiview" ? "1.0.0" : "2.0.0",
+      method_version: setup.method === "rotating" ? "1.0.0" : "2.0.0",
       status: "draft",
       progress: 0,
       current_frame: 0,

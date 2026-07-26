@@ -8,15 +8,15 @@ from app.analysis.record_validator import (
 )
 
 ANALYSIS_METHODS = {
-    "round_multiview": {
-        "name": "round_multiview",
-        "version": "1.0.0",
-        "label": "每輪多視角三維重建",
-    },
-    "top_side_tip_only": {
-        "name": "top_side_tip_only",
+    "fixed": {
+        "name": "fixed",
         "version": "2.0.0",
         "label": "雙鏡頭尖端分析",
+    },
+    "rotating": {
+        "name": "rotating",
+        "version": "1.0.0",
+        "label": "每輪多視角三維重建",
     },
 }
 

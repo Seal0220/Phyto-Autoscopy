@@ -15,11 +15,20 @@ def _adapt_camera_matrix(
 ) -> np.ndarray:
     calibration_width, calibration_height = calibration_size
     analysis_width, analysis_height = analysis_size
+    if min(
+        calibration_width,
+        calibration_height,
+        analysis_width,
+        analysis_height,
+    ) <= 0:
+        raise ValueError("內參與分析影像解析度必須大於零。")
     if analysis_width * calibration_height != analysis_height * calibration_width:
         raise ValueError("分析影像與內參校正影像的長寬比不相容。")
     scale_x = analysis_width / calibration_width
     scale_y = analysis_height / calibration_height
     matrix = np.asarray(camera_matrix, dtype=np.float64).copy()
+    if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
+        raise ValueError("相機內參矩陣格式無效。")
     matrix[0, 0] *= scale_x
     matrix[0, 2] *= scale_x
     matrix[1, 1] *= scale_y
@@ -65,6 +74,9 @@ def build_intrinsics_snapshot(
         "calibration_image_height": intrinsics.height,
         "analysis_image_width": width,
         "analysis_image_height": height,
+        "resolution_adaptation": "uniform_scale",
+        "resolution_scale_x": float(width / intrinsics.width),
+        "resolution_scale_y": float(height / intrinsics.height),
         "adapted_camera_matrix": adapted.astype(float).tolist(),
         "undistorted_camera_matrix": undistorted.astype(float).tolist(),
         "calibration_reprojection_error_px": intrinsics.reprojection_error_px,

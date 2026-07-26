@@ -18,10 +18,53 @@ class PlantIsolationView:
 @dataclass(frozen=True, slots=True)
 class PlantIsolationResult:
     output_path: Path
+    background_output_path: Path | None
     scene_point_count: int
     plant_point_count: int
+    background_point_count: int
     supporting_view_count: int
     quality: dict[str, float | int | str]
+
+
+@dataclass(frozen=True, slots=True)
+class PlantPointClassification:
+    plant_mask: np.ndarray
+    background_mask: np.ndarray
+    quality: dict[str, float | int | str]
+
+
+def plant_isolation_views_from_dataset(
+    dataset: object,
+) -> list[PlantIsolationView]:
+    views = []
+    for view in getattr(dataset, "views", ()):
+        plant_mask_path = getattr(view, "plant_mask_path", None)
+        if plant_mask_path is None:
+            continue
+        camera_matrix = np.asarray(
+            getattr(view, "camera_matrix", None),
+            dtype=np.float64,
+        )
+        world_to_camera = np.asarray(
+            getattr(view, "world_to_camera_matrix", None),
+            dtype=np.float64,
+        )
+        if camera_matrix.shape != (3, 3):
+            raise ValueError("植物模型相機內參格式無效。")
+        if world_to_camera.shape != (4, 4):
+            raise ValueError("植物模型相機姿態格式無效。")
+        views.append(
+            PlantIsolationView(
+                view_id=str(getattr(view, "view_id", "")),
+                projection_matrix=(
+                    camera_matrix @ world_to_camera[:3, :4]
+                ),
+                plant_mask_path=Path(plant_mask_path),
+            )
+        )
+    if not views:
+        raise ValueError("模型資料集沒有植物遮罩，無法分離植物與背景。")
+    return views
 
 
 def _read_mask(path: Path) -> np.ndarray:
@@ -69,11 +112,81 @@ def _projection_support(
     return support, visibility
 
 
+def classify_plant_points(
+    points: np.ndarray,
+    views: list[PlantIsolationView],
+    *,
+    platform_height_mm: float = 0.0,
+    maximum_height_mm: float | None = None,
+    minimum_plant_point_count: int = 20,
+) -> PlantPointClassification:
+    """Classify world-space points with spatial and multi-view mask evidence."""
+
+    coordinates = np.asarray(points, dtype=np.float64)
+    if coordinates.ndim != 2 or coordinates.shape[1] != 3:
+        raise ValueError("植物模型點座標格式無效。")
+    if len(coordinates) < minimum_plant_point_count:
+        raise ValueError("三維模型點數不足，無法分離植物與背景。")
+    if not views:
+        raise ValueError("缺少植物遮罩視角，無法分離植物與背景。")
+
+    finite = np.isfinite(coordinates).all(axis=1)
+    support, visibility = _projection_support(coordinates, views)
+    minimum_support = max(1, int(np.ceil(len(views) * 0.25)))
+    spatial = finite & (
+        coordinates[:, 2] >= float(platform_height_mm) - 5.0
+    )
+    if maximum_height_mm is not None:
+        spatial &= coordinates[:, 2] <= float(maximum_height_mm)
+
+    radial = np.linalg.norm(coordinates[:, :2], axis=1)
+    finite_radius = radial[finite & np.isfinite(radial)]
+    radial_limit = None
+    if finite_radius.size:
+        radial_limit = max(
+            float(np.percentile(finite_radius, 92)),
+            25.0,
+        )
+        spatial &= radial <= radial_limit
+
+    plant = spatial & (support >= minimum_support) & (visibility > 0)
+    if np.count_nonzero(plant) < minimum_plant_point_count:
+        plant = spatial & (support > 0) & (visibility > 0)
+    plant_count = int(np.count_nonzero(plant))
+    if plant_count < minimum_plant_point_count:
+        raise ValueError("植物語意與空間證據不足，無法分離植物模型。")
+
+    background = finite & ~plant
+    background_count = int(np.count_nonzero(background))
+    return PlantPointClassification(
+        plant_mask=plant,
+        background_mask=background,
+        quality={
+            "scene_point_count": int(np.count_nonzero(finite)),
+            "plant_point_count": plant_count,
+            "background_point_count": background_count,
+            "supporting_view_count": len(views),
+            "minimum_mask_support": minimum_support,
+            "plant_ratio": float(
+                plant_count / max(int(np.count_nonzero(finite)), 1)
+            ),
+            "radial_limit_mm": (
+                float(radial_limit)
+                if radial_limit is not None
+                else "unavailable"
+            ),
+            "coordinate_space": "aruco_world_mm",
+            "classification_evidence": "spatial+multiview_mask",
+        },
+    )
+
+
 def isolate_plant_point_cloud(
     scene_point_cloud_path: Path,
     output_path: Path,
     views: list[PlantIsolationView],
     *,
+    background_output_path: Path | None = None,
     platform_height_mm: float = 0.0,
     maximum_height_mm: float | None = None,
 ) -> PlantIsolationResult:
@@ -92,22 +205,14 @@ def isolate_plant_point_cloud(
     points = points[finite]
     colors = colors[finite] if len(colors) == len(finite) else np.empty((0, 3))
 
-    support, visibility = _projection_support(points, views)
-    visible_views = max(len(views), 1)
-    minimum_support = max(1, int(np.ceil(visible_views * 0.25)))
-    spatial = points[:, 2] >= float(platform_height_mm) - 5.0
-    if maximum_height_mm is not None:
-        spatial &= points[:, 2] <= float(maximum_height_mm)
-    radial = np.linalg.norm(points[:, :2], axis=1)
-    finite_radius = radial[np.isfinite(radial)]
-    if finite_radius.size:
-        radial_limit = max(float(np.percentile(finite_radius, 92)), 25.0)
-        spatial &= radial <= radial_limit
-    retained = spatial & (support >= minimum_support) & (visibility > 0)
-    if np.count_nonzero(retained) < 20:
-        retained = spatial & (support > 0) & (visibility > 0)
-    if np.count_nonzero(retained) < 20:
-        raise ValueError("植物語意與空間證據不足，無法建立純植物點雲。")
+    classification = classify_plant_points(
+        points,
+        views,
+        platform_height_mm=platform_height_mm,
+        maximum_height_mm=maximum_height_mm,
+    )
+    retained = classification.plant_mask
+    background = classification.background_mask
 
     cloud = o3d.geometry.PointCloud()
     cloud.points = o3d.utility.Vector3dVector(points[retained])
@@ -146,13 +251,51 @@ def isolate_plant_point_cloud(
     if not o3d.io.write_point_cloud(str(temporary), cloud, write_ascii=False):
         raise OSError("純植物點雲無法寫入。")
     temporary.replace(output_path)
+
+    written_background_path = None
+    background_point_count = int(np.count_nonzero(background))
+    if background_output_path is not None:
+        if background_point_count == 0:
+            raise ValueError("背景分類沒有可輸出的有效點。")
+        background_cloud = o3d.geometry.PointCloud()
+        background_cloud.points = o3d.utility.Vector3dVector(
+            points[background]
+        )
+        if len(colors) == len(points):
+            background_cloud.colors = o3d.utility.Vector3dVector(
+                colors[background]
+            )
+        background_cloud = background_cloud.voxel_down_sample(
+            voxel_size=0.75
+        )
+        background_output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        background_temporary = background_output_path.with_suffix(
+            background_output_path.suffix + ".tmp.ply"
+        )
+        if not o3d.io.write_point_cloud(
+            str(background_temporary),
+            background_cloud,
+            write_ascii=False,
+        ):
+            raise OSError("背景點雲無法寫入。")
+        background_temporary.replace(background_output_path)
+        written_background_path = background_output_path
+        background_point_count = len(background_cloud.points)
+
     return PlantIsolationResult(
         output_path=output_path,
+        background_output_path=written_background_path,
         scene_point_count=int(len(points)),
         plant_point_count=int(len(filtered)),
+        background_point_count=int(background_point_count),
         supporting_view_count=len(views),
         quality={
-            "minimum_mask_support": minimum_support,
+            **classification.quality,
+            "final_plant_point_count": int(len(filtered)),
+            "final_background_point_count": int(background_point_count),
             "retained_ratio": float(len(filtered) / max(len(points), 1)),
             "coordinate_space": "aruco_world_mm",
             "isolation_evidence": "spatial+multiview_mask+connectivity",
@@ -190,6 +333,9 @@ def point_cloud_support(
 __all__ = [
     "PlantIsolationResult",
     "PlantIsolationView",
+    "PlantPointClassification",
+    "classify_plant_points",
     "isolate_plant_point_cloud",
+    "plant_isolation_views_from_dataset",
     "point_cloud_support",
 ]

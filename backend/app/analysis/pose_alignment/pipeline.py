@@ -225,6 +225,7 @@ def _quality_summary(
         sfm_image_count=counts["sfm"],
         sfm_registered_image_count=sfm_registered_count,
         motor_prior_image_count=counts["motor_prior"],
+        interpolated_image_count=counts["interpolated"],
         average_aruco_reprojection_error_px=(
             float(np.mean(aruco_errors)) if aruco_errors else None
         ),
@@ -295,6 +296,7 @@ def align_dataset_camera_poses(
     *,
     required_camera_ids: Sequence[str] = ("top", "side"),
     debug_directory: Path | None = None,
+    use_feature_refinement: bool = True,
     stage_callback: Callable[[str, float], None] | None = None,
     cancel_check: Callable[[], None] | None = None,
 ) -> PoseAlignmentResult:
@@ -374,7 +376,11 @@ def align_dataset_camera_poses(
         stage_callback("refining_camera_poses", 0.04)
     if cancel_check is not None:
         cancel_check()
-    if rotating_intrinsics is not None and grouped_poses["rotating"]:
+    if (
+        use_feature_refinement
+        and rotating_intrinsics is not None
+        and grouped_poses["rotating"]
+    ):
         grouped_poses["rotating"] = refine_rotating_results(
             grouped_frames["rotating"],
             grouped_poses["rotating"],
@@ -382,6 +388,7 @@ def align_dataset_camera_poses(
             int(_value(settings, "minimum_sfm_matches")),
             cancel_check,
         )
+    if rotating_intrinsics is not None and grouped_poses["rotating"]:
         grouped_poses["rotating"] = fill_rotating_results(
             grouped_frames["rotating"],
             grouped_poses["rotating"],

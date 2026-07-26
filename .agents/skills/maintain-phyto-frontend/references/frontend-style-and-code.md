@@ -671,12 +671,12 @@ Render the `捕捉配置` heading, read-only Record root, Record summary, immuta
 
 Render the three canonical sources as `top`/`俯視角`, `side`/`側視角`, and `rotating`/`旋臂視角`. Each source row owns its enabled toggle and path input, then shows scan-derived image count, resolution, pairing state, and safe Traditional Chinese errors. A path change invalidates the previous preview. Do not let the user proceed until the current paths have been scanned, enabled files are readable and resolution-consistent, and pairing is valid.
 
-Treat camera toggles as Boolean analysis flags. `top` and `side` are mandatory, permanently enabled, disabled controls in the UI, and are forced to `enabled: true` again at the payload boundary. `rotating` defaults to enabled after initialization and every Record selection, but remains user-adjustable. Changing the rotating flag preserves the Record path, invalidates the previous preview, cancels any stale scan, and immediately scans again with the newly inferred method. Changing a directory path has the same stale-preview and cancellation requirements. Infer `top_side_rotating` when `rotating` is enabled and otherwise use `top_side`, rather than presenting separate method-selection buttons.
+Treat camera toggles as Boolean analysis flags. `top` and `side` are mandatory, permanently enabled, disabled controls in the UI, and are forced to `enabled: true` again at the payload boundary. `rotating` defaults to enabled after initialization and every Record selection, but remains user-adjustable. Changing the rotating flag preserves the Record path, invalidates the previous preview, cancels any stale scan, and immediately scans again with the newly inferred method. Infer `rotating` when the rotating camera is enabled and otherwise use `fixed`, rather than presenting separate method-selection buttons.
 
-The only method values and labels are:
+The only method values are:
 
-- `top_side`: `頂+側`; requires enabled `top` and `side` sources.
-- `top_side_rotating`: `頂+側+環繞`; requires all three sources, at least one valid rotating angle, rotating-containing frame groups, and a calibration profile with rotating geometry.
+- `fixed`: fixed top-and-side tip analysis; requires enabled `top` and `side` sources.
+- `rotating`: Round-based multi-view reconstruction; requires all three sources, at least one valid rotating angle, valid Round grouping, camera intrinsics, an ArUco world reference, and an available reconstruction backend.
 
 Rotating angles may come from Record metadata, canonical filenames, or an imported angle CSV. Present their availability as source-validation state rather than as another analysis mode. Missing or invalid rotating observations must be explained before submission; during result rendering, a rejected rotating observation falls back to the `top+side` baseline for that frame instead of failing the complete run.
 
@@ -688,7 +688,7 @@ Nominal CM1.3M30M12Q specifications such as AR0130, 2.1 mm lens, or 126° diagon
 
 The analysis request boundary sends `record_id`, selected `mode_ids`, `method`, `camera_sources.top|side|rotating` entries shaped as `{ enabled, path }`, and `calibration_id`. A manually entered source may send a null `record_id` and an empty `mode_ids` list. Never derive separate downstream pipelines from how paths were populated: both Record-filled and manual paths become the same immutable input manifest and use the same scan, pairing, analysis, and result flow.
 
-Each analysis owns one result page and one chart set. Show the `top+side` baseline and, for `top_side_rotating`, the refined three-view series on the same visualizations. Preserve baseline/refined 3D coordinates, per-camera reprojection errors, rotating angle, and whether the rotating observation was accepted so the refinement remains auditable.
+Each analysis owns one result page and one chart set. `fixed` displays the fixed-camera tip-marker trajectory. `rotating` displays each Round model, plant point cloud, skeleton, three-dimensional tip marker, reprojections, and the cross-Round trajectory. Preserve per-view pose and reprojection quality, rotating angles, selected reconstruction views, model quality, and tip-marker provenance so every result remains auditable.
 
 ## 8. Interaction and motion
 

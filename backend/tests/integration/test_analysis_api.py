@@ -33,7 +33,7 @@ def test_reconstruct_api_accepts_explicit_review_completion_state(
             return AnalysisRun(
                 analysis_id=analysis_id,
                 record_id="record-test",
-                method_name="round_multiview",
+                method_name="rotating",
                 method_version="1.0.0",
                 git_commit="test",
                 parameters={},

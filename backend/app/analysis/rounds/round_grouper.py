@@ -113,7 +113,10 @@ def group_analysis_rounds(
     """
 
     hashes = image_hashes or {}
-    grouped: dict[tuple[str, str], list[tuple[CaptureFrame, str | None]]] = (
+    grouped: dict[
+        tuple[str, str, str | None],
+        list[tuple[CaptureFrame, str | None]],
+    ] = (
         defaultdict(list)
     )
     errors: list[str] = []
@@ -122,28 +125,53 @@ def group_analysis_rounds(
     for frame in frames:
         location = _capture_location(frame.relative_path)
         if location is None:
-            errors.append(
+            warnings.append(
                 f"影像不在正式 Mode／Round／Snapshot 目錄中：{frame.relative_path}"
             )
             continue
         mode_folder, round_id, snapshot_id = location
         mode_id = mode_ids_by_folder.get(mode_folder)
         if mode_id is None:
-            errors.append(f"影像所屬擷取模式不存在：{mode_folder}")
+            warnings.append(f"影像所屬擷取模式不存在：{mode_folder}")
             continue
-        grouped[(mode_id, round_id)].append((frame, snapshot_id))
+        split_by_snapshot = method == "fixed" or round_id == "round.00"
+        if split_by_snapshot and snapshot_id is None:
+            warnings.append(
+                f"固定時間點影像缺少 Snapshot 目錄：{frame.relative_path}"
+            )
+            continue
+        analysis_snapshot_id = snapshot_id if split_by_snapshot else None
+        grouped[(mode_id, round_id, analysis_snapshot_id)].append(
+            (frame, snapshot_id)
+        )
 
     rounds: list[AnalysisRound] = []
     views: list[AnalysisView] = []
     readiness: list[AnalysisRoundReadiness] = []
     required_cameras = {"top", "side"}
-    if method == "round_multiview":
+    if method == "rotating":
         required_cameras.add("rotating")
     required_cameras.intersection_update(enabled_camera_ids)
 
-    for (mode_id, round_id), entries in sorted(grouped.items()):
+    for (
+        mode_id,
+        round_id,
+        analysis_snapshot_id,
+    ), entries in sorted(
+        grouped.items(),
+        key=lambda item: tuple(value or "" for value in item[0]),
+    ):
         round_frames = [entry[0] for entry in entries]
-        round_key = f"{record_id}:{mode_id}:{round_id}"
+        round_key = ":".join(
+            value
+            for value in (
+                record_id,
+                mode_id,
+                round_id,
+                analysis_snapshot_id,
+            )
+            if value
+        )
         counts = {
             camera_id: sum(frame.camera_id == camera_id for frame in round_frames)
             for camera_id in ("top", "side", "rotating")
@@ -158,10 +186,13 @@ def group_analysis_rounds(
             if camera_id in required_cameras and counts[camera_id] == 0
         ]
         round_warnings: list[str] = []
-        status = "ready" if not round_errors else "incomplete"
-        if method == "round_multiview" and round_id == "round.00":
-            if not round_errors:
-                status = "ready_tip_only"
+        if round_errors:
+            status = "incomplete"
+        elif method == "fixed" or round_id == "round.00":
+            status = "ready_tip_only"
+        else:
+            status = "ready"
+        if method == "rotating" and round_id == "round.00":
             round_warnings.append(
                 "連續模式 round.00 不建立完整環繞模型，只執行尖端標記分析。"
             )
@@ -180,6 +211,7 @@ def group_analysis_rounds(
             round_key=round_key,
             mode_id=mode_id,
             round_id=round_id,
+            snapshot_id=analysis_snapshot_id,
             status=status,
             view_count=len(round_frames),
             top_view_count=counts["top"],
@@ -202,6 +234,7 @@ def group_analysis_rounds(
                 record_id=record_id,
                 mode_id=mode_id,
                 round_id=round_id,
+                snapshot_id=analysis_snapshot_id,
                 started_at=started_at,
                 ended_at=ended_at,
                 duration_seconds=duration_seconds,

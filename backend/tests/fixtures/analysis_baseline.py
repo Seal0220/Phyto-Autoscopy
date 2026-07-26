@@ -250,7 +250,7 @@ def create_analysis_baseline(root: Path) -> dict:
             path.relative_to(record_path).as_posix(): _sha256(path)
             for path in raw_paths
         },
-        "method_scope": "top_side",
+        "method_scope": "fixed",
         "research_disclaimer": (
             "此資料集僅驗證測量管線，不推論植物是否具有意識。"
         ),

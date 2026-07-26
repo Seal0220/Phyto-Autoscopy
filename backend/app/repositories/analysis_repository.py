@@ -31,8 +31,8 @@ def _json_load(value: str | None, fallback):
 
 
 SUPPORTED_ANALYSIS_METHODS = (
-    "round_multiview",
-    "top_side_tip_only",
+    "fixed",
+    "rotating",
 )
 
 
@@ -265,6 +265,21 @@ class AnalysisRepository:
                 updated_at,
                 analysis_id,
             ),
+        )
+
+    def update_average_reprojection_error(
+        self,
+        analysis_id: str,
+        value: float | None,
+        updated_at: str,
+    ) -> None:
+        self.database.execute(
+            """
+            UPDATE analysis_runs
+            SET average_reprojection_error_px=?, updated_at=?
+            WHERE analysis_id=?
+            """,
+            (value, updated_at, analysis_id),
         )
 
     def update_pose_alignment(

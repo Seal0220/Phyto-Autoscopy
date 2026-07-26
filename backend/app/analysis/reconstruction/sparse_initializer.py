@@ -6,7 +6,13 @@ from typing import Callable
 import numpy as np
 
 from app.analysis.export.json_export import write_json_atomic
-from app.analysis.reconstruction.dataset_adapter import PreparedRoundDataset
+from app.analysis.reconstruction.constrained_bundle_adjustment import (
+    refine_sparse_camera_poses,
+)
+from app.analysis.reconstruction.dataset_adapter import (
+    PreparedRoundDataset,
+    update_round_dataset_pose_metadata,
+)
 
 
 class SparseInitializationError(RuntimeError):
@@ -28,6 +34,7 @@ def initialize_sparse_geometry(
     dataset: PreparedRoundDataset,
     *,
     requested_device: str,
+    use_constrained_bundle_adjustment: bool = True,
     progress_callback: Callable[[str, float], None] | None = None,
     cancel_check: Callable[[], None] | None = None,
 ) -> dict:
@@ -124,9 +131,8 @@ def initialize_sparse_geometry(
         options=options,
         refine_intrinsics=False,
     )
-    progress("initializing_round_geometry", 0.95)
 
-    maximum_pose_difference = 0.0
+    triangulation_pose_difference = 0.0
     for image_id, view in enumerate(dataset.views, start=1):
         stored = np.asarray(
             reconstruction.image(image_id).cam_from_world().matrix(),
@@ -140,8 +146,11 @@ def initialize_sparse_geometry(
                 )
             )
         )
-        maximum_pose_difference = max(maximum_pose_difference, difference)
-    if maximum_pose_difference > 1e-6:
+        triangulation_pose_difference = max(
+            triangulation_pose_difference,
+            difference,
+        )
+    if triangulation_pose_difference > 1e-6:
         raise SparseInitializationError(
             "PyCOLMAP 改變了固化的 ArUco 世界姿態，已拒絕該結果。"
         )
@@ -151,6 +160,36 @@ def initialize_sparse_geometry(
         raise SparseInitializationError(
             "多視角特徵不足，無法建立可供模型初始化的稀疏點。"
         )
+    bundle_adjustment_quality: dict = {
+        "enabled": bool(use_constrained_bundle_adjustment),
+        "status": "disabled",
+    }
+    refined_camera_poses: list[dict] = []
+    if use_constrained_bundle_adjustment:
+        progress("refining_camera_poses", 0.86)
+        try:
+            refinement = refine_sparse_camera_poses(
+                pycolmap,
+                reconstruction,
+                dataset,
+            )
+            reconstruction = refinement.reconstruction
+            bundle_adjustment_quality = refinement.quality
+            refined_camera_poses = refinement.refined_camera_poses
+        except Exception as error:
+            bundle_adjustment_quality = {
+                "enabled": True,
+                "status": "failed",
+                "reason": str(error),
+                "fallback": "使用 ArUco 固化姿態繼續建立模型。",
+            }
+    update_round_dataset_pose_metadata(
+        dataset,
+        bundle_adjustment_quality,
+        refined_camera_poses,
+    )
+    reconstruction.write(dataset.sparse_dir)
+    progress("initializing_round_geometry", 0.95)
     sparse_point_cloud = dataset.sparse_dir.parent / "sparse_points.ply"
     reconstruction.export_PLY(sparse_point_cloud)
     quality = {
@@ -163,9 +202,11 @@ def initialize_sparse_geometry(
         "mean_reprojection_error_px": float(
             reconstruction.compute_mean_reprojection_error()
         ),
-        "maximum_pose_difference": maximum_pose_difference,
+        "triangulation_pose_difference": triangulation_pose_difference,
         "coordinate_unit": "millimetre",
-        "camera_poses_fixed": True,
+        "fixed_camera_poses_constant": True,
+        "camera_intrinsics_constant": True,
+        "bundle_adjustment": bundle_adjustment_quality,
     }
     write_json_atomic(
         dataset.sparse_dir.parent / "quality.json",
@@ -176,4 +217,5 @@ def initialize_sparse_geometry(
         "reconstruction_path": str(dataset.sparse_dir),
         "point_cloud_path": str(sparse_point_cloud),
         "quality": quality,
+        "refined_camera_poses": refined_camera_poses,
     }

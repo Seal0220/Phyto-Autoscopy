@@ -7,6 +7,9 @@ import { StatusPill } from "@/components/panels/Panel";
 import {
   ANALYSIS_CAMERA_LABELS,
   ANALYSIS_METHODS,
+  ARUCO_SAMPLE_STATUS_META,
+  RECONSTRUCTION_BACKEND_LABELS,
+  RECONSTRUCTION_QUALITY_LABELS,
 } from "../analysisConfig";
 import { analysisStatusMeta } from "../lib/analysisUtils";
 
@@ -32,9 +35,16 @@ export default function AnalysisSetupSummaryStep({
     ? analysisStatusMeta(createdRun.status)
     : null;
   const method = ANALYSIS_METHODS[setup.method];
+  const buildsRoundModels = setup.method === "rotating";
   const preview = setup.sourcePreview || {};
   const intrinsics = preview.intrinsics_readiness || {};
   const aruco = preview.aruco_readiness || {};
+  const arucoSampleStatus = ARUCO_SAMPLE_STATUS_META[
+    aruco.sample_status
+  ] || {
+    label: "尚未抽樣",
+    tone: "neutral",
+  };
   const backend = preview.backend_readiness || {};
   const selectedModes = setup.availableModes.filter(
     (mode) => setup.selectedModeIds.includes(mode.id),
@@ -51,7 +61,10 @@ export default function AnalysisSetupSummaryStep({
       <SubsectionHeader
         titleId="analysis-summary-step-title"
         title="確認並建立"
-        description="建立前確認 Round、相機內參、ArUco 基準、模型後端與預期輸出。"
+        description={buildsRoundModels
+          ? "建立前確認 Round、相機內參、ArUco 基準、模型後端與預期輸出。"
+          : "建立前確認 Round、相機內參、ArUco 基準與尖端標記輸出。"
+        }
       >
         {status ? (
           <StatusPill tone={status.tone}>
@@ -183,7 +196,11 @@ export default function AnalysisSetupSummaryStep({
         </div>
       </InnerPanel>
 
-      <div className="grid gap-4 min-[900px]:grid-cols-2">
+      <div
+        className={`grid gap-4 ${
+          buildsRoundModels ? "min-[900px]:grid-cols-2" : ""
+        }`}
+      >
         <InnerPanel>
           <SubsectionHeader
             title="ArUco 基準"
@@ -214,51 +231,71 @@ export default function AnalysisSetupSummaryStep({
                 value: displayNumber(aruco.marker_size_mm, " mm"),
               },
               {
+                label: "抽樣偵測",
+                value: arucoSampleStatus.label,
+                tone: arucoSampleStatus.tone,
+              },
+              {
+                label: "有效抽樣姿態",
+                value: aruco.sampled_image_count
+                  ? `${aruco.resolved_sample_count || 0} / ${
+                    aruco.sampled_image_count
+                  } 張`
+                  : "尚無資料",
+              },
+              {
                 label: "世界單位",
                 value: aruco.unit || "mm",
               },
             ]}
-            rows={3}
+            rows={4}
           />
         </InnerPanel>
 
-        <InnerPanel>
-          <SubsectionHeader
-            title="模型後端"
-            description="建立前會再次檢查 CUDA、PyCOLMAP、Open3D 與模型後端。"
-            titleMode={1}
-          />
-          <InformationGrid
-            items={[
-              {
-                label: "後端",
-                value: backend.backend || setup.parameters.reconstructionBackend,
-              },
-              {
-                label: "狀態",
-                value: backend.available ? "可用" : "不可用",
-                tone: backend.available ? "success" : "error",
-              },
-              {
-                label: "GPU",
-                value: backend.environment?.gpu_name || "尚無資料",
-              },
-              {
-                label: "PyTorch",
-                value: backend.environment?.pytorch_version || "未安裝",
-              },
-              {
-                label: "CUDA",
-                value: backend.environment?.cuda_runtime_version || "不可用",
-              },
-              {
-                label: "品質模式",
-                value: setup.parameters.qualityPreset,
-              },
-            ]}
-            rows={3}
-          />
-        </InnerPanel>
+        {buildsRoundModels ? (
+          <InnerPanel>
+            <SubsectionHeader
+              title="模型後端"
+              description="建立前會再次檢查 CUDA、PyCOLMAP、Open3D 與模型後端。"
+              titleMode={1}
+            />
+            <InformationGrid
+              items={[
+                {
+                  label: "後端",
+                  value: RECONSTRUCTION_BACKEND_LABELS[
+                    backend.backend
+                    || setup.parameters.reconstructionBackend
+                  ] || "尚無資料",
+                },
+                {
+                  label: "狀態",
+                  value: backend.available ? "可用" : "不可用",
+                  tone: backend.available ? "success" : "error",
+                },
+                {
+                  label: "GPU",
+                  value: backend.environment?.gpu_name || "尚無資料",
+                },
+                {
+                  label: "PyTorch",
+                  value: backend.environment?.pytorch_version || "未安裝",
+                },
+                {
+                  label: "CUDA",
+                  value: backend.environment?.cuda_runtime_version || "不可用",
+                },
+                {
+                  label: "品質模式",
+                  value: RECONSTRUCTION_QUALITY_LABELS[
+                    setup.parameters.qualityPreset
+                  ] || "尚無資料",
+                },
+              ]}
+              rows={3}
+            />
+          </InnerPanel>
+        ) : null}
       </div>
 
       <InnerPanel>
@@ -273,28 +310,86 @@ export default function AnalysisSetupSummaryStep({
               label: "分析方法",
               value: method.label,
             },
-            {
-              label: "姿態精修",
-              value: setup.parameters.useBundleAdjustment ? "啟用" : "停用",
-            },
-            {
-              label: "Gaussian 模型",
-              value: setup.parameters.saveGaussianModel ? "建立" : "不建立",
-            },
-            {
-              label: "純植物點雲",
-              value: setup.parameters.exportPlantPointCloud ? "建立" : "不建立",
-            },
-            {
-              label: "植物骨架",
-              value: setup.parameters.exportSkeleton ? "建立" : "不建立",
-            },
+            ...(buildsRoundModels
+              ? [
+                {
+                  label: "姿態精修",
+                  value: setup.parameters.useBundleAdjustment
+                    ? "啟用"
+                    : "停用",
+                },
+                {
+                  label: "完整 Gaussian",
+                  value: (
+                    setup.parameters.saveGaussianModel
+                    && setup.parameters.preserveSceneModel
+                  )
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "植物 Gaussian",
+                  value: (
+                    setup.parameters.saveGaussianModel
+                    && setup.parameters.exportPlantModel
+                  )
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "背景 Gaussian",
+                  value: (
+                    setup.parameters.saveGaussianModel
+                    && setup.parameters.saveBackgroundModel
+                  )
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "完整點雲",
+                  value: setup.parameters.exportScenePointCloud
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "植物點雲",
+                  value: setup.parameters.exportPlantPointCloud
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "背景點雲",
+                  value: setup.parameters.saveBackgroundModel
+                    ? "建立"
+                    : "不建立",
+                },
+                {
+                  label: "植物骨架",
+                  value: setup.parameters.exportSkeleton
+                    ? "建立"
+                    : "不建立",
+                },
+              ]
+              : []
+            ),
             {
               label: "尖端標記",
               value: setup.parameters.exportTipMarkers ? "建立" : "不建立",
             },
             {
-              label: "尖端標記軌跡",
+              label: "二維尖端候選",
+              value: setup.parameters.exportAll2dCandidates
+                ? "輸出全部"
+                : "只輸出選取結果",
+            },
+            {
+              label: "重投影疊圖",
+              value: setup.parameters.saveReprojectionOverlays
+                ? "建立"
+                : "不建立",
+            },
+            {
+              label: "尖端標記軌跡 CSV",
               value: setup.parameters.exportTrajectoryCsv ? "建立" : "不建立",
             },
             {

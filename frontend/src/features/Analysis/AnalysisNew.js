@@ -96,10 +96,10 @@ export default function AnalysisNew({
       ? setup.sourcePreview.warnings
       : [];
 
-    for (const message of [
-      ...errors,
-      ...warnings,
-    ]) {
+    for (const message of errors) {
+      showNotification(message, "error");
+    }
+    for (const message of warnings) {
       showNotification(message, "warning");
     }
   }, [

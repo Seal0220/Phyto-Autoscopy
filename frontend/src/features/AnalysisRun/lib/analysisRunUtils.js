@@ -73,7 +73,6 @@ export function normalizeAnalysisRun(payload) {
     ...(payload && typeof payload === "object" ? payload : {}),
     analysis_id: text(payload?.analysis_id),
     record_id: text(payload?.record_id),
-    calibration_id: text(payload?.calibration_id),
     method_name: text(payload?.method_name),
     method_version: text(payload?.method_version),
     git_commit: text(payload?.git_commit),

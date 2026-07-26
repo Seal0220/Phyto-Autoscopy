@@ -134,6 +134,7 @@ def estimate_aruco_pose(
     *,
     minimum_pnp_inliers: int,
     maximum_reprojection_error_px: float,
+    image_override: np.ndarray | None = None,
 ) -> tuple[CameraPoseResult, dict]:
     input_id = int(_value(frame, "capture_id"))
     camera_id = str(_value(frame, "camera_id"))
@@ -149,7 +150,11 @@ def estimate_aruco_pose(
         "timestamp": timestamp,
         "motor_angle_deg": motor_angle,
     }
-    image = _load_image(Path(_value(frame, "file_path")))
+    image = (
+        image_override
+        if image_override is not None
+        else _load_image(Path(_value(frame, "file_path")))
+    )
     if image is None:
         return (
             CameraPoseResult(

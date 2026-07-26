@@ -192,7 +192,7 @@ def test_initialize_schema_backs_up_and_removes_legacy_analysis(
             "analysis-legacy",
             "record-legacy",
             "calibration-legacy",
-            "top_side",
+            "legacy",
             "1",
             "unknown",
             "{}",

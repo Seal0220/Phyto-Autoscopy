@@ -125,6 +125,5 @@ export default function useFormalTrajectoryResults({
     exportError,
     load,
     downloadExport,
-    clearExportError: () => setExportError(""),
   };
 }

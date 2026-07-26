@@ -1,10 +1,12 @@
+import { formatDateTime } from "@/lib/formatUtils";
+
 import {
+  ANALYSIS_CAMERA_LABELS,
   ANALYSIS_METHODS,
   ANALYSIS_PARAMETER_DEFAULTS,
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STATUS_META,
 } from "../analysisConfig.js";
-import { formatDateTime } from "@/lib/formatUtils";
 
 function arrayFromPayload(
   payload,
@@ -110,9 +112,7 @@ export function analysisSourcesFromPayload(payload) {
       0,
       numberOrZero(source?.rotating_frame_count),
     ),
-    total_frame_count: Math.max(0, numberOrZero(source?.total_frame_count)),
     total_image_count: Math.max(0, numberOrZero(source?.total_image_count)),
-    pairable_frame_count: Math.max(0, numberOrZero(source?.pairable_frame_count)),
     camera_resolutions: {
       top: normalizeResolution(source?.camera_resolutions?.top),
       side: normalizeResolution(source?.camera_resolutions?.side),
@@ -254,13 +254,14 @@ export function mergeAnalysisProgress(
 
 export function analysisStatusMeta(status) {
   return ANALYSIS_STATUS_META[status] || {
-    label: status || "未知",
+    label: "未知狀態",
     tone: "neutral",
   };
 }
 
 export function analysisStageLabel(stage) {
-  return ANALYSIS_STAGE_LABELS[stage] || stage || "尚未開始";
+  if (!stage) return "尚未開始";
+  return ANALYSIS_STAGE_LABELS[stage] || "未知階段";
 }
 
 export function analysisRecordSummaryItems(source) {
@@ -305,7 +306,7 @@ export function createInitialAnalysisSetup(recordId = "") {
     captureConfiguration: {},
     availableModes: [],
     selectedModeIds: [],
-    method: "round_multiview",
+    method: "rotating",
     cameraSources: {
       top: {
         enabled: true,
@@ -326,8 +327,8 @@ export function createInitialAnalysisSetup(recordId = "") {
 
 export function analysisMethodFromCameraSources(cameraSources) {
   return cameraSources?.rotating?.enabled
-    ? "round_multiview"
-    : "top_side_tip_only";
+    ? "rotating"
+    : "fixed";
 }
 
 export function analysisCameraSourceRequired(cameraId) {
@@ -435,23 +436,26 @@ export function validateAnalysisSetupStep(
     ) {
       throw new Error("請至少選擇一個擷取模式。");
     }
-    const required = setup.method === "round_multiview"
+    const required = setup.method === "rotating"
       ? ["top", "side", "rotating"]
       : ["top", "side"];
     for (const cameraId of required) {
       const source = setup.cameraSources?.[cameraId];
       if (!source?.enabled) {
-        throw new Error(`${ANALYSIS_METHODS[setup.method].label}必須啟用 ${cameraId}。`);
+        throw new Error(
+          `${ANALYSIS_METHODS[setup.method].label}必須啟用`
+          + `${ANALYSIS_CAMERA_LABELS[cameraId]}。`,
+        );
       }
     }
     if (!setup.sourcePreview?.ready) {
       throw new Error(
         setup.sourcePreview?.errors?.[0]
-        || "請先掃描捕捉配置並確認配對有效。",
+        || "請先掃描捕捉配置並確認 Round 資料有效。",
       );
     }
     if (
-      setup.method === "round_multiview"
+      setup.method === "rotating"
       && Number(setup.sourcePreview.ready_round_count) <= 0
     ) {
       throw new Error("請重新掃描並確認至少有一個可用的多視角 Round。");
@@ -460,6 +464,9 @@ export function validateAnalysisSetupStep(
   }
 
   if (step === 3) {
+    if (!setup.parameters.generatePlantMask) {
+      throw new Error("分析必須建立植物遮罩。");
+    }
     parseRequiredNumber(
       setup.parameters.minimumTipConfidence,
       "最低尖端標記信心",
@@ -483,9 +490,12 @@ export function validateAnalysisSetupStep(
         positive: true,
       },
     );
-    if (!["preview", "standard", "high"].includes(
-      setup.parameters.qualityPreset,
-    )) {
+    if (
+      setup.method === "rotating"
+      && !["preview", "standard", "high"].includes(
+        setup.parameters.qualityPreset,
+      )
+    ) {
       throw new Error("請選擇有效的模型品質。");
     }
     return true;
@@ -500,14 +510,17 @@ export function validateAnalysisSetupStep(
   for (const [cameraId, source] of Object.entries(setup.cameraSources)) {
     if (!source.enabled) continue;
     if (!setup.sourcePreview?.intrinsics_readiness?.[cameraId]?.ready) {
-      throw new Error(`${cameraId} 尚未建立可用的相機內參。`);
+      throw new Error(
+        `${ANALYSIS_CAMERA_LABELS[cameraId] || "相機"}`
+        + "尚未建立可用的內部參數。",
+      );
     }
   }
   if (!setup.sourcePreview?.aruco_readiness?.ready) {
     throw new Error("ArUco 世界座標基準尚未就緒。");
   }
   if (
-    setup.method === "round_multiview"
+    setup.method === "rotating"
     && !setup.sourcePreview?.backend_readiness?.available
   ) {
     throw new Error(
@@ -520,6 +533,7 @@ export function validateAnalysisSetupStep(
 
 export function buildAnalysisCreatePayload(setup) {
   const parameters = setup.parameters;
+  const buildsRoundModels = setup.method === "rotating";
 
   return {
     record_id: setup.recordId,
@@ -531,23 +545,41 @@ export function buildAnalysisCreatePayload(setup) {
         backend: parameters.reconstructionBackend,
         quality_preset: parameters.qualityPreset,
         save_checkpoint: Boolean(parameters.saveCheckpoints),
-        export_gaussians: Boolean(parameters.saveGaussianModel),
-        export_point_cloud: Boolean(parameters.exportScenePointCloud),
-        export_plant_point_cloud: Boolean(parameters.exportPlantPointCloud),
-        export_render_preview: Boolean(parameters.saveModelPreviews),
-        use_pose_refinement: Boolean(parameters.useBundleAdjustment),
-        use_plant_mask: Boolean(parameters.usePlantMaskInLoss),
+        export_gaussians: buildsRoundModels
+          && Boolean(parameters.saveGaussianModel)
+          && Boolean(parameters.preserveSceneModel),
+        export_plant_gaussians: buildsRoundModels
+          && Boolean(parameters.saveGaussianModel)
+          && Boolean(parameters.exportPlantModel),
+        export_background_gaussians: buildsRoundModels
+          && Boolean(parameters.saveGaussianModel)
+          && Boolean(parameters.saveBackgroundModel),
+        export_point_cloud: buildsRoundModels
+          && Boolean(parameters.exportScenePointCloud),
+        export_plant_point_cloud: buildsRoundModels
+          && Boolean(parameters.exportPlantPointCloud),
+        export_render_preview: buildsRoundModels
+          && Boolean(parameters.saveModelPreviews),
+        use_pose_refinement: buildsRoundModels
+          && Boolean(parameters.useBundleAdjustment),
+        use_plant_mask: buildsRoundModels
+          && Boolean(parameters.usePlantMaskInLoss),
       },
       pose_strategy: {
         use_aruco_world_pose: true,
-        use_bundle_adjustment: Boolean(parameters.useBundleAdjustment),
+        use_bundle_adjustment: buildsRoundModels
+          && Boolean(parameters.useBundleAdjustment),
       },
       background: {
         generate_plant_mask: Boolean(parameters.generatePlantMask),
-        use_plant_mask_in_loss: Boolean(parameters.usePlantMaskInLoss),
-        preserve_scene_model: Boolean(parameters.preserveSceneModel),
-        export_plant_model: Boolean(parameters.exportPlantModel),
-        save_background_model: Boolean(parameters.saveBackgroundModel),
+        use_plant_mask_in_loss: buildsRoundModels
+          && Boolean(parameters.usePlantMaskInLoss),
+        preserve_scene_model: buildsRoundModels
+          && Boolean(parameters.preserveSceneModel),
+        export_plant_model: buildsRoundModels
+          && Boolean(parameters.exportPlantModel),
+        save_background_model: buildsRoundModels
+          && Boolean(parameters.saveBackgroundModel),
       },
       tip_analysis: {
         minimum_confidence: Number(parameters.minimumTipConfidence),
@@ -555,7 +587,8 @@ export function buildAnalysisCreatePayload(setup) {
         maximum_reprojection_error_px: Number(
           parameters.maximumTipReprojectionError,
         ),
-        use_skeleton_refinement: Boolean(parameters.useSkeletonRefinement),
+        use_skeleton_refinement: buildsRoundModels
+          && Boolean(parameters.useSkeletonRefinement),
         use_temporal_prior: Boolean(parameters.useTemporalPrior),
         wait_for_low_confidence_review: Boolean(
           parameters.waitForLowConfidenceReview,
@@ -566,15 +599,21 @@ export function buildAnalysisCreatePayload(setup) {
         ),
       },
       outputs: {
-        save_gaussian_model: Boolean(parameters.saveGaussianModel),
-        export_scene_point_cloud: Boolean(parameters.exportScenePointCloud),
-        export_plant_point_cloud: Boolean(parameters.exportPlantPointCloud),
-        export_skeleton: Boolean(parameters.exportSkeleton),
+        save_gaussian_model: buildsRoundModels
+          && Boolean(parameters.saveGaussianModel),
+        export_scene_point_cloud: buildsRoundModels
+          && Boolean(parameters.exportScenePointCloud),
+        export_plant_point_cloud: buildsRoundModels
+          && Boolean(parameters.exportPlantPointCloud),
+        export_skeleton: buildsRoundModels
+          && Boolean(parameters.exportSkeleton),
         export_tip_markers: Boolean(parameters.exportTipMarkers),
         export_trajectory_csv: Boolean(parameters.exportTrajectoryCsv),
-        save_model_previews: Boolean(parameters.saveModelPreviews),
+        save_model_previews: buildsRoundModels
+          && Boolean(parameters.saveModelPreviews),
         save_diagnostics: Boolean(parameters.saveDiagnostics),
-        save_checkpoints: Boolean(parameters.saveCheckpoints),
+        save_checkpoints: buildsRoundModels
+          && Boolean(parameters.saveCheckpoints),
       },
     },
     manual_review_required: Boolean(setup.manualReviewRequired),

@@ -2,6 +2,9 @@ import InformationGrid from "@/components/data/InformationGrid";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import InnerPanel from "@/components/panels/InnerPanel";
 import { StatusPill } from "@/components/panels/Panel";
+import {
+  ANALYSIS_MODEL_STATUS_META,
+} from "@/features/Analysis/analysisConfig";
 
 import { analysisRoundStatus } from "../lib/analysisRunUtils";
 
@@ -53,6 +56,12 @@ export default function AnalysisRunRoundOverview({
             const status = analysisRoundStatus(item.status);
             const model = modelsByRound.get(item.round_key);
             const landmark = landmarksByRound.get(item.round_key);
+            const modelStatus = ANALYSIS_MODEL_STATUS_META[
+              model?.status
+            ] || {
+              label: "尚無模型",
+              tone: "neutral",
+            };
 
             return (
               <div
@@ -68,8 +77,8 @@ export default function AnalysisRunRoundOverview({
                 </StatusPill>
                 <span>{item.view_count || 0} 個</span>
                 <span>{item.rotating_view_count || 0} 個</span>
-                <StatusPill tone={model?.status === "completed" ? "success" : "neutral"}>
-                  {model?.status === "completed" ? "已完成" : "尚無模型"}
+                <StatusPill tone={modelStatus.tone}>
+                  {modelStatus.label}
                 </StatusPill>
                 <span>
                   {landmark?.valid

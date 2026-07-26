@@ -102,7 +102,7 @@ def optimize_tip_marker(
             "multiview_joint"
             if endpoint is not None
             or sum(hypothesis.used_observations) > 2
-            else "top_side_triangulation"
+            else "fixed_triangulation"
         ),
         distance_to_model_mm=endpoint_distance,
         distance_to_skeleton_mm=endpoint_distance,

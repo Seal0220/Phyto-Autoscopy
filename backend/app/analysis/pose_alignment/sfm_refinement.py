@@ -121,16 +121,27 @@ def stabilize_fixed_camera_results(
     poses: Sequence[CameraPoseResult],
     stable_world_to_camera: np.ndarray,
 ) -> list[CameraPoseResult]:
+    """Fill only missing fixed-camera poses from the Run reference.
+
+    Direct ArUco measurements remain untouched so mount movement and
+    per-image reprojection quality stay observable.
+    """
+
     camera_to_world = np.linalg.inv(stable_world_to_camera)
     stabilized: list[CameraPoseResult] = []
     for pose in poses:
+        if pose.resolved:
+            stabilized.append(pose)
+            continue
         warnings = list(pose.quality_warnings)
-        if not pose.resolved:
-            warnings.append("固定相機姿態由同次分析的 ArUco 穩定解補齊。")
+        warnings.append(
+            "此影像未取得直接 ArUco 姿態，"
+            "已使用同次分析的固定相機穩健基準補足。"
+        )
         stabilized.append(
             pose.model_copy(
                 update={
-                    "source": "aruco_refined",
+                    "source": "interpolated",
                     "resolved": True,
                     "world_to_camera_matrix": stable_world_to_camera.tolist(),
                     "camera_to_world_matrix": camera_to_world.tolist(),

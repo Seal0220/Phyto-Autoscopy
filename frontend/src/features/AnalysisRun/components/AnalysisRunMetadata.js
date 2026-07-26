@@ -4,6 +4,7 @@ import InnerPanel from "@/components/panels/InnerPanel";
 import {
   ANALYSIS_CAMERA_LABELS,
   ANALYSIS_METHODS,
+  RECONSTRUCTION_BACKEND_LABELS,
 } from "@/features/Analysis/analysisConfig";
 
 import {
@@ -21,6 +22,13 @@ function enabledCameraLabel(run) {
     .map(([cameraId]) => ANALYSIS_CAMERA_LABELS[cameraId] || cameraId);
 
   return labels.length ? labels.join("、") : "尚無資料";
+}
+
+function modelOutputCount(
+  models,
+  pathKey,
+) {
+  return models.filter((model) => Boolean(model[pathKey])).length;
 }
 
 function analysisMetadata(
@@ -93,6 +101,37 @@ function analysisMetadata(
         value: `${models.filter((item) => item.status === "completed").length} 個`,
       },
       {
+        label: "完整 Gaussian",
+        value: `${modelOutputCount(models, "model_path")} 個`,
+      },
+      {
+        label: "植物 Gaussian",
+        value: `${modelOutputCount(models, "plant_model_path")} 個`,
+      },
+      {
+        label: "背景 Gaussian",
+        value: `${modelOutputCount(models, "background_model_path")} 個`,
+      },
+      {
+        label: "完整點雲",
+        value: `${modelOutputCount(models, "point_cloud_path")} 個`,
+      },
+      {
+        label: "植物點雲",
+        value: `${modelOutputCount(models, "plant_point_cloud_path")} 個`,
+      },
+      {
+        label: "背景點雲",
+        value: `${modelOutputCount(
+          models,
+          "background_point_cloud_path",
+        )} 個`,
+      },
+      {
+        label: "植物骨架",
+        value: `${modelOutputCount(models, "skeleton_path")} 個`,
+      },
+      {
         label: "有效尖端標記",
         value: `${landmarks.filter((item) => item.valid).length} 個`,
       },
@@ -102,7 +141,9 @@ function analysisMetadata(
       },
       {
         label: "模型後端",
-        value: run.reconstruction_backend || "不建立模型",
+        value: RECONSTRUCTION_BACKEND_LABELS[
+          run.reconstruction_backend
+        ] || "不建立模型",
       },
       {
         label: "人工確認",

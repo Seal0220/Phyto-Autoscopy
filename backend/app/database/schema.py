@@ -7,8 +7,8 @@ from app.database.connection import Database
 
 ANALYSIS_BACKUP_FILE_NAME = "phyto_autoscopy-backup.sqlite3"
 SUPPORTED_ANALYSIS_METHODS = (
-    "round_multiview",
-    "top_side_tip_only",
+    "fixed",
+    "rotating",
 )
 LEGACY_ANALYSIS_TABLES = (
     "analysis_frame_pairs",

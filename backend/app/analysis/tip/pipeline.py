@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -35,6 +36,7 @@ from app.models.analysis_models import (
 
 
 CancelCheck = Callable[[], None]
+StageCallback = Callable[[str, float], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +126,45 @@ def _write_reprojection_overlay(
     _write_image(output_path, image)
 
 
+def _candidate_artifact_payloads(
+    payloads: Sequence[Mapping[str, Any]],
+    selected_ids: set[str],
+    *,
+    export_all: bool,
+) -> list[dict[str, Any]]:
+    result = []
+    for payload in payloads:
+        candidates = [
+            dict(candidate)
+            for candidate in payload.get("candidates", [])
+            if (
+                export_all
+                or candidate.get("candidate_id") in selected_ids
+            )
+        ]
+        result.append({
+            **dict(payload),
+            "candidates": candidates,
+        })
+    return result
+
+
+def _remove_temporary_paths(paths: Sequence[Path]) -> None:
+    parents = set()
+    for path in paths:
+        parents.add(path.parent)
+        path.unlink(missing_ok=True)
+    for parent in sorted(
+        parents,
+        key=lambda item: len(item.parts),
+        reverse=True,
+    ):
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
+
+
 def analyze_round_tip(
     *,
     analysis_id: str,
@@ -140,8 +181,16 @@ def analyze_round_tip(
     maximum_reprojection_error_px: float,
     use_skeleton_refinement: bool = True,
     use_temporal_prior: bool = True,
+    export_all_2d_candidates: bool = False,
+    export_scene_point_cloud: bool = True,
+    export_plant_point_cloud: bool = True,
+    export_background_point_cloud: bool = False,
+    export_skeleton: bool = True,
+    export_tip_marker: bool = True,
     save_reprojection_overlays: bool = True,
+    save_diagnostics: bool = True,
     cancel_check: CancelCheck | None = None,
+    stage_callback: StageCallback | None = None,
 ) -> RoundTipAnalysisResult:
     round_root = round_artifact_directory(artifacts_root, round_item.round_key)
     tip_root = round_root / "tip"
@@ -163,6 +212,16 @@ def analyze_round_tip(
     source_images: dict[str, Path] = {}
     projections: dict[str, np.ndarray] = {}
     warnings: list[str] = []
+    temporary_paths: list[Path] = []
+    if not save_diagnostics:
+        shutil.rmtree(masks_root, ignore_errors=True)
+    if not save_reprojection_overlays:
+        shutil.rmtree(
+            tip_root / "reprojections",
+            ignore_errors=True,
+        )
+    if stage_callback is not None:
+        stage_callback("detecting_tip_candidates", 0.0)
     for view in views:
         if cancel_check is not None:
             cancel_check()
@@ -187,12 +246,22 @@ def analyze_round_tip(
             candidate_prefix=view.view_id,
         )
         safe_view_id = safe_artifact_name(view.view_id)
-        plant_mask_path = masks_root / f"{safe_view_id}.plant.png"
+        mask_output_root = (
+            masks_root
+            if save_diagnostics
+            else round_root / "temporary" / "tip_masks"
+        )
+        plant_mask_path = (
+            mask_output_root / f"{safe_view_id}.plant.png"
+        )
         skeleton_path = masks_root / f"{safe_view_id}.skeleton.png"
         heatmap_path = masks_root / f"{safe_view_id}.tip_heatmap.png"
         _write_image(plant_mask_path, detection.plant_mask)
-        _write_image(skeleton_path, detection.skeleton)
-        _write_image(heatmap_path, detection.heatmap)
+        if save_diagnostics:
+            _write_image(skeleton_path, detection.skeleton)
+            _write_image(heatmap_path, detection.heatmap)
+        else:
+            temporary_paths.append(plant_mask_path)
         candidate_view = TipCandidateView(
             view_id=view.view_id,
             camera_id=view.camera_id,
@@ -221,9 +290,21 @@ def analyze_round_tip(
         candidate_payloads.append({
             "view_id": view.view_id,
             "camera_id": view.camera_id,
-            "plant_mask_path": str(plant_mask_path.relative_to(artifacts_root)),
-            "skeleton_path": str(skeleton_path.relative_to(artifacts_root)),
-            "heatmap_path": str(heatmap_path.relative_to(artifacts_root)),
+            "plant_mask_path": (
+                str(plant_mask_path.relative_to(artifacts_root))
+                if save_diagnostics
+                else None
+            ),
+            "skeleton_path": (
+                str(skeleton_path.relative_to(artifacts_root))
+                if save_diagnostics
+                else None
+            ),
+            "heatmap_path": (
+                str(heatmap_path.relative_to(artifacts_root))
+                if save_diagnostics
+                else None
+            ),
             "mask_confidence": detection.mask_confidence,
             "foreground_ratio": detection.foreground_ratio,
             "candidates": [
@@ -238,87 +319,211 @@ def analyze_round_tip(
                 for item in detection.candidates
             ],
         })
-    write_json_atomic(
-        tip_root / "candidates_2d.json",
-        {
-            "coordinate_space": "undistorted_pixels",
-            "views": candidate_payloads,
-        },
-    )
+    if stage_callback is not None:
+        stage_callback("triangulating_tip_marker", 0.30)
     hypotheses = triangulate_tip_hypotheses(
         candidate_views,
         rejection_threshold_px=maximum_reprojection_error_px,
     )
-    write_json_atomic(
-        tip_root / "candidates_3d.json",
-        [
-            {
-                "position_world_mm": item.point_world_mm.tolist(),
-                "observations": [
-                    {
-                        "view_id": view_id,
-                        "candidate_id": candidate.candidate_id,
-                    }
-                    for view_id, candidate in item.observations
-                ],
-                "used_observations": list(item.used_observations),
-                "reprojection_errors_px": list(
-                    item.reprojection_errors_px
-                ),
-                "mean_reprojection_error_px": item.mean_error_px,
-                "maximum_reprojection_error_px": item.maximum_error_px,
-                "angular_spread_deg": item.angular_spread_deg,
-                "confidence": item.confidence,
-            }
-            for item in hypotheses
-        ],
-    )
+    candidates_3d_path = tip_root / "candidates_3d.json"
+    if save_diagnostics:
+        write_json_atomic(
+            candidates_3d_path,
+            [
+                {
+                    "position_world_mm": item.point_world_mm.tolist(),
+                    "observations": [
+                        {
+                            "view_id": view_id,
+                            "candidate_id": candidate.candidate_id,
+                        }
+                        for view_id, candidate in item.observations
+                    ],
+                    "used_observations": list(item.used_observations),
+                    "reprojection_errors_px": list(
+                        item.reprojection_errors_px
+                    ),
+                    "mean_reprojection_error_px": item.mean_error_px,
+                    "maximum_reprojection_error_px": item.maximum_error_px,
+                    "angular_spread_deg": item.angular_spread_deg,
+                    "confidence": item.confidence,
+                }
+                for item in hypotheses
+            ],
+        )
+    else:
+        candidates_3d_path.unlink(missing_ok=True)
 
     updated_model = model_result
     skeleton = None
     plant_point_cloud_path = None
     if model_result is not None and model_result.point_cloud_path:
+        scene_path = artifacts_root / model_result.point_cloud_path
+        plant_path = (
+            round_root / "model" / "plant_point_cloud.ply"
+            if export_plant_point_cloud
+            else round_root / "temporary" / "plant_point_cloud.ply"
+        )
+        background_path = (
+            round_root / "model" / "background_point_cloud.ply"
+            if export_background_point_cloud
+            else None
+        )
+        if not export_plant_point_cloud:
+            temporary_paths.append(plant_path)
         try:
-            scene_path = artifacts_root / model_result.point_cloud_path
-            plant_path = round_root / "model" / "plant_point_cloud.ply"
+            if stage_callback is not None:
+                stage_callback("isolating_plant_model", 0.40)
             isolation = isolate_plant_point_cloud(
                 scene_path,
                 plant_path,
                 plant_views,
+                background_output_path=background_path,
             )
-            skeleton = extract_plant_skeleton(
-                plant_path,
-                round_root / "model" / "skeleton.json",
-            )
+            plant_point_cloud_path = plant_path
             updated_model = model_result.model_copy(
                 update={
-                    "plant_point_cloud_path": str(
-                        plant_path.relative_to(artifacts_root)
+                    "plant_point_cloud_path": (
+                        str(plant_path.relative_to(artifacts_root))
+                        if export_plant_point_cloud
+                        else None
                     ),
-                    "skeleton_path": str(
-                        skeleton.path.relative_to(artifacts_root)
+                    "background_point_cloud_path": (
+                        str(
+                            isolation.background_output_path.relative_to(
+                                artifacts_root
+                            )
+                        )
+                        if isolation.background_output_path is not None
+                        else None
                     ),
                     "model_quality": {
                         **model_result.model_quality,
                         "plant_isolation": isolation.quality,
-                        "skeleton_node_count": skeleton.node_count,
-                        "skeleton_endpoint_count": len(skeleton.endpoints),
                     },
                 }
             )
-            plant_point_cloud_path = plant_path
         except Exception as error:
-            warnings.append(f"植物模型分離或骨架建立失敗：{error}")
+            reason = f"植物模型分離失敗：{error}"
+            warnings.append(reason)
+            postprocessing_required = any((
+                export_plant_point_cloud,
+                export_background_point_cloud,
+                export_skeleton,
+            ))
+            updated_model = model_result.model_copy(
+                update={
+                    "status": (
+                        "postprocessing_failed"
+                        if postprocessing_required
+                        else model_result.status
+                    ),
+                    "model_quality": {
+                        **model_result.model_quality,
+                        "plant_isolation": {
+                            "status": "failed",
+                            "failure_reason": str(error),
+                        },
+                    },
+                    "failure_reason": (
+                        reason
+                        if postprocessing_required
+                        else model_result.failure_reason
+                    ),
+                }
+            )
+
+        if plant_point_cloud_path is not None:
+            skeleton_path = (
+                round_root / "model" / "skeleton.json"
+                if export_skeleton
+                else round_root / "temporary" / "skeleton.json"
+            )
+            if not export_skeleton:
+                temporary_paths.append(skeleton_path)
+            try:
+                if stage_callback is not None:
+                    stage_callback("extracting_model_skeleton", 0.52)
+                skeleton = extract_plant_skeleton(
+                    plant_path,
+                    skeleton_path,
+                )
+                updated_model = updated_model.model_copy(
+                    update={
+                        "skeleton_path": (
+                            str(
+                                skeleton.path.relative_to(
+                                    artifacts_root
+                                )
+                            )
+                            if export_skeleton
+                            else None
+                        ),
+                        "model_quality": {
+                            **updated_model.model_quality,
+                            "skeleton_node_count": skeleton.node_count,
+                            "skeleton_endpoint_count": len(
+                                skeleton.endpoints
+                            ),
+                        },
+                    }
+                )
+            except Exception as error:
+                reason = f"植物骨架建立失敗：{error}"
+                warnings.append(reason)
+                updated_model = updated_model.model_copy(
+                    update={
+                        "status": (
+                            "postprocessing_failed"
+                            if export_skeleton
+                            else updated_model.status
+                        ),
+                        "model_quality": {
+                            **updated_model.model_quality,
+                            "skeleton": {
+                                "status": "failed",
+                                "failure_reason": str(error),
+                            },
+                        },
+                        "failure_reason": (
+                            reason
+                            if export_skeleton
+                            else updated_model.failure_reason
+                        ),
+                    }
+                )
+        if not export_scene_point_cloud:
+            scene_path.unlink(missing_ok=True)
+            updated_model = updated_model.model_copy(
+                update={"point_cloud_path": None}
+            )
 
     if not hypotheses:
+        if stage_callback is not None:
+            stage_callback("refining_tip_marker", 0.72)
         reprojection_payloads = []
         resolved_observations = tuple(
             item.model_copy(update={"rejection_reason": "not_matched"})
             for item in observation_rows
         )
         write_json_atomic(
+            tip_root / "candidates_2d.json",
+            {
+                "coordinate_space": "undistorted_pixels",
+                "views": _candidate_artifact_payloads(
+                    candidate_payloads,
+                    set(),
+                    export_all=export_all_2d_candidates,
+                ),
+            },
+        )
+        write_json_atomic(
             tip_root / "observations_2d.json",
-            [item.model_dump(mode="json") for item in resolved_observations],
+            [
+                item.model_dump(mode="json")
+                for item in resolved_observations
+                if export_all_2d_candidates
+            ],
         )
         if save_reprojection_overlays:
             for candidate_view in candidate_views:
@@ -357,16 +562,20 @@ def analyze_round_tip(
             detection_type="invalid",
             failure_reason="至少需要兩個具有一致尖端候選的有效視角。",
         )
-        write_json_atomic(
-            tip_root / "tip_marker.json",
-            {
-                **landmark.model_dump(mode="json"),
-                "quality": {
-                    "hypothesis_count": 0,
-                    "warnings": warnings,
+        tip_marker_path = tip_root / "tip_marker.json"
+        if export_tip_marker:
+            write_json_atomic(
+                tip_marker_path,
+                {
+                    **landmark.model_dump(mode="json"),
+                    "quality": {
+                        "hypothesis_count": 0,
+                        "warnings": warnings,
+                    },
                 },
-            },
-        )
+            )
+        else:
+            tip_marker_path.unlink(missing_ok=True)
         write_json_atomic(
             tip_root / "marker_quality.json",
             {
@@ -379,6 +588,7 @@ def analyze_round_tip(
             tip_root / "reprojection.json",
             reprojection_payloads,
         )
+        _remove_temporary_paths(temporary_paths)
         return RoundTipAnalysisResult(
             landmark=landmark,
             observations=resolved_observations,
@@ -418,6 +628,8 @@ def analyze_round_tip(
         ),
         previous_position_mm=previous_position,
     )
+    if stage_callback is not None:
+        stage_callback("refining_tip_marker", 0.72)
     selected_ids = {
         candidate.candidate_id
         for (_, candidate), used in zip(
@@ -446,8 +658,23 @@ def analyze_round_tip(
         for item in observation_rows
     )
     write_json_atomic(
+        tip_root / "candidates_2d.json",
+        {
+            "coordinate_space": "undistorted_pixels",
+            "views": _candidate_artifact_payloads(
+                candidate_payloads,
+                selected_ids,
+                export_all=export_all_2d_candidates,
+            ),
+        },
+    )
+    write_json_atomic(
         tip_root / "observations_2d.json",
-        [item.model_dump(mode="json") for item in resolved_observations],
+        [
+            item.model_dump(mode="json")
+            for item in resolved_observations
+            if export_all_2d_candidates or item.selected
+        ],
     )
     supporting_count = len(selected_ids)
     selected_view_ids = [
@@ -501,6 +728,8 @@ def analyze_round_tip(
     )
     reprojection_payloads = []
     if save_reprojection_overlays:
+        if stage_callback is not None:
+            stage_callback("calculating_quality_metrics", 0.86)
         selected_by_view = {
             view_id: candidate.candidate_id
             for (view_id, candidate), used in zip(
@@ -579,13 +808,17 @@ def analyze_round_tip(
         "reprojections": reprojection_payloads,
         "warnings": warnings,
     }
-    write_json_atomic(
-        tip_root / "tip_marker.json",
-        {
-            **landmark.model_dump(mode="json"),
-            "quality": quality,
-        },
-    )
+    tip_marker_path = tip_root / "tip_marker.json"
+    if export_tip_marker:
+        write_json_atomic(
+            tip_marker_path,
+            {
+                **landmark.model_dump(mode="json"),
+                "quality": quality,
+            },
+        )
+    else:
+        tip_marker_path.unlink(missing_ok=True)
     write_json_atomic(
         tip_root / "marker_quality.json",
         quality,
@@ -594,6 +827,9 @@ def analyze_round_tip(
         tip_root / "reprojection.json",
         reprojection_payloads,
     )
+    _remove_temporary_paths(temporary_paths)
+    if stage_callback is not None:
+        stage_callback("exporting", 1.0)
     return RoundTipAnalysisResult(
         landmark=landmark,
         observations=resolved_observations,

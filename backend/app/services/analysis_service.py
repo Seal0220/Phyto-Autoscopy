@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import hashlib
 import logging
@@ -34,12 +35,19 @@ from app.analysis.rounds.paths import (
     round_artifact_directory,
     safe_artifact_name,
 )
+from app.analysis.reconstruction.backend import (
+    unsupported_reconstruction_outputs,
+)
 from app.analysis.reconstruction import ReconstructionBackendRegistry
 from app.analysis.reconstruction.reconstruction_worker import (
     run_reconstruction_worker,
 )
 from app.analysis.review import create_tip_correction
-from app.analysis.pose_alignment import align_dataset_camera_poses
+from app.analysis.pose_alignment import (
+    align_dataset_camera_poses,
+    evaluate_fixed_camera_pose_consistency,
+    sample_aruco_readiness,
+)
 from app.analysis.pose_alignment.aruco_world import aruco_layout_snapshot
 from app.analysis.run_metadata import (
     next_dated_identifier,
@@ -48,6 +56,7 @@ from app.analysis.run_metadata import (
     utc_now_iso,
 )
 from app.analysis.record_validator import (
+    BLOCKING_VALIDATION_ISSUE_CODES,
     CaptureRecordValidation,
     CaptureRecordValidator,
 )
@@ -100,8 +109,8 @@ TERMINAL_STATUSES = frozenset({
     "cancelled",
 })
 SUPPORTED_ANALYSIS_METHODS = frozenset({
-    "round_multiview",
-    "top_side_tip_only",
+    "fixed",
+    "rotating",
 })
 STATUS_LABELS = {
     "draft": "草稿",
@@ -229,7 +238,7 @@ class AnalysisService:
     def _required_camera_ids(method: str) -> tuple[str, ...]:
         return (
             ("top", "side", "rotating")
-            if method == "round_multiview"
+            if method == "rotating"
             else ("top", "side")
         )
 
@@ -470,7 +479,7 @@ class AnalysisService:
         self,
         record_id: str,
         *,
-        method: str = "top_side_tip_only",
+        method: str = "fixed",
         mode_ids: Iterable[str] = (),
     ) -> CaptureRecordValidation:
         record = self._require_record(record_id)
@@ -480,7 +489,7 @@ class AnalysisService:
             captures,
             required_camera_ids=(
                 ("top", "side", "rotating")
-                if method == "round_multiview"
+                if method == "rotating"
                 else ("top", "side")
             ),
             selected_mode_folders=self._selected_mode_folders(
@@ -559,6 +568,34 @@ class AnalysisService:
             })
         return result
 
+    @staticmethod
+    def _blocking_validation_messages(
+        validation: CaptureRecordValidation,
+    ) -> list[str]:
+        return list(dict.fromkeys(
+            issue.message
+            for issue in validation.issues
+            if issue.code in BLOCKING_VALIDATION_ISSUE_CODES
+        ))
+
+    @staticmethod
+    def _validation_issue_payloads(
+        validation: CaptureRecordValidation,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "code": issue.code,
+                "message": issue.message,
+                "blocking": (
+                    issue.code in BLOCKING_VALIDATION_ISSUE_CODES
+                ),
+                "camera_id": issue.camera_id,
+                "capture_id": issue.capture_id,
+                "file_path": issue.file_path,
+            }
+            for issue in validation.issues
+        ]
+
     def list_sources(self) -> list[AnalysisSourceSummary]:
         results = []
         for record in self.record_repository.list():
@@ -575,15 +612,13 @@ class AnalysisService:
                 )
                 full_validation = self._validation_for_record(
                     record.record_id,
-                    method="round_multiview",
+                    method="rotating",
                 )
                 reasons = list(validation.not_ready_reasons)
                 ready = validation.ready
                 top_count = validation.top_frame_count
                 side_count = validation.side_frame_count
                 rotating_count = full_validation.rotating_frame_count
-                pair_count = validation.pairable_frame_count
-                total_frame_count = validation.total_frame_count
                 camera_resolutions = dict(full_validation.camera_resolutions)
                 camera_directories = dict(full_validation.camera_directories)
             except Exception as error:
@@ -593,8 +628,6 @@ class AnalysisService:
                 top_count = 0
                 side_count = 0
                 rotating_count = 0
-                pair_count = 0
-                total_frame_count = 0
                 camera_resolutions = {}
                 camera_directories = {}
             results.append(
@@ -607,8 +640,6 @@ class AnalysisService:
                     top_frame_count=top_count,
                     side_frame_count=side_count,
                     rotating_frame_count=rotating_count,
-                    pairable_frame_count=pair_count,
-                    total_frame_count=total_frame_count,
                     total_image_count=total_image_count,
                     camera_resolutions=camera_resolutions,
                     camera_directories=camera_directories,
@@ -643,9 +674,11 @@ class AnalysisService:
             method=request.method,
             enabled_camera_ids=enabled_camera_ids,
         )
-        validation_errors = [
+        validation_errors = list(validation.not_ready_reasons)
+        validation_warnings = [
             issue.message
             for issue in validation.issues
+            if issue.code not in BLOCKING_VALIDATION_ISSUE_CODES
         ]
         errors = list(dict.fromkeys([*validation_errors, *grouping.errors]))
         ready_rounds = grouping.ready_round_count
@@ -680,6 +713,35 @@ class AnalysisService:
                 ),
             }
         layout = aruco_layout_snapshot(self.settings.pose_alignment.aruco_world)
+        sample_readiness = sample_aruco_readiness(
+            grouping.views,
+            {
+                camera_id: intrinsics
+                for camera_id, intrinsics in available_intrinsics.items()
+                if (
+                    camera_id in enabled_camera_ids
+                    and intrinsics.status == "valid"
+                    and not intrinsics.invalidation_reasons
+                )
+            },
+            self.settings.pose_alignment.aruco_world,
+            enabled_camera_ids=enabled_camera_ids,
+            minimum_pnp_inliers=(
+                self.settings.pose_alignment.minimum_pnp_inliers
+            ),
+            maximum_reprojection_error_px=(
+                self.settings.pose_alignment
+                .maximum_aruco_reprojection_error_px
+            ),
+        )
+        for camera_id, camera_result in sample_readiness["cameras"].items():
+            if camera_result["status"] == "resolved":
+                continue
+            camera_label = camera_result["camera_label"]
+            validation_warnings.append(
+                f"{camera_label}抽樣影像尚未建立有效 ArUco 姿態；"
+                "正式分析會逐張偵測並保留失敗原因。"
+            )
         aruco_readiness = {
             "ready": bool(layout.get("markers")),
             "layout_version": layout.get("layout_version"),
@@ -688,6 +750,7 @@ class AnalysisService:
             "marker_size_mm": layout.get("marker_size_mm"),
             "world_origin": layout.get("world_origin"),
             "unit": layout.get("unit", "mm"),
+            **sample_readiness,
         }
         backend_readiness = self._reconstruction_backends.check(
             self.settings.reconstruction.backend
@@ -701,14 +764,11 @@ class AnalysisService:
             },
             camera_resolutions=dict(validation.camera_resolutions),
             camera_directories=dict(validation.camera_directories),
-            pairable_frame_count=ready_rounds,
-            rotating_pairable_frame_count=sum(
-                item.status == "ready" and item.rotating_view_count > 0
-                for item in grouping.readiness
-            ),
-            total_frame_count=len(grouping.rounds),
             errors=errors,
-            warnings=list(grouping.warnings),
+            warnings=list(dict.fromkeys([
+                *validation_warnings,
+                *grouping.warnings,
+            ])),
             round_count=len(grouping.rounds),
             ready_round_count=ready_rounds,
             incomplete_round_count=grouping.incomplete_round_count,
@@ -728,9 +788,19 @@ class AnalysisService:
     def _new_analysis_parameters(
         self,
         incoming: Mapping[str, Any],
+        *,
+        method: str,
     ) -> dict[str, Any]:
         defaults = {
-            "reconstruction": self.settings.reconstruction.model_dump(mode="json"),
+            "reconstruction": {
+                **self.settings.reconstruction.model_dump(mode="json"),
+                "export_gaussians": True,
+                "export_plant_gaussians": True,
+                "export_background_gaussians": False,
+                "export_point_cloud": True,
+                "export_plant_point_cloud": True,
+                "export_render_preview": True,
+            },
             "pose_strategy": {
                 "use_aruco_world_pose": True,
                 "use_bundle_adjustment": True,
@@ -766,15 +836,115 @@ class AnalysisService:
             "advanced": {},
         }
         merged = _deep_merge(defaults, dict(incoming))
-        reconstruction = merged.get("reconstruction")
-        if not isinstance(reconstruction, Mapping):
+        raw_reconstruction = merged.get("reconstruction")
+        if not isinstance(raw_reconstruction, Mapping):
             raise AnalysisError("三維模型設定格式無效。")
+        background = merged.get("background")
+        if not isinstance(background, Mapping):
+            raise AnalysisError("背景處理設定格式無效。")
+        outputs = merged.get("outputs")
+        if not isinstance(outputs, Mapping):
+            raise AnalysisError("分析輸出設定格式無效。")
+        builds_round_models = method == "rotating"
+        saves_gaussian_model = bool(
+            outputs.get("save_gaussian_model", True)
+        )
+        reconstruction = {
+            **dict(raw_reconstruction),
+            "export_gaussians": (
+                builds_round_models
+                and saves_gaussian_model
+                and bool(background.get("preserve_scene_model", True))
+            ),
+            "export_plant_gaussians": (
+                builds_round_models
+                and saves_gaussian_model
+                and bool(background.get("export_plant_model", True))
+            ),
+            "export_background_gaussians": (
+                builds_round_models
+                and saves_gaussian_model
+                and bool(background.get("save_background_model", False))
+            ),
+            "export_point_cloud": builds_round_models,
+            "retain_scene_point_cloud": (
+                builds_round_models
+                and bool(outputs.get("export_scene_point_cloud", True))
+            ),
+            "export_plant_point_cloud": (
+                builds_round_models
+                and bool(outputs.get("export_plant_point_cloud", True))
+            ),
+            "export_render_preview": (
+                builds_round_models
+                and bool(outputs.get("save_model_previews", True))
+            ),
+            "save_checkpoint": (
+                builds_round_models
+                and bool(outputs.get("save_checkpoints", True))
+            ),
+            "use_plant_mask": (
+                builds_round_models
+                and bool(background.get("use_plant_mask_in_loss", True))
+            ),
+        }
+        merged["reconstruction"] = reconstruction
         backend = str(reconstruction.get("backend") or "")
         if backend not in self.settings.reconstruction.available_backends:
             raise AnalysisError(f"不支援的三維模型後端：{backend}")
         quality = str(reconstruction.get("quality_preset") or "")
         if quality not in {"preview", "standard", "high"}:
             raise AnalysisError("模型品質只能使用預覽、標準或高品質。")
+        capabilities = self._reconstruction_backends.get(
+            backend
+        ).capabilities
+        requested_capabilities = {
+            "scene_gaussian_export": bool(
+                reconstruction.get("export_gaussians", True)
+            ),
+            "plant_gaussian_export": bool(
+                reconstruction.get("export_plant_gaussians", True)
+            ),
+            "background_gaussian_export": bool(
+                reconstruction.get(
+                    "export_background_gaussians",
+                    False,
+                )
+            ),
+            "scene_point_cloud_export": bool(
+                reconstruction.get("export_point_cloud", True)
+            ),
+            "render_preview_export": bool(
+                reconstruction.get("export_render_preview", True)
+            ),
+        }
+        unsupported_outputs = unsupported_reconstruction_outputs(
+            capabilities,
+            requested_capabilities,
+        )
+        if unsupported_outputs:
+            raise AnalysisError(
+                "所選模型後端不支援要求的輸出："
+                + "、".join(unsupported_outputs)
+            )
+        requires_plant_masks = any((
+            bool(reconstruction.get("export_plant_gaussians", False)),
+            bool(
+                reconstruction.get(
+                    "export_background_gaussians",
+                    False,
+                )
+            ),
+            bool(reconstruction.get("export_plant_point_cloud", False)),
+            builds_round_models,
+        ))
+        if (
+            requires_plant_masks
+            and not bool(background.get("generate_plant_mask", True))
+        ):
+            raise AnalysisError(
+                "純植物或背景輸出必須先啟用植物遮罩。"
+            )
         tip = merged.get("tip_analysis")
         if not isinstance(tip, Mapping):
             raise AnalysisError("尖端標記設定格式無效。")
@@ -933,7 +1103,8 @@ class AnalysisService:
     ) -> AnalysisRun:
         with self._lock:
             analysis_parameters = self._new_analysis_parameters(
-                request.parameters
+                request.parameters,
+                method=request.method,
             )
             selected_sources = {
                 camera_id: {
@@ -954,10 +1125,9 @@ class AnalysisService:
             for source in selected_sources.values():
                 if source["enabled"]:
                     source["path"] = str(validation.record_path)
-            validation_errors = [
-                issue.message
-                for issue in validation.issues
-            ]
+            validation_errors = self._blocking_validation_messages(
+                validation
+            )
             if validation_errors:
                 raise AnalysisError(
                     "捕捉紀錄不可分析：" + "；".join(
@@ -997,9 +1167,11 @@ class AnalysisService:
             layout_snapshot = aruco_layout_snapshot(
                 self.settings.pose_alignment.aruco_world
             )
+            if not layout_snapshot.get("markers"):
+                raise AnalysisError("ArUco 世界基準配置不完整。")
 
             try:
-                input_manifest = self._manifest(validation)
+                source_manifest = self._manifest(validation)
             except OSError as error:
                 raise AnalysisError(
                     f"無法固化捕捉資料輸入的 SHA-256：{error}"
@@ -1025,19 +1197,53 @@ class AnalysisService:
                     for camera_id, source in selected_sources.items()
                     if source["enabled"]
                 ),
-                input_manifest=input_manifest,
+                input_manifest=source_manifest,
             )
             if grouping.errors:
                 raise AnalysisError(
                     "捕捉紀錄無法建立分析輪次："
                     + "；".join(grouping.errors)
                 )
+            aruco_readiness = sample_aruco_readiness(
+                grouping.views,
+                intrinsics_snapshot,
+                self.settings.pose_alignment.aruco_world,
+                enabled_camera_ids=tuple(
+                    camera_id
+                    for camera_id, source in selected_sources.items()
+                    if source["enabled"]
+                ),
+                minimum_pnp_inliers=(
+                    self.settings.pose_alignment.minimum_pnp_inliers
+                ),
+                maximum_reprojection_error_px=(
+                    self.settings.pose_alignment
+                    .maximum_aruco_reprojection_error_px
+                ),
+            )
+            aruco_warnings = [
+                (
+                    f"{item['camera_label']}抽樣影像尚未建立有效 "
+                    "ArUco 姿態；正式分析會逐張偵測並保留失敗原因。"
+                )
+                for item in aruco_readiness["cameras"].values()
+                if item["status"] != "resolved"
+            ]
+            included_capture_ids = {
+                view.capture_id
+                for view in grouping.views
+            }
+            input_manifest = [
+                item
+                for item in source_manifest
+                if int(item["input_id"]) in included_capture_ids
+            ]
             reconstruction = analysis_parameters["reconstruction"]
             backend_readiness = self._reconstruction_backends.check(
                 reconstruction["backend"]
             )
             if (
-                request.method == "round_multiview"
+                request.method == "rotating"
                 and not backend_readiness.get("available")
             ):
                 raise AnalysisError(
@@ -1096,10 +1302,12 @@ class AnalysisService:
                 "manual_review_required": request.manual_review_required,
                 "mode_ids": list(request.mode_ids),
                 "camera_sources": selected_sources,
+                "source_manifest": source_manifest,
                 "input_manifest": input_manifest,
                 "source_validation": {
                     "ready_at_creation": validation.ready,
                     "not_ready_reasons": validation_errors,
+                    "issues": self._validation_issue_payloads(validation),
                     "source_frame_count": validation.source_frame_count,
                     "rejected_frame_count": validation.rejected_frame_count,
                     "camera_resolutions": {
@@ -1110,10 +1318,14 @@ class AnalysisService:
                     "round_count": len(grouping.rounds),
                     "ready_round_count": grouping.ready_round_count,
                     "incomplete_round_count": grouping.incomplete_round_count,
-                    "warnings": list(grouping.warnings),
+                    "warnings": list(dict.fromkeys([
+                        *grouping.warnings,
+                        *aruco_warnings,
+                    ])),
                 },
                 "pose_alignment": pose_settings,
                 "coordinate_space": "undistorted",
+                "aruco_readiness_at_creation": aruco_readiness,
                 "backend_readiness_at_creation": backend_readiness,
                 "storage_readiness_at_creation": {
                     "available_bytes": free_storage_bytes,
@@ -1146,6 +1358,7 @@ class AnalysisService:
             artifacts = AnalysisArtifacts.create(output_dir)
             try:
                 artifacts.write_parameters(parameters)
+                artifacts.write_source_manifest(source_manifest)
                 artifacts.write_input_manifest(input_manifest)
                 artifacts.write_round_index(grouping.rounds, grouping.views)
                 artifacts.write_reconstruction_environment(backend_readiness)
@@ -1170,7 +1383,10 @@ class AnalysisService:
         validation: CaptureRecordValidation,
     ) -> None:
         current = AnalysisService._manifest(validation)
-        frozen = run.parameters.get("input_manifest", [])
+        frozen = run.parameters.get(
+            "source_manifest",
+            run.parameters.get("input_manifest", []),
+        )
         if current != frozen:
             raise AnalysisError(
                 "捕捉資料輸入在分析紀錄建立後已變更；"
@@ -1179,10 +1395,7 @@ class AnalysisService:
 
     def _validate_round_analysis(self, run: AnalysisRun) -> AnalysisRun:
         validation = self._validation_for_run(run)
-        errors = [
-            issue.message
-            for issue in validation.issues
-        ]
+        errors = self._blocking_validation_messages(validation)
         if errors:
             raise AnalysisError(
                 "紀錄不可分析：" + "；".join(dict.fromkeys(errors))
@@ -1235,7 +1448,7 @@ class AnalysisService:
             backend_name
         )
         if (
-            run.method_name == "round_multiview"
+            run.method_name == "rotating"
             and not backend_readiness["available"]
         ):
             raise AnalysisError("；".join(backend_readiness["errors"]))
@@ -1344,11 +1557,32 @@ class AnalysisService:
         level: str,
         message: str,
     ) -> None:
-        line = f"{utc_now_iso()} [{level}] {message}\n"
+        timestamp = utc_now_iso()
         path = self._artifacts(run).log_path
         with self._lock:
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(line)
+            write_header = not path.is_file() or path.stat().st_size == 0
+            with path.open(
+                "a",
+                encoding="utf-8",
+                newline="",
+            ) as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=(
+                        "timestamp",
+                        "level",
+                        "analysis_id",
+                        "message",
+                    ),
+                )
+                if write_header:
+                    writer.writeheader()
+                writer.writerow({
+                    "timestamp": timestamp,
+                    "level": level,
+                    "analysis_id": run.analysis_id,
+                    "message": message,
+                })
         getattr(logger, level.lower(), logger.info)(
             "Analysis %s: %s",
             run.analysis_id,
@@ -1599,8 +1833,8 @@ class AnalysisService:
                 if item.status == "incomplete":
                     status = "incomplete"
                 elif (
-                    run.method_name == "round_multiview"
-                    and item.round_id == "round.00"
+                    run.method_name == "fixed"
+                    or item.round_id == "round.00"
                 ):
                     status = "ready_tip_only"
                 else:
@@ -1688,6 +1922,12 @@ class AnalysisService:
         return list(resolved.values())
 
     def _refresh_tip_correction_artifacts(self, run: AnalysisRun) -> None:
+        output_settings = run.parameters.get("outputs")
+        export_trajectory_csv = (
+            bool(output_settings.get("export_trajectory_csv", True))
+            if isinstance(output_settings, Mapping)
+            else True
+        )
         corrections = self.repository.list_tip_corrections(run.analysis_id)
         resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
         landmark_by_round = {
@@ -1710,7 +1950,8 @@ class AnalysisService:
                 status = "tip_invalid"
                 failure_reason = landmark.failure_reason
             elif (
-                run.method_name == "round_multiview"
+                run.method_name == "rotating"
+                and round_item.round_id != "round.00"
                 and (model is None or model.status != "completed")
             ):
                 status = "tip_only"
@@ -1758,12 +1999,30 @@ class AnalysisService:
             tip_marker_count=valid_count,
             trajectory_status="completed" if valid_count else "unavailable",
         )
+        reprojection_errors = [
+            float(item.mean_reprojection_error_px)
+            for item in resolved_landmarks
+            if (
+                item.valid
+                and item.mean_reprojection_error_px is not None
+            )
+        ]
+        self.repository.update_average_reprojection_error(
+            run.analysis_id,
+            (
+                float(np.mean(reprojection_errors))
+                if reprojection_errors
+                else None
+            ),
+            utc_now_iso(),
+        )
         updated = self._require_run(run.analysis_id)
         artifacts = self._artifacts(updated)
         artifacts.write_tip_corrections(corrections)
         artifacts.write_tip_trajectory(
             trajectory.points,
             trajectory.quality,
+            export_csv=export_trajectory_csv,
         )
         artifacts.write_formal_summaries(
             rounds,
@@ -2018,6 +2277,12 @@ class AnalysisService:
             for camera_id, snapshot in run.intrinsics_snapshot.items()
         }
         pose_settings = self._pose_settings_for_run(run)
+        pose_strategy = run.parameters.get("pose_strategy")
+        use_feature_refinement = (
+            bool(pose_strategy.get("use_bundle_adjustment", True))
+            if isinstance(pose_strategy, Mapping)
+            else True
+        )
         views_by_round: dict[str, list] = {}
         for view in views:
             views_by_round.setdefault(view.round_key, []).append(view)
@@ -2093,6 +2358,7 @@ class AnalysisService:
                     / "pose_debug"
                     / f"round_{round_index:04d}"
                 ),
+                use_feature_refinement=use_feature_refinement,
                 stage_callback=update_pose_stage,
                 cancel_check=lambda: self._check_cancel(cancel_event),
             )
@@ -2127,6 +2393,7 @@ class AnalysisService:
                     "aruco_refined": "feature_refined",
                     "sfm": "feature_refined",
                     "motor_prior": "motor_prior",
+                    "interpolated": "interpolated",
                 }.get(pose.source, "invalid")
                 round_poses.append(
                     AnalysisCameraPoseResult(
@@ -2164,6 +2431,7 @@ class AnalysisService:
                         ),
                         pose_source=source,
                         valid=pose.resolved,
+                        quality_warnings=list(pose.quality_warnings),
                         failure_reason=pose.failure_reason,
                     )
                 )
@@ -2241,6 +2509,23 @@ class AnalysisService:
                 quality_payload,
             )
 
+        stored_poses, fixed_camera_consistency = (
+            evaluate_fixed_camera_pose_consistency(stored_poses)
+        )
+        final_poses_by_round: dict[
+            str,
+            list[AnalysisCameraPoseResult],
+        ] = {}
+        for pose in stored_poses:
+            final_poses_by_round.setdefault(
+                pose.round_key,
+                [],
+            ).append(pose)
+        for round_key, round_poses in final_poses_by_round.items():
+            artifacts.write_round_camera_poses(
+                round_key,
+                round_poses,
+            )
         self.repository.replace_camera_poses(run.analysis_id, stored_poses)
         self.repository.update_views(updated_views)
         pose_payload = [
@@ -2249,6 +2534,7 @@ class AnalysisService:
         ]
         aggregate_pose_quality = {
             "coordinate_space": "undistorted",
+            "fixed_camera_consistency": fixed_camera_consistency,
             "rounds": round_quality_payloads,
         }
         self.repository.update_pose_alignment(
@@ -2267,6 +2553,7 @@ class AnalysisService:
             stored_poses,
             pose_estimation_version=pose_estimation_version,
             round_quality=round_quality_payloads,
+            fixed_camera_consistency=fixed_camera_consistency,
         )
         artifacts.write_round_index(
             self.repository.list_rounds(run.analysis_id),
@@ -2349,6 +2636,15 @@ class AnalysisService:
         reconstruction = run.parameters.get("reconstruction")
         if not isinstance(reconstruction, Mapping):
             raise AnalysisError("三維模型設定格式無效。")
+        pose_strategy = run.parameters.get("pose_strategy")
+        use_bundle_adjustment = (
+            bool(pose_strategy.get("use_bundle_adjustment", True))
+            if isinstance(pose_strategy, Mapping)
+            else True
+        )
+        background = run.parameters.get("background")
+        if not isinstance(background, Mapping):
+            raise AnalysisError("背景處理設定格式無效。")
         return {
             "schema_version": "1.0",
             "analysis_id": run.analysis_id,
@@ -2356,7 +2652,13 @@ class AnalysisService:
             "round_key": round_key,
             "artifact_root": str(artifacts.root),
             "backend": str(reconstruction.get("backend") or ""),
-            "parameters": dict(reconstruction),
+            "parameters": {
+                **dict(reconstruction),
+                "use_constrained_bundle_adjustment": (
+                    use_bundle_adjustment
+                ),
+            },
+            "background": dict(background),
             "selected_views": selected_payloads,
             "camera_poses": [
                 item.model_dump(mode="json")
@@ -2370,12 +2672,176 @@ class AnalysisService:
             "source_images_are_read_only": True,
         }
 
+    def _apply_bundle_adjusted_camera_poses(
+        self,
+        run: AnalysisRun,
+        round_key: str,
+        refined_payloads: object,
+        bundle_adjustment_quality: object,
+    ) -> None:
+        if not isinstance(refined_payloads, list):
+            raise AnalysisError("模型工作回傳的姿態精修結果格式無效。")
+        quality = (
+            dict(bundle_adjustment_quality)
+            if isinstance(bundle_adjustment_quality, Mapping)
+            else {}
+        )
+        all_poses = self.repository.list_camera_poses(run.analysis_id)
+        pose_by_view = {
+            item.view_id: item
+            for item in all_poses
+            if item.round_key == round_key
+        }
+        updated_by_view: dict[str, AnalysisCameraPoseResult] = {}
+        for payload in refined_payloads:
+            if not isinstance(payload, Mapping):
+                raise AnalysisError("模型工作回傳的單筆姿態格式無效。")
+            if not payload.get("refined"):
+                continue
+            view_id = str(payload.get("view_id") or "")
+            stored = pose_by_view.get(view_id)
+            if stored is None or stored.camera_id != "rotating":
+                raise AnalysisError("姿態精修結果指向不存在的旋臂 View。")
+            matrix = np.asarray(
+                payload.get("world_to_camera_matrix"),
+                dtype=np.float64,
+            )
+            if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+                raise AnalysisError("姿態精修矩陣格式無效。")
+            translation_change = float(
+                payload.get("translation_change_mm") or 0.0
+            )
+            rotation_change = float(
+                payload.get("rotation_change_deg") or 0.0
+            )
+            if translation_change > 50.0 or rotation_change > 10.0:
+                raise AnalysisError(
+                    "姿態精修結果偏離 ArUco 先驗上限。"
+                )
+            camera_to_world = np.linalg.inv(matrix)
+            warning = (
+                "已使用固定世界基準與 ArUco 位置先驗完成"
+                "受約束多視角 Bundle Adjustment。"
+            )
+            warnings = list(stored.quality_warnings)
+            if warning not in warnings:
+                warnings.append(warning)
+            updated_by_view[view_id] = stored.model_copy(
+                update={
+                    "rotation_matrix": (
+                        matrix[:3, :3].astype(float).tolist()
+                    ),
+                    "translation_vector_mm": (
+                        matrix[:3, 3].astype(float).tolist()
+                    ),
+                    "camera_center_world_mm": (
+                        camera_to_world[:3, 3].astype(float).tolist()
+                    ),
+                    "pose_source": "feature_refined",
+                    "quality_warnings": warnings,
+                }
+            )
+
+        updated_poses = [
+            updated_by_view.get(item.view_id, item)
+            for item in all_poses
+        ]
+        if updated_by_view:
+            self.repository.replace_camera_poses(
+                run.analysis_id,
+                updated_poses,
+            )
+            views = self.repository.list_views(
+                run.analysis_id,
+                round_key,
+            )
+            self.repository.update_views([
+                (
+                    view.model_copy(
+                        update={"pose_status": "feature_refined"}
+                    )
+                    if view.view_id in updated_by_view
+                    else view
+                )
+                for view in views
+            ])
+
+        pose_quality = deepcopy(run.pose_quality)
+        round_quality = list(pose_quality.get("rounds") or [])
+        found = False
+        for index, item in enumerate(round_quality):
+            if (
+                isinstance(item, Mapping)
+                and item.get("round_key") == round_key
+            ):
+                round_quality[index] = {
+                    **dict(item),
+                    "bundle_adjustment": quality,
+                }
+                found = True
+                break
+        if not found:
+            round_quality.append({
+                "round_key": round_key,
+                "bundle_adjustment": quality,
+            })
+        pose_quality["rounds"] = round_quality
+        self.repository.update_pose_alignment(
+            run.analysis_id,
+            camera_pose_results=[
+                item.model_dump(mode="json")
+                for item in updated_poses
+            ],
+            pose_estimation_version=(
+                run.pose_estimation_version or "unknown"
+            ),
+            pose_quality=pose_quality,
+            updated_at=utc_now_iso(),
+        )
+        artifacts = self._artifacts(run)
+        artifacts.write_round_camera_poses(
+            round_key,
+            [
+                item
+                for item in updated_poses
+                if item.round_key == round_key
+            ],
+        )
+        round_quality_item = next(
+            (
+                dict(item)
+                for item in round_quality
+                if (
+                    isinstance(item, Mapping)
+                    and item.get("round_key") == round_key
+                )
+            ),
+            {
+                "round_key": round_key,
+                "bundle_adjustment": quality,
+            },
+        )
+        artifacts.write_round_quality(
+            round_key,
+            round_quality_item,
+        )
+        artifacts.write_aggregated_pose_results(
+            updated_poses,
+            pose_estimation_version=(
+                run.pose_estimation_version or "unknown"
+            ),
+            round_quality=round_quality,
+            fixed_camera_consistency=dict(
+                pose_quality.get("fixed_camera_consistency") or {}
+            ),
+        )
+
     def _run_round_models(
         self,
         run: AnalysisRun,
         cancel_event: Event,
     ) -> AnalysisRun:
-        if run.method_name != "round_multiview":
+        if run.method_name != "rotating":
             return run
         reconstruction = run.parameters.get("reconstruction")
         if not isinstance(reconstruction, Mapping):
@@ -2422,6 +2888,10 @@ class AnalysisService:
                 model_id=model_id,
                 backend=backend_name,
                 backend_version=str(readiness.get("backend_version") or "unknown"),
+                repository_url=readiness.get("repository_url"),
+                repository_commit=readiness.get("repository_commit"),
+                license=readiness.get("license"),
+                environment=dict(readiness.get("environment") or {}),
                 status="processing",
                 source_view_ids=[],
             )
@@ -2469,6 +2939,16 @@ class AnalysisService:
                     cancel_event,
                     progress_callback=update_worker_progress,
                 )
+                self._apply_bundle_adjusted_camera_poses(
+                    self._require_run(run.analysis_id),
+                    round_item.round_key,
+                    worker_result.get("refined_camera_poses") or [],
+                    (
+                        worker_result.get("model_quality", {})
+                        .get("sparse_initialization", {})
+                        .get("bundle_adjustment", {})
+                    ),
+                )
                 relative_path = lambda value: (
                     str(Path(value).resolve().relative_to(artifacts.root))
                     if value
@@ -2477,11 +2957,31 @@ class AnalysisService:
                 completed_model = running_model.model_copy(
                     update={
                         "status": "completed",
+                        "repository_url": worker_result.get(
+                            "repository_url"
+                        ),
+                        "repository_commit": worker_result.get(
+                            "repository_commit"
+                        ),
+                        "license": worker_result.get("license"),
+                        "environment": dict(
+                            worker_result.get("environment") or {}
+                        ),
                         "source_view_ids": list(
                             worker_result.get("source_view_ids") or []
                         ),
                         "model_path": relative_path(
                             worker_result.get("gaussian_model_path")
+                        ),
+                        "plant_model_path": relative_path(
+                            worker_result.get(
+                                "plant_gaussian_model_path"
+                            )
+                        ),
+                        "background_model_path": relative_path(
+                            worker_result.get(
+                                "background_gaussian_model_path"
+                            )
                         ),
                         "point_cloud_path": relative_path(
                             worker_result.get("point_cloud_path")
@@ -2655,6 +3155,18 @@ class AnalysisService:
         tip_settings = run.parameters.get("tip_analysis")
         if not isinstance(tip_settings, Mapping):
             raise AnalysisError("尖端標記設定格式無效。")
+        output_settings = run.parameters.get("outputs")
+        if not isinstance(output_settings, Mapping):
+            raise AnalysisError("分析輸出設定格式無效。")
+        background_settings = run.parameters.get("background")
+        if not isinstance(background_settings, Mapping):
+            raise AnalysisError("背景處理設定格式無效。")
+        export_tip_markers = bool(
+            output_settings.get("export_tip_markers", True)
+        )
+        export_trajectory_csv = bool(
+            output_settings.get("export_trajectory_csv", True)
+        )
         minimum_confidence = float(
             tip_settings.get("minimum_confidence", 0.7)
         )
@@ -2681,8 +3193,12 @@ class AnalysisService:
             for item in self.repository.list_tip_landmarks(run.analysis_id)
         }
         processable_statuses = (
-            {"model_completed", "model_failed"}
-            if run.method_name == "round_multiview"
+            {
+                "model_completed",
+                "model_failed",
+                "ready_tip_only",
+            }
+            if run.method_name == "rotating"
             else {"ready_tip_only"}
         )
         candidates = [
@@ -2715,6 +3231,25 @@ class AnalysisService:
                     (processed_index - 1) / max(len(candidates), 1)
                 ) * 0.20,
             )
+            def update_tip_stage(
+                stage: str,
+                round_progress: float,
+            ) -> None:
+                self._check_cancel(cancel_event)
+                latest = self._require_run(run.analysis_id)
+                overall = (
+                    (processed_index - 1)
+                    + min(max(round_progress, 0.0), 1.0)
+                ) / max(len(candidates), 1)
+                self._set_state(
+                    latest,
+                    status="processing",
+                    stage=stage,
+                    current_frame=processed_index,
+                    total_frames=len(candidates),
+                    progress=0.68 + overall * 0.20,
+                )
+
             model_result = models_by_round.get(round_item.round_key)
             if model_result is not None and model_result.status != "completed":
                 model_result = None
@@ -2740,10 +3275,42 @@ class AnalysisService:
                     use_temporal_prior=bool(
                         tip_settings.get("use_temporal_prior", True)
                     ),
+                    export_all_2d_candidates=bool(
+                        tip_settings.get(
+                            "export_all_2d_candidates",
+                            False,
+                        )
+                    ),
+                    export_scene_point_cloud=bool(
+                        output_settings.get(
+                            "export_scene_point_cloud",
+                            True,
+                        )
+                    ),
+                    export_plant_point_cloud=bool(
+                        output_settings.get(
+                            "export_plant_point_cloud",
+                            True,
+                        )
+                    ),
+                    export_background_point_cloud=bool(
+                        background_settings.get(
+                            "save_background_model",
+                            False,
+                        )
+                    ),
+                    export_skeleton=bool(
+                        output_settings.get("export_skeleton", True)
+                    ),
+                    export_tip_marker=export_tip_markers,
                     save_reprojection_overlays=bool(
                         tip_settings.get("save_reprojection_overlays", True)
                     ),
+                    save_diagnostics=bool(
+                        output_settings.get("save_diagnostics", True)
+                    ),
                     cancel_check=lambda: self._check_cancel(cancel_event),
+                    stage_callback=update_tip_stage,
                 )
                 landmark = result.landmark
                 if result.model_result is not None:
@@ -2785,10 +3352,20 @@ class AnalysisService:
                     round_item.round_key,
                     (),
                 )
-                artifacts.write_tip_landmark(
-                    landmark,
-                    quality={"failure_reason": reason},
-                )
+                if export_tip_markers:
+                    artifacts.write_tip_landmark(
+                        landmark,
+                        quality={"failure_reason": reason},
+                    )
+                else:
+                    (
+                        round_artifact_directory(
+                            artifacts.root,
+                            round_item.round_key,
+                        )
+                        / "tip"
+                        / "tip_marker.json"
+                    ).unlink(missing_ok=True)
                 self._log(
                     current,
                     "ERROR",
@@ -2800,7 +3377,8 @@ class AnalysisService:
             if landmark.valid:
                 previous_by_mode[round_item.mode_id] = landmark
             model_failed = (
-                run.method_name == "round_multiview"
+                run.method_name == "rotating"
+                and round_item.round_id != "round.00"
                 and (
                     models_by_round.get(round_item.round_key) is None
                     or models_by_round[round_item.round_key].status != "completed"
@@ -2811,7 +3389,14 @@ class AnalysisService:
                 failure_reason = None
             elif landmark.valid:
                 round_status = "tip_only"
-                failure_reason = round_item.failure_reason
+                stored_model = models_by_round.get(
+                    round_item.round_key
+                )
+                failure_reason = (
+                    stored_model.failure_reason
+                    if stored_model is not None
+                    else round_item.failure_reason
+                )
             else:
                 round_status = "tip_invalid"
                 failure_reason = landmark.failure_reason
@@ -2833,6 +3418,14 @@ class AnalysisService:
         resolved_landmarks = self.repository.list_tip_landmarks(
             run.analysis_id
         )
+        current = self._require_run(run.analysis_id)
+        self._set_state(
+            current,
+            stage="linking_tip_trajectory",
+            current_frame=len(candidates),
+            total_frames=len(candidates),
+            progress=0.89,
+        )
         trajectory = link_tip_trajectory(
             resolved_rounds,
             resolved_landmarks,
@@ -2844,6 +3437,15 @@ class AnalysisService:
         artifacts.write_tip_trajectory(
             trajectory.points,
             trajectory.quality,
+            export_csv=export_trajectory_csv,
+        )
+        current = self._require_run(run.analysis_id)
+        self._set_state(
+            current,
+            stage="calculating_quality_metrics",
+            current_frame=len(candidates),
+            total_frames=len(candidates),
+            progress=0.90,
         )
         artifacts.write_formal_summaries(
             resolved_rounds,
@@ -2857,6 +3459,14 @@ class AnalysisService:
         artifacts.write_round_index(
             resolved_rounds,
             self.repository.list_views(run.analysis_id),
+        )
+        current = self._require_run(run.analysis_id)
+        self._set_state(
+            current,
+            stage="exporting",
+            current_frame=len(candidates),
+            total_frames=len(candidates),
+            progress=0.91,
         )
 
         valid_count = sum(item.valid for item in resolved_landmarks)
@@ -2881,6 +3491,23 @@ class AnalysisService:
             failed_round_count=failed_round_count,
             tip_marker_count=valid_count,
             trajectory_status=trajectory_status,
+        )
+        reprojection_errors = [
+            float(item.mean_reprojection_error_px)
+            for item in resolved_landmarks
+            if (
+                item.valid
+                and item.mean_reprojection_error_px is not None
+            )
+        ]
+        self.repository.update_average_reprojection_error(
+            run.analysis_id,
+            (
+                float(np.mean(reprojection_errors))
+                if reprojection_errors
+                else None
+            ),
+            utc_now_iso(),
         )
         current = self._require_run(run.analysis_id)
         artifacts.write_run(current)

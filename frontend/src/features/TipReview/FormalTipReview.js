@@ -17,7 +17,6 @@ import { PiHouseFill } from "react-icons/pi";
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import InformationGrid from "@/components/data/InformationGrid";
-import RetryMessage from "@/components/feedback/RetryMessage";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import {
   NumericInput,
@@ -31,7 +30,9 @@ import {
   StatusPill,
 } from "@/components/panels/Panel";
 import {
+  ANALYSIS_MODEL_STATUS_META,
   ANALYSIS_METHODS,
+  RECONSTRUCTION_BACKEND_LABELS,
 } from "@/features/Analysis/analysisConfig";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
@@ -43,7 +44,7 @@ import { formalArtifactUrl } from "./lib/formalTipReviewApiUtils";
 
 const TIP_SOURCE_LABELS = {
   multiview_joint: "多視角聯合分析",
-  top_side_triangulation: "俯視與側視三角化",
+  fixed_triangulation: "固定雙鏡頭三角化",
   model_skeleton: "模型骨架推定",
   temporal_estimate: "時序估計",
   manual: "人工修正",
@@ -110,7 +111,6 @@ export default function FormalTipReview({
     saveCorrection,
     deleteCorrection,
     completeReview,
-    clearMutationError,
   } = useFormalTipReview({
     analysisId,
   });
@@ -130,6 +130,12 @@ export default function FormalTipReview({
     ? roundStatus(selectedRound, resolvedLandmark)
     : null;
   const modelQuality = selectedModel?.model_quality || {};
+  const modelStatus = ANALYSIS_MODEL_STATUS_META[
+    selectedModel?.status
+  ] || {
+    label: "尚無模型",
+    tone: "neutral",
+  };
   const overviewItems = selectedRound ? [
     {
       label: "模式",
@@ -235,6 +241,16 @@ export default function FormalTipReview({
                 </StatusPill>
               ) : null}
               <Button
+                disabled={loading}
+                onClick={() => void load()}
+              >
+                <FiRefreshCw
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                {loading ? "讀取中…" : "重新讀取"}
+              </Button>
+              <Button
                 onClick={() => router.push(
                   `/analysis/${encodeURIComponent(analysisId)}`,
                 )}
@@ -250,14 +266,6 @@ export default function FormalTipReview({
         />
 
         <div className="grid gap-4 p-5 max-sm:p-4">
-          {loadError ? (
-            <RetryMessage
-              message={loadError}
-              onRetry={() => void load()}
-              retrying={loading}
-            />
-          ) : null}
-
           {loading && !run ? (
             <div className="grid min-h-36 place-items-center rounded-xl border border-white/15 bg-black/15 p-4 text-sm font-semibold text-neutral-400">
               讀取尖端標記與每輪模型中…
@@ -366,8 +374,8 @@ export default function FormalTipReview({
                       title="每輪植物模型"
                       description="模型預覽、完整場景與純植物輸出均屬於目前 Round。"
                     >
-                      <StatusPill tone={selectedModel?.status === "completed" ? "success" : "warning"}>
-                        {selectedModel?.status === "completed" ? "模型完成" : "模型不可用"}
+                      <StatusPill tone={modelStatus.tone}>
+                        {modelStatus.label}
                       </StatusPill>
                     </SubsectionHeader>
                     {selectedModel?.preview_paths?.length ? (
@@ -402,7 +410,9 @@ export default function FormalTipReview({
                       items={[
                         {
                           label: "模型後端",
-                          value: selectedModel?.backend || "尚無資料",
+                          value: RECONSTRUCTION_BACKEND_LABELS[
+                            selectedModel?.backend
+                          ] || "尚無資料",
                         },
                         {
                           label: "Gaussian 數量",
@@ -607,21 +617,6 @@ export default function FormalTipReview({
                   </InnerPanel>
                 </div>
               ) : null}
-            </div>
-          ) : null}
-
-          {mutationError ? (
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-rose-300/30 bg-rose-500/10 p-3">
-              <p className="m-0 text-sm font-semibold text-rose-200">
-                {mutationError}
-              </p>
-              <Button onClick={clearMutationError}>
-                <FiRefreshCw
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                清除錯誤
-              </Button>
             </div>
           ) : null}
 

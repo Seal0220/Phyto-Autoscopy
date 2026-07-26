@@ -34,6 +34,7 @@ class _TrainingView:
     source: PreparedRoundView
     image: np.ndarray
     valid_mask: np.ndarray | None
+    loss_weight: np.ndarray | None
     camera_matrix: np.ndarray
     world_to_camera: np.ndarray
 
@@ -65,6 +66,7 @@ def _load_training_views(
     image_factor: int,
     center_world_mm: np.ndarray,
     world_scale_mm: float,
+    use_plant_mask_in_loss: bool,
 ) -> tuple[_TrainingView, ...]:
     views: list[_TrainingView] = []
     for source in dataset.views:
@@ -91,6 +93,32 @@ def _load_training_views(
                 )
             valid_mask = mask > 0
 
+        loss_weight = (
+            valid_mask.astype(np.float32)
+            if valid_mask is not None
+            else np.ones((height, width), dtype=np.float32)
+        )
+        if (
+            use_plant_mask_in_loss
+            and source.plant_mask_path is not None
+        ):
+            plant_mask = _read_image(
+                source.plant_mask_path,
+                cv2.IMREAD_GRAYSCALE,
+            )
+            if (plant_mask.shape[1], plant_mask.shape[0]) != (width, height):
+                plant_mask = cv2.resize(
+                    plant_mask,
+                    (width, height),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            plant_pixels = plant_mask > 0
+            loss_weight = np.where(
+                loss_weight > 0,
+                np.where(plant_pixels, 1.0, 0.2),
+                0.0,
+            ).astype(np.float32)
+
         camera_matrix = source.camera_matrix.copy()
         camera_matrix[0, :] /= image_factor
         camera_matrix[1, :] /= image_factor
@@ -107,6 +135,7 @@ def _load_training_views(
                 source=source,
                 image=image_float,
                 valid_mask=valid_mask,
+                loss_weight=loss_weight,
                 camera_matrix=camera_matrix.astype(np.float32),
                 world_to_camera=normalized_pose,
             )
@@ -252,6 +281,9 @@ def train_gsplat_model(
         image_factor=image_factor,
         center_world_mm=center_world_mm,
         world_scale_mm=world_scale_mm,
+        use_plant_mask_in_loss=bool(
+            parameters.get("use_plant_mask", True)
+        ),
     )
 
     device = torch.device("cuda:0")
@@ -315,6 +347,9 @@ def train_gsplat_model(
                 if view.valid_mask is not None
                 else None
             ),
+            "loss_weight": torch.from_numpy(
+                view.loss_weight,
+            ).to(device),
             "K": torch.from_numpy(view.camera_matrix).to(device)[None],
             "viewmat": torch.from_numpy(view.world_to_camera).to(device)[None],
         })
@@ -377,15 +412,23 @@ def train_gsplat_model(
             info=info,
         )
         mask = item["mask"]
+        loss_weight = item["loss_weight"]
+        if bool((loss_weight > 0).any()):
+            per_pixel_l1 = torch.abs(
+                colors_rendered[0] - pixels[0]
+            ).mean(dim=-1)
+            l1_loss = (
+                per_pixel_l1 * loss_weight
+            ).sum() / loss_weight.sum().clamp_min(1.0)
+        else:
+            raise GsplatTrainingError(
+                "模型訓練遮罩沒有任何有效像素。"
+            )
         if mask is not None and bool(mask.any()):
-            l1_loss = torch.abs(
-                colors_rendered[0][mask] - pixels[0][mask]
-            ).mean()
             mask_float = mask[None, ..., None].float()
             ssim_prediction = colors_rendered * mask_float
             ssim_target = pixels * mask_float
         else:
-            l1_loss = torch.abs(colors_rendered - pixels).mean()
             ssim_prediction = colors_rendered
             ssim_target = pixels
         ssim_loss = _ssim_loss(ssim_prediction, ssim_target, torch)
@@ -454,6 +497,9 @@ def train_gsplat_model(
         "gaussian_count": int(splats["means"].shape[0]),
         "coordinate_space": "aruco_world_mm",
         "camera_poses_fixed": True,
+        "plant_mask_in_training_loss": bool(
+            parameters.get("use_plant_mask", True)
+        ),
         "world_center_mm": center_world_mm.tolist(),
         "internal_world_scale_mm": world_scale_mm,
     }

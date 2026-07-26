@@ -34,7 +34,6 @@ export default function Analysis() {
     load,
     exportRun,
     resetSocketError,
-    clearExportFailure,
   } = useAnalysisDashboard();
   const activeRunCount = runs.filter((run) => [
     "validating",
@@ -134,8 +133,6 @@ export default function Analysis() {
           <AnalysisDashboardRuns
             runs={runs}
             exportingIds={exportingIds}
-            exportFailure={exportFailure}
-            onClearExportError={clearExportFailure}
             onExport={(analysisId) => void exportRun(analysisId)}
             onOpen={(analysisId) => router.push(
               `/analysis/${encodeURIComponent(analysisId)}`,

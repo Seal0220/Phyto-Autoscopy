@@ -41,5 +41,6 @@ def test_baseline_validates_without_modifying_raw_captures(tmp_path) -> None:
         for relative_path in dataset["manifest"]["raw_sha256"]
     }
     assert result.ready is True
-    assert result.pairable_frame_count == 8
+    assert result.top_frame_count == 8
+    assert result.side_frame_count == 8
     assert before == after == dataset["manifest"]["raw_sha256"]
