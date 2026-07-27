@@ -154,6 +154,8 @@ export default function CameraStream({
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
       {streamActive ? (
+        // 原生 img 才能維持後端 MJPEG 串流連線。
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           className="block aspect-video w-full rounded-2xl bg-black/40 object-contain"
           src={streamSource}

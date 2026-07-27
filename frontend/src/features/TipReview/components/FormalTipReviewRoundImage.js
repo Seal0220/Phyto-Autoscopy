@@ -90,6 +90,8 @@ export default function FormalTipReviewRoundImage({
           if (resolved) onPointChange(view.view_id, resolved);
         }}
       >
+        {/* 原生影像尺寸與指標座標是尖端標記運算的輸入。 */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className="block h-auto w-full select-none"
           src={imageUrl}

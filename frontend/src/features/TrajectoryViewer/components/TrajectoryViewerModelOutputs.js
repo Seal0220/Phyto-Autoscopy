@@ -101,6 +101,8 @@ export default function TrajectoryViewerModelOutputs({
 
                 {previewPath ? (
                   <div className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-white/15 bg-black">
+                    {/* 模型預覽由受保護的動態分析產物 API 提供。 */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       className="size-full object-contain"
                       src={artifactUrl(analysisId, previewPath)}

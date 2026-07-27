@@ -387,6 +387,8 @@ export default function FormalTipReview({
                               className="relative overflow-hidden rounded-xl border border-white/15 bg-black"
                               key={path}
                             >
+                              {/* 分析產物由受保護的動態 API 提供。 */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 className="block aspect-video w-full object-contain"
                                 src={url}

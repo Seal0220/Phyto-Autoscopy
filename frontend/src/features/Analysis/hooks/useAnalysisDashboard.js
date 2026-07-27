@@ -49,6 +49,7 @@ export default function useAnalysisDashboard() {
   } = usePhytoSocketContext();
 
   useEffect(() => {
+    const exportControllers = exportControllersRef.current;
     mountedRef.current = true;
 
     return () => {
@@ -56,10 +57,10 @@ export default function useAnalysisDashboard() {
       loadingRef.current = false;
       abortRequest(controllerRef.current);
       controllerRef.current = null;
-      for (const controller of exportControllersRef.current.values()) {
+      for (const controller of exportControllers.values()) {
         abortRequest(controller);
       }
-      exportControllersRef.current.clear();
+      exportControllers.clear();
     };
   }, []);
 

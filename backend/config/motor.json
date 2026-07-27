@@ -14,7 +14,7 @@
     "maximum_acceleration_deg_s2": 180.0,
 
     "minimum_angle_deg": 0.0,
-    "maximum_angle_deg": 360.0,
+    "maximum_angle_deg": 355.0,
     "movement_timeout_seconds": 240,
     "stabilization_delay_ms": 800
   }

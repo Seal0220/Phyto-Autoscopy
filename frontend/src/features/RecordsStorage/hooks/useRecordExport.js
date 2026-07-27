@@ -27,16 +27,17 @@ export default function useRecordExport({
   const pendingExportsRef = useRef(new Map());
 
   useEffect(() => {
+    const pendingExports = pendingExportsRef.current;
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
 
-      for (const pending of pendingExportsRef.current.values()) {
+      for (const pending of pendingExports.values()) {
         abortRequest(pending.controller);
       }
 
-      pendingExportsRef.current.clear();
+      pendingExports.clear();
     };
   }, []);
 

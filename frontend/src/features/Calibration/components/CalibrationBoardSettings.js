@@ -129,6 +129,8 @@ export default function CalibrationBoardSettings({
       <div className="relative grid min-h-64 min-w-120 place-items-center overflow-hidden rounded-xl border border-white/15 bg-neutral-100 p-3">
         {imagePath ? (
           <>
+            {/* 校正板來源是後端動態產生的可下載影像。 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               className="max-h-128 w-full object-contain"
               src={imagePath}

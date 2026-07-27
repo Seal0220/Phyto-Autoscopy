@@ -54,18 +54,21 @@ export default function useUnifiedCalibration({
   const stopControllersRef = useRef(new Map());
 
   useEffect(() => {
+    const actionControllers = actionControllersRef.current;
+    const stopControllers = stopControllersRef.current;
     mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
       abortRequest(loadControllerRef.current);
-      for (const controller of actionControllersRef.current.values()) {
+      for (const controller of actionControllers.values()) {
         abortRequest(controller);
       }
-      actionControllersRef.current.clear();
-      for (const controller of stopControllersRef.current.values()) {
+      actionControllers.clear();
+      for (const controller of stopControllers.values()) {
         abortRequest(controller);
       }
-      stopControllersRef.current.clear();
+      stopControllers.clear();
     };
   }, []);
 

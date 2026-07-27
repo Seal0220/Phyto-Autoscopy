@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 22223",
     "build": "next build",
+    "lint": "eslint .",
     "start": "next start --hostname 127.0.0.1 --port 22223",
     "test": "node --preserve-symlinks --preserve-symlinks-main --experimental-default-type=module --test tests/*.test.mjs"
   },
@@ -16,6 +17,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.20",
     "tailwindcss": "^4.1.13"
   }
 }

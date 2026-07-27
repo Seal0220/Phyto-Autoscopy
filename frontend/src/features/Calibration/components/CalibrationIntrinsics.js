@@ -100,6 +100,7 @@ function CalibrationIntrinsicCard({
 }) {
   const [captureMode, setCaptureMode] = useState("automatic");
   const lastCaptureNoticeRef = useRef("");
+  const captureSampleRef = useRef(null);
   const coverageReady = Boolean(run?.coverage?.ready);
   const selectedResult = run?.selected_result;
   const enabled = cameraStatus?.enabled ?? true;
@@ -242,6 +243,10 @@ function CalibrationIntrinsicCard({
   }
 
   useEffect(() => {
+    captureSampleRef.current = captureSample;
+  });
+
+  useEffect(() => {
     if (
       !locked
       || run?.capture_mode !== "automatic"
@@ -256,7 +261,7 @@ function CalibrationIntrinsicCard({
         && detection?.capture_ready
         && document.visibilityState === "visible"
       ) {
-        void captureSample();
+        void captureSampleRef.current?.();
       }
     }, AUTOMATIC_CAPTURE_INTERVAL_MS);
     return () => window.clearInterval(intervalId);

@@ -281,10 +281,9 @@ export default function AnalysisPoseQuality({
                   ? summary.warning_view_ids.length
                   : 0
                 } 張`,
-                tone={summary.status === "warning"
+                tone: summary.status === "warning"
                   ? "warning"
-                  : "success"
-                },
+                  : "success",
               },
             ]}
             border="none"
@@ -329,10 +328,9 @@ export default function AnalysisPoseQuality({
                 value: `${bundleAdjustment.filter(
                   (item) => item.status === "failed",
                 ).length} 輪`,
-                tone={bundleAdjustmentFailed
+                tone: bundleAdjustmentFailed
                   ? "warning"
-                  : "success"
-                },
+                  : "success",
               },
               {
                 label: "平均最終誤差",

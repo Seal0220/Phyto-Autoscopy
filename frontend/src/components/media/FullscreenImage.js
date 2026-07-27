@@ -102,6 +102,8 @@ export default function FullscreenImage({
               if (event.target === event.currentTarget) closeFullscreen();
             }}
           >
+            {/* 全螢幕檢視需直接接受串流、Blob 與動態檔案 URL。 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               className="block size-full object-contain"
               src={src}
