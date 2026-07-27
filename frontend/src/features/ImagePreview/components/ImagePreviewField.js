@@ -16,7 +16,6 @@ export default function ImagePreviewField({
   leaf,
   onChange,
   scanResults,
-  cameraDrafts,
 }) {
   const meta = imagePreviewFieldMeta(leaf);
 
@@ -34,11 +33,7 @@ export default function ImagePreviewField({
   }
 
   if (meta.type === "select") {
-    const options = imagePreviewDeviceOptions(
-      scanResults,
-      leaf.path.at(-2),
-      cameraDrafts,
-    );
+    const options = imagePreviewDeviceOptions(scanResults);
 
     return (
       <SelectInput

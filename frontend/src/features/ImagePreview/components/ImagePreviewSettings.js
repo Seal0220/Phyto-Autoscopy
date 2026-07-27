@@ -20,6 +20,7 @@ import {
   subscribeCameraSettingsUpdated,
 } from "@/lib/settingsEvents";
 import {
+  imagePreviewDeviceAssignmentUpdates,
   imagePreviewFieldMeta,
   imagePreviewSettingsSections,
   serializeImagePreviewSettingsPayload,
@@ -77,18 +78,22 @@ export default function ImagePreviewSettings({
     value,
   ) {
     const isDeviceIndex = path.at(-1) === "device_index";
-    const nextValue = isDeviceIndex && value === ""
-      ? null
-      : value;
 
-    updateField(path, nextValue);
-
-    if (isDeviceIndex && nextValue === null) {
-      updateField(
-        [...path.slice(0, -1), "enabled"],
-        false,
+    if (isDeviceIndex) {
+      const imagePreviewId = path.at(-2);
+      const updates = imagePreviewDeviceAssignmentUpdates(
+        payload?.cameras,
+        imagePreviewId,
+        value,
       );
+
+      for (const update of updates) {
+        updateField(update.path, update.value);
+      }
+      return;
     }
+
+    updateField(path, value);
   }
 
   useEffect(() => subscribeCameraSettingsUpdated((event) => {
@@ -197,7 +202,6 @@ export default function ImagePreviewSettings({
                     leaf={leaf}
                     onChange={updateImagePreviewField}
                     scanResults={scanResults}
-                    cameraDrafts={payload.cameras}
                   />
                 ))}
                 <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
@@ -207,7 +211,6 @@ export default function ImagePreviewSettings({
                       leaf={leaf}
                       onChange={updateImagePreviewField}
                       scanResults={scanResults}
-                      cameraDrafts={payload.cameras}
                     />
                   ))}
                 </div>
@@ -226,7 +229,6 @@ export default function ImagePreviewSettings({
                           leaf={leaf}
                           onChange={updateImagePreviewField}
                           scanResults={scanResults}
-                          cameraDrafts={payload.cameras}
                         />
                       ))}
                     </div>

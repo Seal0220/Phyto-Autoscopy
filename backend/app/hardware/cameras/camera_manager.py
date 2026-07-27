@@ -292,7 +292,8 @@ class OpenCVCameraManager:
         with self._lifecycle_lock:
             configured = self.registry.all()
             with self._lock:
-                stale_camera_ids = set(self._workers).difference(configured)
+                workers = dict(self._workers)
+            stale_camera_ids = set(workers).difference(configured)
             for camera_id in stale_camera_ids:
                 self._remove_worker(camera_id)
 
@@ -306,6 +307,20 @@ class OpenCVCameraManager:
                             str(exc) if config.enabled else "相機未啟用。"
                         )
                 return
+
+            changed_camera_ids = [
+                camera_id
+                for camera_id, config in configured.items()
+                if (
+                    (worker := workers.get(camera_id)) is not None
+                    and (
+                        not worker.is_running()
+                        or worker.signature != self._signature(config)
+                    )
+                )
+            ]
+            for camera_id in changed_camera_ids:
+                self._remove_worker(camera_id)
 
             for camera_id, config in configured.items():
                 with self._lock:

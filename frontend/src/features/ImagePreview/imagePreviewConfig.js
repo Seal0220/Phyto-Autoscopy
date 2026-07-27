@@ -67,7 +67,7 @@ export const IMAGE_PREVIEW_FIELD_META = {
     valueType: "number",
     min: 0,
     max: 63,
-    description: "選擇作業系統辨識到的相機裝置。",
+    description: "選擇作業系統辨識到的相機裝置；若已由其他視角使用，會自動切換到目前視角。",
   },
   preview_fps: {
     label: "預覽 FPS",

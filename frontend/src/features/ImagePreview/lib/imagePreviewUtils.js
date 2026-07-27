@@ -93,30 +93,17 @@ export function imagePreviewFieldMeta(leaf) {
   };
 }
 
-export function imagePreviewDeviceOptions(
-  scanResults,
-  imagePreviewId,
-  cameraDrafts = {},
-) {
+export function imagePreviewDeviceOptions(scanResults) {
   const devicesByIndex = new Map();
-  const draftAssignments = new Map();
-  for (const [cameraId, config] of Object.entries(cameraDrafts)) {
-    const deviceIndex = Number(config?.device_index);
-
-    if (
-      Number.isInteger(deviceIndex)
-      && deviceIndex >= 0
-      && deviceIndex <= 63
-    ) {
-      draftAssignments.set(deviceIndex, cameraId);
-    }
-  }
 
   for (const result of Array.isArray(scanResults) ? scanResults : []) {
     const deviceIndex = Number(result?.device_index);
+    const deviceName = typeof result?.device_name === "string"
+      ? result.device_name.trim()
+      : "";
 
     if (
-      !result?.connected
+      (!result?.connected && !result?.in_use && !deviceName)
       || !Number.isInteger(deviceIndex)
       || deviceIndex < 0
       || deviceIndex > 63
@@ -125,26 +112,19 @@ export function imagePreviewDeviceOptions(
     }
 
     devicesByIndex.set(deviceIndex, {
-      assignedCameraId: typeof result?.camera_id === "string" ? result.camera_id : null,
-      deviceName: typeof result?.device_name === "string" ? result.device_name.trim() : "",
+      deviceName,
     });
   }
 
   const availableOptions = [...devicesByIndex.entries()]
     .sort(([left], [right]) => left - right)
-    .flatMap(([deviceIndex, state]) => {
-      const draftAssignment = draftAssignments.get(deviceIndex);
-      const assignedCameraId = draftAssignment || state.assignedCameraId;
-      const usedByAnotherCamera = assignedCameraId && assignedCameraId !== imagePreviewId;
-
-      if (usedByAnotherCamera) return [];
-
+    .map(([deviceIndex, state]) => {
       const deviceName = state.deviceName || "未知裝置";
 
-      return [{
+      return {
         value: String(deviceIndex),
-        label: `[${deviceIndex}] ${deviceName}`,
-      }];
+        label: `裝置 ${deviceIndex} ${deviceName}`,
+      };
     });
 
   return [
@@ -154,6 +134,57 @@ export function imagePreviewDeviceOptions(
     },
     ...availableOptions,
   ];
+}
+
+export function imagePreviewDeviceAssignmentUpdates(
+  cameraDrafts,
+  imagePreviewId,
+  value,
+) {
+  const normalizedIndex = value === null || value === undefined || value === ""
+    ? null
+    : Number(value);
+  const updates = [];
+
+  if (normalizedIndex !== null) {
+    for (const [cameraId, config] of Object.entries(cameraDrafts || {})) {
+      const assignedIndex = config?.device_index;
+
+      if (
+        cameraId === imagePreviewId
+        || assignedIndex === null
+        || assignedIndex === undefined
+        || assignedIndex === ""
+        || Number(assignedIndex) !== normalizedIndex
+      ) {
+        continue;
+      }
+
+      updates.push(
+        {
+          path: ["cameras", cameraId, "device_index"],
+          value: null,
+        },
+        {
+          path: ["cameras", cameraId, "enabled"],
+          value: false,
+        },
+      );
+    }
+  }
+
+  updates.push(
+    {
+      path: ["cameras", imagePreviewId, "device_index"],
+      value: normalizedIndex,
+    },
+    {
+      path: ["cameras", imagePreviewId, "enabled"],
+      value: normalizedIndex !== null,
+    },
+  );
+
+  return updates;
 }
 
 export function visibleImagePreviewSettings(payload) {

@@ -148,34 +148,42 @@ def update_camera_settings(
         except KeyError as exc:
             raise CameraError(f"找不到相機：{camera_id}") from exc
 
+        previous_cameras = dict(context.settings.cameras)
         candidate = type(current).model_validate(
             {
                 **current.model_dump(mode="python"),
                 **update.model_dump(exclude_unset=True),
             }
         )
-        if candidate.enabled:
-            if candidate.device_index is None:
-                raise CameraError("啟用相機前必須先選擇裝置。")
-            for other_id, other in context.settings.cameras.items():
-                if (
-                    other_id != camera_id
-                    and other.enabled
-                    and other.device_index == candidate.device_index
-                ):
-                    raise CameraError(
-                        f"裝置索引 {candidate.device_index} 已由相機 "
-                        f"{other_id} 使用。"
-                    )
+        if candidate.enabled and candidate.device_index is None:
+            raise CameraError("啟用相機前必須先選擇裝置。")
 
+        transferred_camera_ids: list[str] = []
+        if candidate.device_index is not None:
+            for other_id, other in previous_cameras.items():
+                if (
+                    other_id == camera_id
+                    or other.device_index != candidate.device_index
+                ):
+                    continue
+
+                context.settings.cameras[other_id] = other.model_copy(
+                    update={
+                        "device_index": None,
+                        "enabled": False,
+                    }
+                )
+                transferred_camera_ids.append(other_id)
         context.settings.cameras[camera_id] = candidate
         try:
             context.camera_manager.reconfigure()
         except Exception:
-            context.settings.cameras[camera_id] = current
+            context.settings.cameras.clear()
+            context.settings.cameras.update(previous_cameras)
             raise
         return {
             "camera_id": camera_id,
             "settings": candidate.model_dump(),
+            "transferred_from": transferred_camera_ids,
             "restart_required": False,
         }
