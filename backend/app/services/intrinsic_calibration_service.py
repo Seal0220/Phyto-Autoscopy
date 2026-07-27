@@ -391,7 +391,6 @@ class IntrinsicCalibrationService:
             self.storage_service.write_intrinsics(intrinsics)
             self._write_run(applied)
             self.storage_service.write_index(
-                profiles=self.repository.list_extrinsic_profiles(),
                 intrinsics=next_intrinsics,
             )
             self.repository.apply_intrinsics(intrinsics, applied)
