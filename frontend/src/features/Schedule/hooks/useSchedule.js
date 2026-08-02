@@ -24,7 +24,6 @@ import {
 } from "../scheduleConfig";
 import {
   buildSchedulePayload,
-  schedulePlannedDurationSeconds,
   scheduleWithRotationEnabled,
 } from "../lib/scheduleUtils";
 
@@ -139,10 +138,6 @@ export default function useSchedule({
         ),
         total_cycles: String(
           scheduleSettings.total_cycles ?? INITIAL_SCHEDULE.total_cycles,
-        ),
-        cycle_duration_seconds: String(
-          scheduleSettings.cycle_duration_seconds
-            ?? INITIAL_SCHEDULE.cycle_duration_seconds,
         ),
         cycle_interval_seconds: String(
           scheduleSettings.cycle_interval_seconds
@@ -263,14 +258,12 @@ export default function useSchedule({
       const nextSchedulePayload = cloneValue(currentSchedulePayload);
       const nextCamerasPayload = cloneValue(currentCamerasPayload);
       nextSchedulePayload.schedule.rotation_enabled = commonPayload.rotation_enabled;
-      nextSchedulePayload.schedule.duration_seconds = schedulePlannedDurationSeconds(
-        schedule,
+      nextSchedulePayload.schedule.duration_seconds = Number(
+        schedule.duration_seconds,
       );
+      delete nextSchedulePayload.schedule.cycle_duration_seconds;
       if (commonPayload.rotation_enabled) {
         nextSchedulePayload.schedule.total_cycles = commonPayload.total_cycles;
-        nextSchedulePayload.schedule.cycle_duration_seconds = (
-          commonPayload.cycle_duration_seconds
-        );
         nextSchedulePayload.schedule.cycle_interval_seconds = (
           commonPayload.cycle_interval_seconds
         );

@@ -2,10 +2,9 @@ export const SCHEDULE_COMMON_DEFAULTS = {
   rotation_enabled: true,
   duration_seconds: "14400",
   total_cycles: "48",
-  cycle_duration_seconds: "300",
   cycle_interval_seconds: "0",
   rotation_start_deg: "0",
-  rotation_end_deg: "360",
+  rotation_end_deg: "355",
   angle_tolerance_deg: "0.5",
   stabilization_delay_ms: "800",
   capture_on_return: true,
@@ -17,10 +16,9 @@ export const INITIAL_SCHEDULE = {
   rotation_enabled: true,
   duration_seconds: "14400",
   total_cycles: "48",
-  cycle_duration_seconds: "300",
   cycle_interval_seconds: "0",
   rotation_start_deg: "0",
-  rotation_end_deg: "360",
+  rotation_end_deg: "355",
   angle_tolerance_deg: "0.5",
   stabilization_delay_ms: "800",
   capture_on_return: true,
@@ -49,15 +47,6 @@ export const SCHEDULE_TOTAL_CYCLES_FIELD = [
     max: 100000,
     step: 1,
     suffix: "輪",
-  },
-];
-
-export const SCHEDULE_CYCLE_DURATION_FIELD = [
-  "cycle_duration_seconds",
-  "每輪時長",
-  {
-    unit: "seconds",
-    description: "包含旋臂完成正向與回程並回到原點的時間；步進度數會由後端自動計算。",
   },
 ];
 
@@ -97,7 +86,7 @@ export const SCHEDULE_COMMON_FIELDS = [
     "起始角度",
     {
       min: 0,
-      max: 360,
+      max: 355,
       step: 0.1,
       suffix: "度",
     },
@@ -107,7 +96,7 @@ export const SCHEDULE_COMMON_FIELDS = [
     "結束角度",
     {
       min: 0,
-      max: 360,
+      max: 355,
       step: 0.1,
       suffix: "度",
     },
@@ -127,7 +116,7 @@ export const SCHEDULE_COMMON_FIELDS = [
 export const SCHEDULE_MODE_META = {
   continuous_interval: {
     label: "連續間隔擷取",
-    description: "依設定間隔持續擷取，不受每輪時長或每輪等待影響。",
+    description: "依設定間隔持續擷取，不受旋臂移動或每輪等待影響。",
     initial: {
       interval_seconds: "60",
     },

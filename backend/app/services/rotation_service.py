@@ -43,17 +43,23 @@ class RotationService:
         self,
         start_deg: float,
         end_deg: float,
-        step_deg: float,
+        stop_angles: list[float],
         capture_on_return: bool,
     ) -> list[tuple[float, str]]:
-        forward = self.angle_sequence(start_deg, end_deg, step_deg)
+        if end_deg < start_deg:
+            raise MotorSafetyError("旋轉結束角度不可小於起始角度。")
+        forward = sorted({
+            round(start_deg, 6),
+            round(end_deg, 6),
+            *(
+                round(angle, 6)
+                for angle in stop_angles
+                if start_deg <= angle <= end_deg
+            ),
+        })
         sequence = [(angle, "forward") for angle in forward]
         if capture_on_return:
             return_angles = list(reversed(forward[:-1]))
-            current = start_deg - step_deg
-            while current > 1e-9:
-                return_angles.append(round(current, 3))
-                current -= step_deg
             if not return_angles or abs(return_angles[-1]) > 1e-9:
                 return_angles.append(0.0)
             sequence.extend((angle, "return") for angle in return_angles)

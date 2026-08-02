@@ -71,24 +71,6 @@ export function scheduleWithRotationEnabled(
   };
 }
 
-export function schedulePlannedDurationSeconds(schedule) {
-  if (!schedule.rotation_enabled) {
-    return Number(schedule.duration_seconds) || 0;
-  }
-
-  const totalCycles = Math.max(0, Number(schedule.total_cycles) || 0);
-  const cycleDuration = Math.max(
-    0,
-    Number(schedule.cycle_duration_seconds) || 0,
-  );
-  const cycleInterval = Math.max(
-    0,
-    Number(schedule.cycle_interval_seconds) || 0,
-  );
-  return totalCycles * cycleDuration
-    + Math.max(0, totalCycles - 1) * cycleInterval;
-}
-
 export function buildSchedulePayload(schedule) {
   const rotationEnabled = Boolean(schedule.rotation_enabled);
   const payload = {
@@ -147,9 +129,6 @@ export function buildSchedulePayload(schedule) {
 
   if (rotationEnabled) {
     payload.total_cycles = Number(schedule.total_cycles);
-    payload.cycle_duration_seconds = Number(
-      schedule.cycle_duration_seconds,
-    );
     payload.cycle_interval_seconds = Number(
       schedule.cycle_interval_seconds,
     );
@@ -193,14 +172,13 @@ export function buildSchedulePayload(schedule) {
   if (
     rotationEnabled
     && (
-      payload.cycle_duration_seconds <= 0
-      || payload.cycle_interval_seconds < 0
+      payload.cycle_interval_seconds < 0
       || payload.angle_tolerance_deg < 0
       || payload.stabilization_delay_ms < 0
     )
   ) {
     throw new Error(
-      "每輪時長必須大於 0，每輪間隔、角度誤差與穩定等待不可小於 0。",
+      "每輪間隔、角度誤差與穩定等待不可小於 0。",
     );
   }
 

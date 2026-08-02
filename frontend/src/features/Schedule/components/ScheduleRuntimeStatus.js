@@ -7,7 +7,6 @@ import { formatElapsed } from "@/lib/formatUtils";
 
 import {
   scheduleErrorMessage,
-  schedulePlannedDurationSeconds,
   scheduleStatusLabel,
 } from "../lib/scheduleUtils";
 
@@ -21,8 +20,17 @@ export default function ScheduleRuntimeStatus({
     elapsedSeconds: scheduleStatus.elapsed_seconds,
     status,
   });
+  const cycleElapsedSeconds = useElapsedSeconds({
+    elapsedSeconds: scheduleStatus.cycle_elapsed_seconds,
+    status: scheduleStatus.cycle_active
+      ? status
+      : "idle",
+  });
   const totalDuration = formatElapsed(
-    scheduleStatus.duration_seconds ?? schedulePlannedDurationSeconds(schedule),
+    scheduleStatus.duration_seconds ?? Number(schedule.duration_seconds || 0),
+  );
+  const cycleElapsed = formatElapsed(
+    cycleElapsedSeconds,
   );
   const hasRuntimePlan = [
     "running",
@@ -64,7 +72,10 @@ export default function ScheduleRuntimeStatus({
         <StatusCard
           title="排程執行時間"
           content={formatElapsed(elapsedSeconds)}
-          note={`/ 共 ${totalDuration}`}
+          note={rotationEnabled
+            ? ""
+            : `/ 共 ${totalDuration}`
+          }
         />
         <StatusCard
           title="排程"
@@ -72,7 +83,10 @@ export default function ScheduleRuntimeStatus({
             ? `${scheduleStatus.cycle_count ?? 0} / ${totalCycles}`
             : "雙鏡頭"
           }
-          note={rotationEnabled ? "輪" : "時間擷取"}
+          note={rotationEnabled
+            ? `本輪耗時 ${cycleElapsed}`
+            : "時間擷取"
+          }
         />
         <StatusCard
           title="目前角度"

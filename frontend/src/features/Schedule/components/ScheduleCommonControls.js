@@ -12,7 +12,6 @@ import InnerPanel from "@/components/panels/InnerPanel";
 
 import {
   SCHEDULE_ARM_HEIGHT_FIELD,
-  SCHEDULE_CYCLE_DURATION_FIELD,
   SCHEDULE_CYCLE_INTERVAL_FIELD,
   SCHEDULE_COMMON_DEFAULTS,
   SCHEDULE_COMMON_FIELDS,
@@ -37,11 +36,6 @@ export default function ScheduleCommonControls({
     totalCyclesLabel,
     totalCyclesProps,
   ] = SCHEDULE_TOTAL_CYCLES_FIELD;
-  const [
-    cycleDurationKey,
-    cycleDurationLabel,
-    cycleDurationProps,
-  ] = SCHEDULE_CYCLE_DURATION_FIELD;
   const [
     cycleIntervalKey,
     cycleIntervalLabel,
@@ -127,7 +121,7 @@ export default function ScheduleCommonControls({
             <div className="flex flex-col min-w-0 gap-4">
               <InnerPanel className="min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center">
                 <h3 className="m-0 mr-1 shrink-0 text-sm font-black text-neutral-200">
-                  輪數時常
+                  輪次設定
                 </h3>
                 <div className="flex flex-row min-w-0 gap-3">
                   <NumericInput
@@ -141,18 +135,6 @@ export default function ScheduleCommonControls({
                     {...totalCyclesProps}
                     required
                     className="min-w-0 w-30"
-                  />
-                  <DurationInput
-                    className="min-w-0 w-108"
-                    id={`schedule-${cycleDurationKey}`}
-                    label={cycleDurationLabel}
-                    value={schedule[cycleDurationKey]}
-                    onValueChange={(value) => setSchedule((previous) => ({
-                      ...previous,
-                      [cycleDurationKey]: value,
-                    }))}
-                    {...cycleDurationProps}
-                    required
                   />
                   <DurationInput
                     className="min-w-0 w-108"

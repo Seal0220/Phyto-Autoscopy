@@ -78,10 +78,8 @@ def test_final_status_write_failure_releases_schedule_lock(tmp_path, monkeypatch
         started = client.post(
             "/api/schedules/start",
             json={
-                "duration_seconds": 30,
                 "rotation_start_deg": 0,
                 "rotation_end_deg": 1,
-                "rotation_step_deg": 1,
                 "capture_on_return": False,
             },
         )

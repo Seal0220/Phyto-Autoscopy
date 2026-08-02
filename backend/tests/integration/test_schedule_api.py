@@ -37,10 +37,8 @@ def test_schedule_can_disable_return_path_capture(tmp_path, monkeypatch) -> None
 def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) -> None:
     write_test_config(tmp_path, monkeypatch)
     request = {
-        "duration_seconds": 60,
         "rotation_start_deg": 0,
         "rotation_end_deg": 1,
-        "rotation_step_deg": 1,
         "angle_tolerance_deg": 0.1,
         "capture_on_return": True,
         "modes": [

@@ -131,11 +131,10 @@ class ScheduleSettings(BaseModel):
     capture_interval_seconds: float = Field(default=60.0, gt=0)
     duration_seconds: float = Field(default=14400.0, gt=0)
     total_cycles: int = Field(default=48, ge=1)
-    cycle_duration_seconds: float = Field(default=300.0, gt=0)
     cycle_interval_seconds: float = Field(default=0.0, ge=0)
     rotation_enabled: bool = True
     rotation_start_deg: float = 0.0
-    rotation_end_deg: float = 360.0
+    rotation_end_deg: float = 355.0
     rotation_step_deg: float = 1.0
     angle_tolerance_deg: float = 0.5
     stabilization_delay_ms: int = 800

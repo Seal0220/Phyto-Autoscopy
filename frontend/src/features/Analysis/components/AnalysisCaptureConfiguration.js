@@ -25,19 +25,11 @@ export default function AnalysisCaptureConfiguration({
             ? "固定雙鏡頭捕捉"
             : "尚無資料",
       },
-      {
-        label: "總時長",
-        value: formatOptionalElapsed(configuration.duration_seconds),
-      },
       ...(rotationEnabled
         ? [
           {
             label: "總輪數",
             value: formatNumberWithUnit(configuration.total_cycles, "輪"),
-          },
-          {
-            label: "每輪時長",
-            value: formatOptionalElapsed(configuration.cycle_duration_seconds),
           },
           {
             label: "每輪間隔",
@@ -50,10 +42,6 @@ export default function AnalysisCaptureConfiguration({
               configuration.rotation_end_deg,
               "度",
             ),
-          },
-          {
-            label: "步進度數",
-            value: formatNumberWithUnit(configuration.rotation_step_deg, "度"),
           },
           {
             label: "角度誤差",
@@ -76,7 +64,12 @@ export default function AnalysisCaptureConfiguration({
             value: formatNumberWithUnit(configuration.arm_height_mm, "mm"),
           },
         ]
-        : []),
+        : [
+          {
+            label: "總時長",
+            value: formatOptionalElapsed(configuration.duration_seconds),
+          },
+        ]),
     ]
     : [
       {

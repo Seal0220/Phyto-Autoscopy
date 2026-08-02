@@ -64,13 +64,11 @@ CaptureMode = Annotated[
 
 class SchedulePlan(BaseModel):
     rotation_enabled: bool = True
-    duration_seconds: float = Field(gt=0)
+    duration_seconds: float | None = Field(default=None, gt=0)
     total_cycles: int | None = Field(default=None, ge=1)
-    cycle_duration_seconds: float | None = Field(default=None, gt=0)
     cycle_interval_seconds: float = Field(default=0.0, ge=0)
     rotation_start_deg: float
     rotation_end_deg: float
-    rotation_step_deg: float = Field(gt=0)
     angle_tolerance_deg: float = Field(ge=0)
     stabilization_delay_ms: int = Field(default=800, ge=0, le=60000)
     capture_on_return: bool
@@ -80,8 +78,10 @@ class SchedulePlan(BaseModel):
     @model_validator(mode="after")
     def validate_plan(self):
         if self.rotation_enabled:
-            if self.total_cycles is None or self.cycle_duration_seconds is None:
-                raise ValueError("啟用旋臂時必須設定總輪數與每輪時長。")
+            if self.total_cycles is None:
+                raise ValueError("啟用旋臂時必須設定總輪數。")
+        elif self.duration_seconds is None:
+            raise ValueError("未啟用旋臂時必須設定總時長。")
         elif any(
             not isinstance(mode, ContinuousIntervalMode)
             for mode in self.modes
@@ -112,7 +112,6 @@ class ScheduleStartRequest(BaseModel):
     rotation_enabled: bool | None = None
     duration_seconds: float | None = Field(default=None, gt=0)
     total_cycles: int | None = Field(default=None, ge=1)
-    cycle_duration_seconds: float | None = Field(default=None, gt=0)
     cycle_interval_seconds: float | None = Field(default=None, ge=0)
     rotation_start_deg: float | None = None
     rotation_end_deg: float | None = None
@@ -139,8 +138,8 @@ class ScheduleStatus(BaseModel):
     record_id: str | None = None
     cycle_count: int = 0
     total_cycles: int | None = None
-    cycle_duration_seconds: float | None = None
-    rotation_step_deg: float | None = None
+    cycle_active: bool = False
+    cycle_elapsed_seconds: float = 0
     last_error: str | None = None
     elapsed_seconds: float = 0
     duration_seconds: float | None = None

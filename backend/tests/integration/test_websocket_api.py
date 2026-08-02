@@ -131,10 +131,8 @@ def test_frontend_websocket_action_contract(tmp_path, monkeypatch) -> None:
                 "schedule-start",
                 "schedule.start",
                 {
-                    "duration_seconds": 30,
                     "rotation_start_deg": 0,
                     "rotation_end_deg": 1,
-                    "rotation_step_deg": 1,
                     "capture_on_return": False,
                 },
             )
