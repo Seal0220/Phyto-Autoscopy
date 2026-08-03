@@ -102,6 +102,7 @@ class MotorSettings(BaseModel):
     controller: str = "phidget_stepper_bipolar_hc"
     full_step_angle_deg: float = 0.9
     microstep_division: int = 16
+    gear_ratio: float = Field(default=1.0, gt=0)
     current_limit_amp: float = 1.5
     maximum_current_limit_amp: float = 2.4
     velocity_limit_deg_s: float = 3.0

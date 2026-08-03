@@ -9,7 +9,11 @@ class MotorProfile:
 
     @property
     def steps_per_degree(self) -> float:
-        return self.settings.microstep_division / self.settings.full_step_angle_deg
+        motor_steps_per_degree = (
+            self.settings.microstep_division
+            / self.settings.full_step_angle_deg
+        )
+        return motor_steps_per_degree * self.settings.gear_ratio
 
     def degrees_to_steps(self, angle_deg: float) -> float:
         return angle_deg * self.steps_per_degree

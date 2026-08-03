@@ -76,6 +76,7 @@ def write_test_config(tmp_path: Path, monkeypatch) -> Path:
                 "motor": {
                     "name": "CHLOROCULUS_ARM_MOTOR",
                     "controller": "phidget_stepper_bipolar_hc",
+                    "gear_ratio": 1.0,
                     "minimum_angle_deg": 0,
                     "maximum_angle_deg": 360,
                     "velocity_limit_deg_s": 3,

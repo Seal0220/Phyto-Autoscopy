@@ -4,6 +4,7 @@
     "controller": "phidget_stepper_bipolar_hc",
     "full_step_angle_deg": 1.8,
     "microstep_division": 16,
+    "gear_ratio": 1.0,
     "current_limit_amp": 1.5,
     "maximum_current_limit_amp": 1.5,
 
