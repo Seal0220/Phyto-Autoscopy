@@ -251,7 +251,7 @@ if exist "%ROOT%.venv\Scripts\python.exe" (
   set "MOVE_DATA_PYTHON=python"
 )
 
-call "%MOVE_DATA_PYTHON%" "%ROOT%scripts\move_data.py" "%MOVE_DATA_TARGET%" --project-root "%ROOT%"
+call "%MOVE_DATA_PYTHON%" "%ROOT%scripts\move_data.py" "%MOVE_DATA_TARGET%\."
 if errorlevel 1 goto finish
 set "EXIT_CODE=0"
 goto finish
