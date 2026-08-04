@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --hostname 127.0.0.1 --port 22223",
+    "dev": "next dev --hostname 0.0.0.0 --port 22223",
     "build": "next build",
     "lint": "eslint .",
-    "start": "next start --hostname 127.0.0.1 --port 22223",
+    "start": "next start --hostname 0.0.0.0 --port 22223",
     "test": "node --preserve-symlinks --preserve-symlinks-main --experimental-default-type=module --test tests/*.test.mjs"
   },
   "dependencies": {
