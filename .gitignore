@@ -6,6 +6,7 @@ __pycache__/
 venv/
 .env
 backend/data/
+backend/config/path_mappings.json
 data/captures/*
 data/calibration/*
 data/analysis/*

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.core.config import (
     AppSettings,
     get_config_dir,
+    path_settings_config_payload,
     read_json_file,
     save_settings_group,
 )
@@ -125,8 +126,11 @@ def update_settings_group(
         previous_payload = read_json_file(config_path)
         normalized_payload = _normalized_settings_payload(group, update.payload)
         candidate = build_candidate_settings(context, group, normalized_payload)
+        response_payload = normalized_payload
         if group == "default":
-            normalized_payload["paths"] = candidate.paths.model_dump(mode="json")
+            normalized_payload["paths"] = path_settings_config_payload(candidate.paths)
+            response_payload = deepcopy(normalized_payload)
+            response_payload["paths"] = candidate.paths.model_dump(mode="json")
 
         save_settings_group(group, normalized_payload)
         try:
@@ -146,5 +150,5 @@ def update_settings_group(
     return {
         "updated": group,
         "applied": True,
-        "payload": normalized_payload,
+        "payload": response_payload,
     }

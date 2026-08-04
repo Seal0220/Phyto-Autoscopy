@@ -10,12 +10,12 @@
     "camera_scan_max_index": 10
   },
   "paths": {
-    "captures_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/captures",
-    "snapshots_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/snapshots",
-    "calibration_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/calibration",
-    "analysis_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/analysis",
-    "database_path": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/database/phyto_autoscopy.sqlite3",
-    "logs_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/logs",
-    "temp_dir": "C:/Users/User/Documents/交大/PlantCam/Phyto-Autoscopy/data/temp"
+    "captures_dir": "data/captures",
+    "snapshots_dir": "data/snapshots",
+    "calibration_dir": "data/calibration",
+    "analysis_dir": "data/analysis",
+    "database_path": "data/database/phyto_autoscopy.sqlite3",
+    "logs_dir": "data/logs",
+    "temp_dir": "data/temp"
   }
 }

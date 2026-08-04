@@ -39,6 +39,7 @@ REPOSITORY_DATA_DIRECTORIES = (
     "logs",
     "temp",
 )
+PATH_MAPPINGS_FILE_NAME = "path_mappings.json"
 
 
 class MoveDataError(RuntimeError):
@@ -64,7 +65,8 @@ def parse_arguments() -> argparse.Namespace:
 
 def load_path_configuration(
     config_path: Path,
-) -> tuple[dict, dict[str, Path]]:
+    project_root: Path,
+) -> tuple[dict[str, Path], dict[str, Path], dict]:
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except FileNotFoundError as error:
@@ -76,17 +78,67 @@ def load_path_configuration(
     if not isinstance(paths, dict):
         raise MoveDataError("default.json 缺少 paths 設定。")
 
+    config_dir = config_path.parent
+    mapping_path = config_dir / PATH_MAPPINGS_FILE_NAME
+    try:
+        if mapping_path.exists():
+            mapping_payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+        else:
+            mapping_payload = {"path_mappings": {}}
+    except (OSError, json.JSONDecodeError) as error:
+        raise MoveDataError(f"無法讀取路徑映射表：{error}") from error
+
+    path_mappings = mapping_payload.get("path_mappings")
+    if not isinstance(path_mappings, dict):
+        raise MoveDataError("路徑映射表格式錯誤。")
+
+    normalized_mappings: dict[Path, Path] = {}
+    for logical_value, physical_value in path_mappings.items():
+        if not isinstance(logical_value, str) or not isinstance(physical_value, str):
+            raise MoveDataError("路徑映射表格式錯誤。")
+        logical_root = Path(logical_value)
+        physical_root = Path(physical_value).expanduser()
+        if (
+            logical_root.is_absolute()
+            or ".." in logical_root.parts
+            or not physical_root.is_absolute()
+        ):
+            raise MoveDataError(f"路徑映射格式錯誤：{logical_value}")
+        normalized_mappings[logical_root] = physical_root.resolve()
+
     resolved: dict[str, Path] = {}
+    logical_paths: dict[str, Path] = {}
     for key in PATH_KEYS:
         value = paths.get(key)
         if not isinstance(value, str) or not value.strip():
             raise MoveDataError(f"default.json 缺少有效的 {key}。")
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            raise MoveDataError(f"{key} 必須是絕對路徑：{value}")
-        resolved[key] = path.resolve()
+        logical_path = Path(value)
+        if logical_path.is_absolute() or ".." in logical_path.parts:
+            raise MoveDataError(
+                f"default.json 的 {key} 必須使用專案相對路徑：{value}"
+            )
+        physical_path = None
+        for logical_root, physical_root in sorted(
+            normalized_mappings.items(),
+            key=lambda item: len(item[0].parts),
+            reverse=True,
+        ):
+            try:
+                remainder = logical_path.relative_to(logical_root)
+            except ValueError:
+                continue
+            physical_path = physical_root / remainder
+            break
+        if physical_path is None:
+            logical_root = Path(logical_path.parts[0])
+            physical_root = (project_root / logical_root).resolve()
+            path_mappings[logical_root.as_posix()] = physical_root.as_posix()
+            normalized_mappings[logical_root] = physical_root
+            physical_path = physical_root / logical_path.relative_to(logical_root)
+        resolved[key] = physical_path.resolve()
+        logical_paths[key] = logical_path
 
-    return payload, resolved
+    return resolved, logical_paths, mapping_payload
 
 
 def configured_data_root(paths: dict[str, Path]) -> Path:
@@ -412,7 +464,11 @@ def move_data(
     raw_target: str,
 ) -> None:
     config_path = project_root / "backend" / "config" / "default.json"
-    payload, configured_paths = load_path_configuration(config_path)
+    configured_paths, logical_paths, mapping_payload = load_path_configuration(
+        config_path,
+        project_root,
+    )
+    mapping_path = config_path.parent / PATH_MAPPINGS_FILE_NAME
     source = configured_data_root(configured_paths)
     target = validate_target(source, raw_target)
     if directory_has_user_data(target):
@@ -437,10 +493,6 @@ def move_data(
         )
 
     staging = target.parent / f".{target.name}.moving-{uuid4().hex}"
-    relative_paths = {
-        key: path.relative_to(source)
-        for key, path in configured_paths.items()
-    }
     print(f"目前位置：{source}")
     print(f"目標位置：{target}")
     print(
@@ -464,10 +516,23 @@ def move_data(
         staging.rename(target)
         finalized = True
 
-        updated_paths = payload["paths"]
-        for key, relative in relative_paths.items():
-            updated_paths[key] = (target / relative).resolve().as_posix()
-        write_config_atomic(config_path, payload)
+        updated_mappings = mapping_payload["path_mappings"]
+        logical_root = logical_paths["captures_dir"].parent
+        for logical_path in logical_paths.values():
+            try:
+                logical_path.relative_to(logical_root)
+            except ValueError as error:
+                raise MoveDataError(
+                    "default.json 的資料路徑不屬於同一個邏輯資料根目錄。"
+                ) from error
+        for logical_value in tuple(updated_mappings):
+            try:
+                Path(logical_value).relative_to(logical_root)
+            except ValueError:
+                continue
+            del updated_mappings[logical_value]
+        updated_mappings[logical_root.as_posix()] = target.resolve().as_posix()
+        write_config_atomic(mapping_path, mapping_payload)
     except Exception:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
