@@ -88,17 +88,9 @@ data/analysis/     每個 Analysis Run 的 Round、姿態、模型、尖端標�
 
 `--mock` 只切換開發啟動方式：前端執行 `next dev`，FastAPI 使用 `uvicorn --reload`。相機、馬達與其他功能不會被停用或替換，仍可直接使用實體硬體。
 
-需要將完整資料根目錄搬移到其他磁碟或絕對位置時，請先關閉後端，再執行：
-
-```bash
-.\start.bat --move-data "D:\Phyto-Autoscopy-Data"
-```
-
-參數後方的路徑就是新的資料根目錄，不會再自動附加一層 `data`。此操作會搬移擷取影像、快照、校正、分析、SQLite、日誌與暫存資料，並同步改寫資料檔案、SQLite 紀錄及本機的 `backend/config/path_mappings.json`。程式會先在目標位置建立完整暫存副本，全部完成後才移除舊資料；若目標已有 `.gitkeep` 以外的資料、路徑不是絕對路徑、後端仍在執行或磁碟空間不足，便會停止且不覆蓋目標內容。`--move-data` 完成後不會啟動服務，也不能與 `--setup` 或 `--mock` 同時使用。
-
 `start.bat` 會分別建立前端與後端終端，兩者都成功啟動後便自行結束，不會持續監控或占用第三個終端。FastAPI 與 Next.js 也不會互相啟動、停止或監控；需要停止服務時，請分別關閉其終端。
 
-後端的 `backend/config/default.json` 永遠只保存相對於專案根目錄的 `data/` 路徑。啟動時會自動建立或補齊不受 Git 追蹤的 `backend/config/path_mappings.json`，以 `data` 邏輯資料根映射該電腦的實際絕對位置並套用至所有子路徑；執行 `--move-data` 時只更新這份本機映射表。若升級前仍有 `backend/data/`，下一次手動啟動後端時會在開啟 SQLite 前自動合併至目前設定的資料根目錄，既有擷取、快照與日誌不會被覆寫；完成後會移除空的舊目錄。
+後端的 `backend/config/default.json` 只保存相對於專案根目錄的資料路徑，預設統一位於 `data/`。系統不使用路徑映射，也不保存與特定電腦綁定的絕對位置。若升級前仍有 `backend/data/`，下一次手動啟動後端時會在開啟 SQLite 前自動合併至專案根目錄的 `data/`，既有擷取、快照與日誌不會被覆寫；完成後會移除空的舊目錄。
 
 只需開啟：
 

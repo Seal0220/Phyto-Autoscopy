@@ -20,17 +20,6 @@ from app.core.exceptions import ConfigError
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-PROJECT_ROOT = BACKEND_ROOT.parent
-PATH_MAPPINGS_FILE_NAME = "path_mappings.json"
-
-
-def resolve_project_path(value: str | Path) -> Path:
-    path = Path(value).expanduser()
-    return (
-        path.resolve()
-        if path.is_absolute()
-        else (PROJECT_ROOT / path).resolve()
-    )
 
 
 class ProjectSettings(BaseModel):
@@ -74,38 +63,22 @@ class PathSettings(BaseModel):
         mode="before",
     )
     @classmethod
-    def paths_must_be_absolute(cls, value: str | Path) -> Path:
-        return resolve_project_path(value)
+    def normalize_path(cls, value: str | Path) -> Path:
+        path = Path(value).expanduser()
+        if not path.parts or ".." in path.parts:
+            raise ValueError("資料路徑不可為空白或包含上層目錄。")
+        return path
 
 
 def path_settings_config_payload(
     settings: PathSettings,
-    config_dir: str | Path | None = None,
 ) -> dict[str, str]:
-    mappings = load_path_mappings(config_dir)
     payload: dict[str, str] = {}
     for field_name in PathSettings.model_fields:
-        path = getattr(settings, field_name).resolve()
-        try:
-            stored_path = path.relative_to(PROJECT_ROOT)
-        except ValueError:
-            stored_path = None
-            for logical_root, physical_root in sorted(
-                mappings.items(),
-                key=lambda item: len(item[1].parts),
-                reverse=True,
-            ):
-                try:
-                    remainder = path.relative_to(physical_root)
-                except ValueError:
-                    continue
-                stored_path = logical_root / remainder
-                break
-            if stored_path is None:
-                raise ConfigError(
-                    "專案外部資料路徑必須透過 start.bat --move-data 設定。"
-                )
-        payload[field_name] = stored_path.as_posix()
+        path = getattr(settings, field_name)
+        if path.is_absolute():
+            raise ConfigError("所有資料儲存位置都必須使用專案相對路徑。")
+        payload[field_name] = path.as_posix()
     return payload
 
 
@@ -451,121 +424,6 @@ def get_config_dir(config_dir: str | Path | None = None) -> Path:
     return path if path.is_absolute() else BACKEND_ROOT / path
 
 
-def _normalized_logical_path(value: str | Path) -> Path:
-    path = Path(value)
-    if path.is_absolute() or not path.parts or ".." in path.parts:
-        raise ConfigError(f"路徑映射的邏輯路徑格式錯誤：{value}")
-    return Path(*path.parts)
-
-
-def ensure_path_mappings_file(
-    config_dir: str | Path | None = None,
-    *,
-    project_root: Path = PROJECT_ROOT,
-) -> Path:
-    root = get_config_dir(config_dir)
-    mapping_path = root / PATH_MAPPINGS_FILE_NAME
-    default_payload = read_json_file(root / "default.json")
-    configured_paths = default_payload.get("paths")
-    if not isinstance(configured_paths, dict):
-        raise ConfigError("default.json 缺少 paths 設定。")
-
-    if mapping_path.exists():
-        payload = read_json_file(mapping_path)
-    else:
-        payload = {"path_mappings": {}}
-
-    raw_mappings = payload.get("path_mappings")
-    if not isinstance(raw_mappings, dict):
-        raise ConfigError(f"路徑映射格式錯誤：{mapping_path}")
-
-    changed = not mapping_path.exists()
-    for value in configured_paths.values():
-        if not isinstance(value, str) or not value.strip():
-            raise ConfigError("default.json 包含無效的資料路徑。")
-        logical_path = _normalized_logical_path(value)
-        logical_key = Path(logical_path.parts[0]).as_posix()
-        if logical_key in raw_mappings:
-            continue
-        raw_mappings[logical_key] = (
-            project_root / logical_key
-        ).resolve().as_posix()
-        changed = True
-
-    if changed:
-        write_json_file(mapping_path, payload)
-    return mapping_path
-
-
-def load_path_mappings(
-    config_dir: str | Path | None = None,
-) -> dict[Path, Path]:
-    root = get_config_dir(config_dir)
-    mapping_path = root / PATH_MAPPINGS_FILE_NAME
-    if not mapping_path.exists():
-        return {}
-
-    payload = read_json_file(mapping_path)
-    raw_mappings = payload.get("path_mappings")
-    if not isinstance(raw_mappings, dict):
-        raise ConfigError(f"路徑映射格式錯誤：{mapping_path}")
-
-    mappings: dict[Path, Path] = {}
-    for logical_value, physical_value in raw_mappings.items():
-        if not isinstance(logical_value, str) or not isinstance(physical_value, str):
-            raise ConfigError(f"路徑映射格式錯誤：{mapping_path}")
-        logical_path = _normalized_logical_path(logical_value)
-        physical_path = Path(physical_value).expanduser()
-        if not physical_path.is_absolute():
-            raise ConfigError(f"實體路徑必須是絕對路徑：{physical_value}")
-        mappings[logical_path] = physical_path.resolve()
-    return mappings
-
-
-def resolve_mapped_project_path(
-    value: str | Path,
-    config_dir: str | Path | None = None,
-    *,
-    project_root: Path = PROJECT_ROOT,
-) -> Path:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path.resolve()
-
-    logical_path = _normalized_logical_path(path)
-    for logical_root, physical_root in sorted(
-        load_path_mappings(config_dir).items(),
-        key=lambda item: len(item[0].parts),
-        reverse=True,
-    ):
-        try:
-            remainder = logical_path.relative_to(logical_root)
-        except ValueError:
-            continue
-        return (physical_root / remainder).resolve()
-    return (project_root / logical_path).resolve()
-
-
-def apply_path_mappings(
-    payload: dict[str, Any],
-    config_dir: str | Path | None = None,
-) -> dict[str, Any]:
-    mapped = deepcopy(payload)
-    configured_paths = mapped.get("paths")
-    if not isinstance(configured_paths, dict):
-        raise ConfigError("default.json 缺少 paths 設定。")
-    for field_name, value in configured_paths.items():
-        if not isinstance(value, (str, Path)):
-            raise ConfigError(f"資料路徑格式錯誤：{field_name}")
-        configured_paths[field_name] = str(
-            resolve_mapped_project_path(
-                value,
-                config_dir,
-            )
-        )
-    return mapped
-
-
 def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     root = get_config_dir(config_dir)
     data = read_json_file(root / "default.json")
@@ -587,7 +445,9 @@ def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     if mock_mode is not None:
         data.setdefault("hardware", {})["mock_mode"] = _truthy(mock_mode)
 
-    return AppSettings.model_validate(apply_path_mappings(data, root))
+    settings = AppSettings.model_validate(data)
+    path_settings_config_payload(settings.paths)
+    return settings
 
 
 def save_settings_group(group: str, payload: dict[str, Any], config_dir: str | Path | None = None) -> None:

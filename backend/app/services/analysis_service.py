@@ -1120,9 +1120,10 @@ class AnalysisService:
                 method=request.method,
                 mode_ids=request.mode_ids,
             )
+            record_path = self._require_record(request.record_id).record_path
             for source in selected_sources.values():
                 if source["enabled"]:
-                    source["path"] = str(validation.record_path)
+                    source["path"] = record_path
             validation_errors = self._blocking_validation_messages(
                 validation
             )

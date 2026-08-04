@@ -13,7 +13,6 @@ set "FRONTEND_HOST=0.0.0.0"
 set "FRONTEND_PORT=22223"
 set "MODE=production"
 set "SETUP=0"
-set "MOVE_DATA_TARGET="
 set "BACKEND_PID="
 set "FRONTEND_PID="
 set "EXIT_CODE=1"
@@ -32,35 +31,10 @@ if /I "%~1"=="--mock" (
   shift
   goto parse_arguments
 )
-if /I "%~1"=="--move-data" (
-  if "%~2"=="" (
-    echo Missing absolute path after --move-data.
-    goto usage_error
-  )
-  if defined MOVE_DATA_TARGET (
-    echo --move-data can only be specified once.
-    goto usage_error
-  )
-  set "MOVE_DATA_TARGET=%~2"
-  shift
-  shift
-  goto parse_arguments
-)
 echo Unknown argument: %~1
 goto usage_error
 
 :arguments_ready
-if defined MOVE_DATA_TARGET (
-  if "%SETUP%"=="1" (
-    echo --move-data cannot be combined with --setup.
-    goto usage_error
-  )
-  if /I "%MODE%"=="development" (
-    echo --move-data cannot be combined with --mock.
-    goto usage_error
-  )
-  goto move_data
-)
 if not exist "%BACKEND_DIR%\run.py" (
   echo Missing backend runner: %BACKEND_DIR%\run.py
   goto finish
@@ -228,46 +202,17 @@ echo Setup complete. Configure the three private values in .env before starting.
 set "EXIT_CODE=0"
 goto finish
 
-:move_data
-if not exist "%ROOT%scripts\move_data.py" (
-  echo Missing data migration program: %ROOT%scripts\move_data.py
-  goto finish
-)
-
-call :port_in_use %BACKEND_PORT%
-if not errorlevel 1 (
-  echo Backend port %BACKEND_PORT% is in use. Stop the backend before moving data.
-  goto finish
-)
-
-if exist "%ROOT%.venv\Scripts\python.exe" (
-  set "MOVE_DATA_PYTHON=%ROOT%.venv\Scripts\python.exe"
-) else (
-  where python >nul 2>&1
-  if errorlevel 1 (
-    echo Python is required to move data.
-    goto finish
-  )
-  set "MOVE_DATA_PYTHON=python"
-)
-
-call "%MOVE_DATA_PYTHON%" "%ROOT%scripts\move_data.py" "%MOVE_DATA_TARGET%\."
-if errorlevel 1 goto finish
-set "EXIT_CODE=0"
-goto finish
-
 :usage
-echo Usage: start.bat [--setup] [--mock] [--move-data ABSOLUTE_PATH]
+echo Usage: start.bat [--setup] [--mock]
 echo.
 echo   --setup                Create .env and install backend and frontend dependencies.
 echo   --mock                 Run Next dev and FastAPI reload with full hardware access.
-echo   --move-data PATH       Move the complete data root to an absolute path, then exit.
 echo   No option              Build and run the production frontend and backend.
 set "EXIT_CODE=0"
 goto finish
 
 :usage_error
-echo Usage: start.bat [--setup] [--mock] [--move-data ABSOLUTE_PATH]
+echo Usage: start.bat [--setup] [--mock]
 set "EXIT_CODE=2"
 goto finish
 

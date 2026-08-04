@@ -126,11 +126,8 @@ def update_settings_group(
         previous_payload = read_json_file(config_path)
         normalized_payload = _normalized_settings_payload(group, update.payload)
         candidate = build_candidate_settings(context, group, normalized_payload)
-        response_payload = normalized_payload
         if group == "default":
             normalized_payload["paths"] = path_settings_config_payload(candidate.paths)
-            response_payload = deepcopy(normalized_payload)
-            response_payload["paths"] = candidate.paths.model_dump(mode="json")
 
         save_settings_group(group, normalized_payload)
         try:
@@ -150,5 +147,5 @@ def update_settings_group(
     return {
         "updated": group,
         "applied": True,
-        "payload": response_payload,
+        "payload": normalized_payload,
     }

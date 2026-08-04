@@ -11,7 +11,7 @@ from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.core.config import AppSettings, resolve_project_path
+from app.core.config import AppSettings
 from app.core.exceptions import RecordError
 from app.models.record_models import RecordDetail, RecordSummary
 from app.repositories.record_repository import RecordRepository
@@ -25,6 +25,7 @@ TERMINAL_RECORD_STATUSES = frozenset({
 INTERRUPTED_RECORD_STATUSES = frozenset({"running", "paused", "stopping"})
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # Read-only adapter for metadata created before the schedule/record rename.
 LEGACY_SCHEDULE_KEY = "experiment"
 
@@ -45,12 +46,19 @@ class RecordService:
 
     def _normalize_record_paths(self) -> None:
         for record in self.repository.list():
-            absolute_path = str(resolve_project_path(record.record_path))
-            if absolute_path != record.record_path:
-                self.repository.update_path(
-                    record.record_id,
-                    absolute_path,
-                )
+            path = Path(record.record_path)
+            if path.is_absolute():
+                try:
+                    path = path.resolve().relative_to(PROJECT_ROOT)
+                except ValueError:
+                    logger.warning(
+                        "Record path is outside the project and cannot be normalized: %s",
+                        record.record_path,
+                    )
+                    continue
+            relative_path = path.as_posix()
+            if relative_path != record.record_path:
+                self.repository.update_path(record.record_id, relative_path)
 
     def _local_timezone(self) -> tzinfo:
         try:
@@ -362,7 +370,7 @@ class RecordService:
                     record_id=record_id,
                     created_at=payload["created_at"],
                     status=status,
-                    record_path=str(record_dir),
+                    record_path=record_dir.as_posix(),
                     ended_at=None,
                 )
                 self.repository.upsert(

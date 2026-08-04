@@ -2,24 +2,27 @@ export const STORAGE_PATH_FIELDS = [
   {
     key: "captures_dir",
     label: "擷取檔案儲存位置",
-    description: "排程產生的影像、模式日誌與紀錄會儲存在此目錄。",
+    description: "使用專案相對路徑；排程影像、模式日誌與紀錄會儲存在此目錄。",
   },
   {
     key: "snapshots_dir",
     label: "單張影像儲存位置",
-    description: "攝影機中的單張擷取會直接儲存在此目錄，不會建立排程紀錄。",
+    description: "使用專案相對路徑；單張擷取會直接儲存在此目錄。",
   },
   {
     key: "calibration_dir",
     label: "校正檔案位置",
+    description: "使用專案相對路徑。",
   },
   {
     key: "logs_dir",
     label: "系統日誌位置",
+    description: "使用專案相對路徑。",
   },
   {
     key: "temp_dir",
     label: "暫存檔案位置",
+    description: "使用專案相對路徑。",
   },
 ];
 

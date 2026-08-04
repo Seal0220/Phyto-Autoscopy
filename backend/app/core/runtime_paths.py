@@ -4,11 +4,6 @@ import filecmp
 import os
 from pathlib import Path
 
-from app.core.config import (
-    ensure_path_mappings_file,
-    resolve_mapped_project_path,
-)
-
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_ROOT.parent
@@ -79,10 +74,9 @@ def migrate_legacy_backend_data(
     *,
     project_root: Path = PROJECT_ROOT,
     backend_root: Path = BACKEND_ROOT,
-    target_data_root: Path | None = None,
 ) -> bool:
     legacy_data = backend_root / "data"
-    project_data = target_data_root or project_root / "data"
+    project_data = project_root / "data"
 
     if not legacy_data.exists() or legacy_data.resolve() == project_data.resolve():
         return False
@@ -105,10 +99,6 @@ def prepare_runtime_paths(
     os.environ["PHYTO_AUTOSCOPY_CONFIG_DIR"] = str(configured.resolve())
 
     os.chdir(project_root)
-    ensure_path_mappings_file(
-        configured,
-        project_root=project_root,
-    )
 
     audit_log = Path(
         os.environ.get(
@@ -117,20 +107,10 @@ def prepare_runtime_paths(
         )
     )
     if not audit_log.is_absolute():
-        audit_log = resolve_mapped_project_path(
-            audit_log,
-            configured,
-            project_root=project_root,
-        )
+        audit_log = project_root / audit_log
     os.environ["PHYTO_AUTOSCOPY_AUDIT_LOG"] = str(audit_log.resolve())
 
-    data_root = resolve_mapped_project_path(
-        "data",
-        configured,
-        project_root=project_root,
-    )
     return migrate_legacy_backend_data(
         project_root=project_root,
         backend_root=backend_root,
-        target_data_root=data_root,
     )

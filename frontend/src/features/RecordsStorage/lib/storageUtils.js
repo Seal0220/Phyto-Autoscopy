@@ -12,6 +12,31 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeRelativeStoragePath(
+  value,
+  label,
+) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replaceAll("\\", "/");
+
+  if (!normalized) {
+    throw new Error(`${label}不可為空白。`);
+  }
+  if (
+    normalized.startsWith("/")
+    || /^[a-zA-Z]:\//.test(normalized)
+    || /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(normalized)
+  ) {
+    throw new Error(`${label}必須使用專案相對路徑。`);
+  }
+  if (normalized.split("/").includes("..")) {
+    throw new Error(`${label}不可包含上層目錄。`);
+  }
+
+  return normalized;
+}
+
 export function serializeStoragePayload(payload) {
   if (!payload || typeof payload !== "object" || !payload.paths || typeof payload.paths !== "object") {
     throw new Error("儲存位置設定格式無效。");
@@ -29,13 +54,10 @@ export function serializeStoragePayload(payload) {
   delete nextPayload.paths.records_dir;
 
   for (const field of STORAGE_PATH_FIELDS) {
-    const value = String(nextPayload.paths[field.key] ?? "").trim();
-
-    if (!value) {
-      throw new Error(`${field.label}不可為空白。`);
-    }
-
-    nextPayload.paths[field.key] = value;
+    nextPayload.paths[field.key] = normalizeRelativeStoragePath(
+      nextPayload.paths[field.key],
+      field.label,
+    );
   }
 
   return nextPayload;
