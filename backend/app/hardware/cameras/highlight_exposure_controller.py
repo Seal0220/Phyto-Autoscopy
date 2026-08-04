@@ -22,6 +22,7 @@ class CameraHighlightExposureController:
     _FAST_EXPOSURE_STEP = 2.0
     _FALLBACK_EXPOSURE = -6.0
     _SAMPLE_STRIDE = 4
+    _PROPERTY_TOLERANCE = 0.25
 
     def __init__(
         self,
@@ -63,39 +64,44 @@ class CameraHighlightExposureController:
             capture,
             self._exposure_property,
         )
-        if not self._disable_native_auto_exposure(capture, backend):
-            logger.warning(
-                "Camera %s could not disable native center-weighted auto exposure.",
-                self.camera_id,
-            )
-
-        requested_exposure = (
+        initial_exposure = (
             current_exposure
             if current_exposure is not None
             else self._FALLBACK_EXPOSURE
         )
-        if not self._set_property(
-            capture,
-            self._exposure_property,
-            requested_exposure,
-        ):
-            self._restore_native_auto_exposure(capture, backend)
-            logger.warning(
-                "Camera %s driver rejected highlight-priority exposure control.",
-                self.camera_id,
-            )
-            return
+        for manual_value in self._manual_auto_exposure_values(backend):
+            if manual_value is not None:
+                auto_property = getattr(
+                    self.cv2,
+                    "CAP_PROP_AUTO_EXPOSURE",
+                    None,
+                )
+                if auto_property is not None:
+                    self._set_property(
+                        capture,
+                        auto_property,
+                        manual_value,
+                    )
 
-        applied_exposure = self._read_exposure(
-            capture,
-            self._exposure_property,
+            self._current_exposure = initial_exposure
+            if self._apply_and_verify_exposure(
+                initial_exposure - self._EXPOSURE_STEP,
+            ):
+                self._supported = True
+                logger.info(
+                    "Camera %s enabled full-frame highlight exposure via %s at %s.",
+                    self.camera_id,
+                    backend or "AUTO",
+                    self._current_exposure,
+                )
+                return
+
+        self._restore_native_auto_exposure(capture, backend)
+        logger.warning(
+            "Camera %s backend %s did not apply hardware exposure changes.",
+            self.camera_id,
+            backend or "AUTO",
         )
-        self._current_exposure = (
-            applied_exposure
-            if applied_exposure is not None
-            else requested_exposure
-        )
-        self._supported = True
 
     def adjust(
         self,
@@ -124,31 +130,13 @@ class CameraHighlightExposureController:
             return
 
         requested_exposure = self._current_exposure + exposure_delta
-        if not self._set_property(
-            self._capture,
-            self._exposure_property,
-            requested_exposure,
-        ):
+        if not self._apply_and_verify_exposure(requested_exposure):
             logger.warning(
-                "Camera %s stopped accepting exposure updates.",
+                "Camera %s backend %s stopped applying exposure changes.",
                 self.camera_id,
+                self._backend or "AUTO",
             )
             self._supported = False
-            self._restore_native_auto_exposure(
-                self._capture,
-                self._backend,
-            )
-            return
-
-        applied_exposure = self._read_exposure(
-            self._capture,
-            self._exposure_property,
-        )
-        self._current_exposure = (
-            applied_exposure
-            if applied_exposure is not None
-            else requested_exposure
-        )
 
     def _exposure_delta(
         self,
@@ -213,29 +201,56 @@ class CameraHighlightExposureController:
             float(np.mean(luminance >= self._CLIPPED_LEVEL)),
         )
 
-    def _disable_native_auto_exposure(
-        self,
-        capture: Any,
+    @staticmethod
+    def _manual_auto_exposure_values(
         backend: str | None,
-    ) -> bool:
-        auto_property = getattr(
-            self.cv2,
-            "CAP_PROP_AUTO_EXPOSURE",
-            None,
-        )
-        if auto_property is None:
-            return True
-
+    ) -> tuple[float | None, ...]:
         backend_name = str(backend or "").upper()
-        values = (
-            (0.25, 0.0)
+        return (
+            (0.25, 0.0, None)
             if backend_name in {"DSHOW", "MSMF"}
-            else (0.0, 0.25)
+            else (0.0, 0.25, None)
         )
-        return any(
-            self._set_property(capture, auto_property, value)
-            for value in values
+
+    def _apply_and_verify_exposure(
+        self,
+        requested_exposure: float,
+    ) -> bool:
+        if self._capture is None or self._exposure_property is None:
+            return False
+
+        previous_exposure = self._read_exposure(
+            self._capture,
+            self._exposure_property,
         )
+        self._set_property(
+            self._capture,
+            self._exposure_property,
+            requested_exposure,
+        )
+        applied_exposure = self._read_exposure(
+            self._capture,
+            self._exposure_property,
+        )
+        if applied_exposure is None:
+            return False
+        if (
+            previous_exposure is not None
+            and not math.isclose(
+                requested_exposure,
+                previous_exposure,
+                abs_tol=self._PROPERTY_TOLERANCE,
+            )
+            and math.isclose(
+                applied_exposure,
+                previous_exposure,
+                abs_tol=self._PROPERTY_TOLERANCE,
+            )
+        ):
+            return False
+
+        self._current_exposure = applied_exposure
+        return True
 
     def _restore_native_auto_exposure(
         self,

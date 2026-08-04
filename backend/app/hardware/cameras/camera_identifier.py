@@ -63,7 +63,9 @@ def camera_backend_candidates(cv2: Any) -> list[int]:
 
     candidates = [
         backend
-        for backend in (cap_msmf, cap_dshow)
+        # DirectShow exposes UVC camera controls more consistently than MSMF.
+        # Keep MSMF as the fallback when DirectShow cannot open the device.
+        for backend in (cap_dshow, cap_msmf)
         if backend is not None
         and (backend in camera_backends or not registry_available)
     ]
