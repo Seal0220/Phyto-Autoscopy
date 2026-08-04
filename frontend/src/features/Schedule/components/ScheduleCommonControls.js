@@ -110,7 +110,7 @@ export default function ScheduleCommonControls({
         <ToggleRow
           checked={rotationEnabled}
           label="啟用旋臂"
-          description="開啟後使用俯視角、側視角與旋臂視角進行多角度擷取；關閉後只使用俯視角與側視角進行時間間隔擷取。"
+          description="開啟後讓旋臂移動並以三鏡頭進行多角度擷取；關閉後旋臂保持固定，三個鏡頭仍會進行連續間隔擷取。"
           className="w-48 min-w-48 max-w-48"
           onClick={() => setSchedule((previous) => (
             scheduleWithRotationEnabled(previous, !rotationEnabled)

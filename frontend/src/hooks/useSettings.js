@@ -232,7 +232,14 @@ export default function useSettings({
 
       if (!mountedRef.current || controller.signal.aborted) return false;
 
-      setPayload(nextPayload);
+      const savedPayload = (
+        result?.payload
+        && typeof result.payload === "object"
+        && !Array.isArray(result.payload)
+      )
+        ? result.payload
+        : nextPayload;
+      setPayload(cloneValue(savedPayload));
       onNotify?.("已儲存並立即套用。", "success");
       return true;
     } catch (error) {

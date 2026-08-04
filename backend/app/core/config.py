@@ -20,6 +20,16 @@ from app.core.exceptions import ConfigError
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
+
+
+def resolve_project_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    return (
+        path.resolve()
+        if path.is_absolute()
+        else (PROJECT_ROOT / path).resolve()
+    )
 
 
 class ProjectSettings(BaseModel):
@@ -39,7 +49,10 @@ class HardwareSettings(BaseModel):
 
 
 class PathSettings(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(
+        extra="ignore",
+        validate_default=True,
+    )
 
     captures_dir: Path = Path("data/captures")
     snapshots_dir: Path = Path("data/snapshots")
@@ -48,6 +61,20 @@ class PathSettings(BaseModel):
     database_path: Path = Path("data/database/phyto_autoscopy.sqlite3")
     logs_dir: Path = Path("data/logs")
     temp_dir: Path = Path("data/temp")
+
+    @field_validator(
+        "captures_dir",
+        "snapshots_dir",
+        "calibration_dir",
+        "analysis_dir",
+        "database_path",
+        "logs_dir",
+        "temp_dir",
+        mode="before",
+    )
+    @classmethod
+    def paths_must_be_absolute(cls, value: str | Path) -> Path:
+        return resolve_project_path(value)
 
 
 class CameraConfig(BaseModel):

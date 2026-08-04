@@ -47,10 +47,13 @@ def get_settings(context: AppContext = Depends(get_context)) -> dict:
 def get_settings_group(group: str, context: AppContext = Depends(get_context)) -> dict:
     if group not in SETTINGS_FILES:
         raise ConfigError(f"找不到設定群組：{group}")
-    return _normalized_settings_payload(
+    payload = _normalized_settings_payload(
         group,
         read_json_file(get_config_dir() / SETTINGS_FILES[group]),
     )
+    if group == "default":
+        payload["paths"] = context.settings.paths.model_dump(mode="json")
+    return payload
 
 
 @router.post("/reset")
@@ -122,6 +125,8 @@ def update_settings_group(
         previous_payload = read_json_file(config_path)
         normalized_payload = _normalized_settings_payload(group, update.payload)
         candidate = build_candidate_settings(context, group, normalized_payload)
+        if group == "default":
+            normalized_payload["paths"] = candidate.paths.model_dump(mode="json")
 
         save_settings_group(group, normalized_payload)
         try:
@@ -138,4 +143,8 @@ def update_settings_group(
             SettingsRepository(context.database).snapshot(group, normalized_payload)
         except Exception:
             logger.exception("Failed to record settings snapshot: %s", group)
-    return {"updated": group, "applied": True}
+    return {
+        "updated": group,
+        "applied": True,
+        "payload": normalized_payload,
+    }

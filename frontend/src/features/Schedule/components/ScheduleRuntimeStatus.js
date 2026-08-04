@@ -18,10 +18,12 @@ export default function ScheduleRuntimeStatus({
   const status = scheduleStatus.status || "idle";
   const elapsedSeconds = useElapsedSeconds({
     elapsedSeconds: scheduleStatus.elapsed_seconds,
+    resetKey: scheduleStatus.record_id,
     status,
   });
   const cycleElapsedSeconds = useElapsedSeconds({
     elapsedSeconds: scheduleStatus.cycle_elapsed_seconds,
+    resetKey: `${scheduleStatus.record_id || "idle"}:${scheduleStatus.cycle_count || 0}`,
     status: scheduleStatus.cycle_active
       ? status
       : "idle",
@@ -81,7 +83,7 @@ export default function ScheduleRuntimeStatus({
           title="排程"
           content={rotationEnabled
             ? `${scheduleStatus.cycle_count ?? 0} / ${totalCycles}`
-            : "雙鏡頭"
+            : "三鏡頭"
           }
           note={rotationEnabled
             ? `本輪耗時 ${cycleElapsed}`

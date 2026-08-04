@@ -39,6 +39,16 @@ class RecordRepository:
             (status, ended_at, record_id),
         )
 
+    def update_path(
+        self,
+        record_id: str,
+        record_path: str,
+    ) -> None:
+        self.database.execute(
+            "UPDATE records SET record_path=? WHERE record_id=?",
+            (record_path, record_id),
+        )
+
     def list(self) -> list[RecordSummary]:
         rows = self.database.fetchall(
             """

@@ -22,7 +22,7 @@ export default function AnalysisCaptureConfiguration({
         value: configuration.rotation_enabled === true
           ? "旋臂往復捕捉"
           : configuration.rotation_enabled === false
-            ? "固定雙鏡頭捕捉"
+            ? "固定三鏡頭捕捉"
             : "尚無資料",
       },
       ...(rotationEnabled

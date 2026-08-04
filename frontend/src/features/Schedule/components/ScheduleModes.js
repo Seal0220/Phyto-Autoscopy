@@ -93,7 +93,7 @@ export default function ScheduleModes({
         title="擷取模式"
         description={rotationEnabled
           ? "共五種擷取模式，每一模式將獨立產生紀錄檔。"
-          : "未啟用旋臂時固定使用雙鏡頭連續間隔擷取。"
+          : "未啟用旋臂時固定使用三鏡頭連續間隔擷取。"
         }
       >
         <Button

@@ -299,7 +299,7 @@ class ScheduleService:
                 "馬達控制器尚未連接，無法開始旋臂排程。"
             )
         runtimes = self._build_runtimes(plan)
-        self._selected_cameras(plan)
+        self._selected_cameras()
         with self._lock:
             if self._worker is not None and self._worker.is_alive():
                 raise PhytoAutoscopyError("排程正在執行或停止中。")
@@ -503,10 +503,8 @@ class ScheduleService:
 
         return paused_seconds, True
 
-    def _selected_cameras(self, plan: SchedulePlan) -> list[str]:
-        selected = ["top", "side"]
-        if plan.rotation_enabled:
-            selected.append("rotating")
+    def _selected_cameras(self) -> list[str]:
+        selected = ["top", "side", "rotating"]
         disabled = [
             camera_id
             for camera_id in selected
@@ -1064,7 +1062,7 @@ class ScheduleService:
         final_status = "completed"
         background_error: BaseException | None = None
         try:
-            camera_ids = self._selected_cameras(plan)
+            camera_ids = self._selected_cameras()
             if continuous_runtimes:
                 continuous_worker = Thread(
                     target=self._run_continuous_capture,

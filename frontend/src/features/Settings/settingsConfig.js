@@ -50,7 +50,7 @@ export const FIELD_META = {
   },
   rotation_enabled: {
     label: "啟用旋轉",
-    description: "停用後只執行固定視角擷取。",
+    description: "停用後旋臂保持固定，三個鏡頭仍會進行擷取。",
   },
   rotation_end_deg: {
     label: "旋轉結束角度",

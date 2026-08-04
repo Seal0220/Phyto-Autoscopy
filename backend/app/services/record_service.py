@@ -11,7 +11,7 @@ from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.core.config import AppSettings
+from app.core.config import AppSettings, resolve_project_path
 from app.core.exceptions import RecordError
 from app.models.record_models import RecordDetail, RecordSummary
 from app.repositories.record_repository import RecordRepository
@@ -41,6 +41,16 @@ class RecordService:
         self.repository = repository
         self.active_record_id: str | None = None
         self._lock = RLock()
+        self._normalize_record_paths()
+
+    def _normalize_record_paths(self) -> None:
+        for record in self.repository.list():
+            absolute_path = str(resolve_project_path(record.record_path))
+            if absolute_path != record.record_path:
+                self.repository.update_path(
+                    record.record_id,
+                    absolute_path,
+                )
 
     def _local_timezone(self) -> tzinfo:
         try:
