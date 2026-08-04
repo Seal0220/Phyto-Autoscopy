@@ -39,7 +39,7 @@ export async function createOperatorSession() {
   store.set(SESSION_COOKIE_NAME, encodeSessionToken(session, sessionSecret()), {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
@@ -51,7 +51,7 @@ export async function clearSession() {
   store.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
     path: "/",
     maxAge: 0,
   });
