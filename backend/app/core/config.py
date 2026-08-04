@@ -93,17 +93,6 @@ class CameraConfig(BaseModel):
     capture_fps: int = Field(default=10, ge=1, le=60)
     jpeg_quality: int = 95
     enabled: bool = True
-    center_weighted_exposure: bool = True
-    exposure_value: float = Field(default=-6.0, ge=-20, le=20)
-    exposure_min: float = Field(default=-13.0, ge=-20, le=20)
-    exposure_max: float = Field(default=-1.0, ge=-20, le=20)
-    exposure_target: int = Field(default=105, ge=16, le=224)
-    metering_region_percent: int = Field(default=50, ge=10, le=100)
-    exposure_adjustment_interval_seconds: float = Field(
-        default=1.0,
-        ge=0.25,
-        le=10,
-    )
     installation_height_mm: float | None = Field(
         default=None,
         ge=0,
@@ -119,14 +108,6 @@ class CameraConfig(BaseModel):
         ge=0,
         le=10000,
     )
-
-    @model_validator(mode="after")
-    def validate_exposure_range(self) -> "CameraConfig":
-        if self.exposure_max <= self.exposure_min:
-            raise ValueError("曝光上限必須大於曝光下限。")
-        if not self.exposure_min <= self.exposure_value <= self.exposure_max:
-            raise ValueError("基準曝光值必須位於曝光上下限之間。")
-        return self
 
 
 def default_camera_configs() -> dict[str, CameraConfig]:

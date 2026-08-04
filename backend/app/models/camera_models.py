@@ -52,14 +52,3 @@ class CameraSettingsUpdate(BaseModel):
     capture_fps: int | None = Field(default=None, ge=1, le=60)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
     enabled: bool | None = None
-    center_weighted_exposure: bool | None = None
-    exposure_value: float | None = Field(default=None, ge=-20, le=20)
-    exposure_min: float | None = Field(default=None, ge=-20, le=20)
-    exposure_max: float | None = Field(default=None, ge=-20, le=20)
-    exposure_target: int | None = Field(default=None, ge=16, le=224)
-    metering_region_percent: int | None = Field(default=None, ge=10, le=100)
-    exposure_adjustment_interval_seconds: float | None = Field(
-        default=None,
-        ge=0.25,
-        le=10,
-    )

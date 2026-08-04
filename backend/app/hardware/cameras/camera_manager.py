@@ -286,13 +286,6 @@ class OpenCVCameraManager:
             config.height,
             config.capture_fps,
             config.jpeg_quality,
-            config.center_weighted_exposure,
-            config.exposure_value,
-            config.exposure_min,
-            config.exposure_max,
-            config.exposure_target,
-            config.metering_region_percent,
-            config.exposure_adjustment_interval_seconds,
         )
 
     def _synchronize_workers(self) -> None:

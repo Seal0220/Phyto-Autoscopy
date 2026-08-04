@@ -11,7 +11,6 @@ import {
 
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
-import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import SettingPanel from "@/components/panels/SettingPanel";
 import useSettings from "@/hooks/useSettings";
 import useImagePreviewDevices from "@/features/ImagePreview/hooks/useImagePreviewDevices";
@@ -187,15 +186,6 @@ export default function ImagePreviewSettings({
             const installationLeaves = inputLeaves.filter(
               (leaf) => imagePreviewFieldMeta(leaf).group === "installation",
             );
-            const exposureLeaves = inputLeaves.filter(
-              (leaf) => imagePreviewFieldMeta(leaf).group === "exposure",
-            );
-            const exposureToggleLeaves = exposureLeaves.filter(
-              (leaf) => typeof leaf.value === "boolean",
-            );
-            const exposureInputLeaves = exposureLeaves.filter(
-              (leaf) => typeof leaf.value !== "boolean",
-            );
             const cameraLeaves = inputLeaves.filter(
               (leaf) => !imagePreviewFieldMeta(leaf).group,
             );
@@ -223,41 +213,8 @@ export default function ImagePreviewSettings({
                     />
                   ))}
                 </div>
-                {exposureLeaves.length ? (
-                  <>
-                    <hr className="my-1!" />
-                    <SubsectionHeader
-                      title="曝光控制"
-                      description="以中央區域測光保留植物打燈處的高光細節。"
-                      titleMode={1}
-                    />
-                    {exposureToggleLeaves.map((leaf) => (
-                      <ImagePreviewField
-                        key={leaf.path.join(".")}
-                        leaf={leaf}
-                        onChange={updateImagePreviewField}
-                        scanResults={scanResults}
-                      />
-                    ))}
-                    <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
-                      {exposureInputLeaves.map((leaf) => (
-                        <ImagePreviewField
-                          key={leaf.path.join(".")}
-                          leaf={leaf}
-                          onChange={updateImagePreviewField}
-                          scanResults={scanResults}
-                        />
-                      ))}
-                    </div>
-                  </>
-                ) : null}
                 {installationLeaves.length ? (
                   <>
-                    {/* <SubsectionHeader
-                      title="相機安裝參數"
-                      description="作為分析姿態估計的初始值與合理性檢查依據。"
-                      titleMode={1}
-                    /> */}
                     <hr className="my-1!"/>
                     <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1600px]:grid-cols-3">
                       {installationLeaves.map((leaf) => (

@@ -8,7 +8,6 @@ from typing import Any
 
 from app.core.config import CameraConfig
 from app.core.exceptions import CameraError
-from app.hardware.cameras.exposure_controller import CameraExposureController
 from app.hardware.cameras.camera_identifier import open_opencv_capture
 from app.hardware.cameras.camera_types import CameraFrame
 
@@ -44,11 +43,6 @@ class CameraWorker:
         self.config = config.model_copy(deep=True)
         self.cv2 = cv2_module
         self.signature = self._config_signature(self.config)
-        self._exposure_controller = CameraExposureController(
-            camera_id,
-            self.config,
-            cv2_module,
-        )
 
         self._condition = Condition(Lock())
         self._capture_lock = Lock()
@@ -73,13 +67,6 @@ class CameraWorker:
             config.height,
             config.capture_fps,
             config.jpeg_quality,
-            config.center_weighted_exposure,
-            config.exposure_value,
-            config.exposure_min,
-            config.exposure_max,
-            config.exposure_target,
-            config.metering_region_percent,
-            config.exposure_adjustment_interval_seconds,
         )
 
     def start(self) -> None:
@@ -211,7 +198,7 @@ class CameraWorker:
                 self._capture = capture
 
             try:
-                self._configure_capture(capture, backend)
+                self._configure_capture(capture)
                 if self._stop_event.is_set():
                     continue
                 with self._condition:
@@ -245,12 +232,6 @@ class CameraWorker:
 
                     if self._stop_event.is_set():
                         break
-
-                    self._exposure_controller.adjust(
-                        capture,
-                        image,
-                        started_at,
-                    )
 
                     try:
                         encoded_ok, encoded = self.cv2.imencode(
@@ -333,7 +314,6 @@ class CameraWorker:
     def _configure_capture(
         self,
         capture: Any,
-        backend: str | None,
     ) -> None:
         properties: list[tuple[Any, Any]] = []
         fourcc_property = getattr(self.cv2, "CAP_PROP_FOURCC", None)
@@ -358,7 +338,6 @@ class CameraWorker:
                     prop,
                     exc_info=True,
                 )
-        self._exposure_controller.configure(capture, backend)
 
     def _set_disconnected(self, error: str) -> bool:
         with self._condition:
