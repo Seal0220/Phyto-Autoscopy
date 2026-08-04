@@ -3372,3 +3372,9 @@
 {"timestamp": "2026-08-04T06:13:33.825188+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
 {"timestamp": "2026-08-04T06:13:37.501676+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
 {"timestamp": "2026-08-04T06:13:37.518829+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T11:39:24.026886+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T11:39:24.032410+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T11:39:26.198231+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T11:39:26.211309+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T16:44:38.410486+00:00", "actor": "operator", "role": "operator", "action": "websocket.ticket", "outcome": "ok"}
+{"timestamp": "2026-08-04T16:44:38.412010+00:00", "actor": "operator", "role": "operator", "action": "http:POST:/api/auth/ws-ticket", "outcome": "ok"}
