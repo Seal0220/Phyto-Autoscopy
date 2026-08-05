@@ -61,15 +61,21 @@ def camera_backend_candidates(cv2: Any) -> list[int]:
         registry_available = False
         camera_backends = set()
 
-    candidates = [
-        backend
-        # DirectShow exposes UVC camera controls more consistently than MSMF.
-        # Keep MSMF as the fallback when DirectShow cannot open the device.
-        for backend in (cap_dshow, cap_msmf)
-        if backend is not None
-        and (backend in camera_backends or not registry_available)
-    ]
-    return list(dict.fromkeys(candidates)) or [cap_any]
+    # Camera indices belong to the selected backend; MSMF index 0 and DSHOW
+    # index 0 are not guaranteed to identify the same physical camera.  Keep
+    # the entire process in one index space instead of falling through from
+    # one backend to another for an individual camera.
+    if (
+        cap_msmf is not None
+        and (cap_msmf in camera_backends or not registry_available)
+    ):
+        return [cap_msmf]
+    if (
+        cap_dshow is not None
+        and (cap_dshow in camera_backends or not registry_available)
+    ):
+        return [cap_dshow]
+    return [cap_any]
 
 
 def enumerate_opencv_device_names(

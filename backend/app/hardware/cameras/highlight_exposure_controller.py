@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -9,20 +10,44 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-class CameraHighlightExposureController:
-    """Protect full-frame highlights with automatic hardware exposure updates."""
+@dataclass(frozen=True)
+class _ExposureMetrics:
+    median: float
+    high: float
+    peak: float
+    clipped_ratio: float
 
-    _ADJUSTMENT_INTERVAL_SECONDS = 0.75
-    _TARGET_HIGHLIGHT_LEVEL = 225.0
-    _HIGHLIGHT_HYSTERESIS = 12.0
+
+@dataclass(frozen=True)
+class _PendingExposure:
+    previous: float
+    requested: float
+    direction: int
+    high_before: float
+
+
+class CameraHighlightExposureController:
+    """Continuously protect highlights without chasing individual frames."""
+
+    _MEASUREMENT_WINDOW_SECONDS = 1.0
+    _EMA_ALPHA = 0.25
+    _SAMPLE_STRIDE = 8
     _CLIPPED_LEVEL = 250.0
-    _CLIPPED_PIXEL_LIMIT = 0.003
-    _SEVERE_CLIPPED_PIXEL_LIMIT = 0.05
+
+    _BRIGHT_CONFIRMATION_WINDOWS = 3
+    _SEVERE_CONFIRMATION_WINDOWS = 2
+    _DARK_CONFIRMATION_WINDOWS = 6
+    _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
+    _REVERSAL_COOLDOWN_SECONDS = 10.0
+    _SETTLING_SECONDS = 1.5
+    _NATIVE_AUTO_SETTLING_SECONDS = 1.0
+
     _EXPOSURE_STEP = 1.0
-    _FAST_EXPOSURE_STEP = 2.0
-    _FALLBACK_EXPOSURE = -6.0
-    _SAMPLE_STRIDE = 4
+    _MINIMUM_INITIAL_OFFSET = -4.0
+    _MAXIMUM_INITIAL_OFFSET = 2.0
     _PROPERTY_TOLERANCE = 0.25
+    _MINIMUM_VISIBLE_RESPONSE = 6.0
+    _MAXIMUM_FAILED_COMMANDS = 2
 
     def __init__(
         self,
@@ -31,159 +56,400 @@ class CameraHighlightExposureController:
     ) -> None:
         self.camera_id = camera_id
         self.cv2 = cv2_module
-        self._backend: str | None = None
         self._capture: Any | None = None
+        self._backend: str | None = None
         self._exposure_property: Any | None = None
-        self._current_exposure = self._FALLBACK_EXPOSURE
-        self._next_adjustment_at = 0.0
-        self._supported = False
+        self._initial_exposure: float | None = None
+        self._minimum_exposure: float | None = None
+        self._maximum_exposure: float | None = None
+        self._current_exposure: float | None = None
+        self._custom_control_available = True
+        self._manual_exposure = False
+
+        self._window_started_at: float | None = None
+        self._window_metrics: list[_ExposureMetrics] = []
+        self._smoothed_metrics: _ExposureMetrics | None = None
+        self._bright_windows = 0
+        self._severe_windows = 0
+        self._dark_windows = 0
+
+        self._last_write_at = float("-inf")
+        self._last_direction = 0
+        self._settling_until = 0.0
+        self._pending_exposure: _PendingExposure | None = None
+        self._failed_commands = 0
 
     def configure(
         self,
         capture: Any,
         backend: str | None,
     ) -> None:
-        self._backend = backend
         self._capture = capture
+        self._backend = backend
         self._exposure_property = getattr(
             self.cv2,
             "CAP_PROP_EXPOSURE",
             None,
         )
-        self._next_adjustment_at = 0.0
-        self._supported = False
+        self._custom_control_available = self._exposure_property is not None
+        self._manual_exposure = False
+        self._pending_exposure = None
+        self._failed_commands = 0
+        self._last_write_at = float("-inf")
+        self._last_direction = 0
+        self._settling_until = 0.0
+        self._reset_exposure_range()
+        self._reset_meter()
 
         if self._exposure_property is None:
             logger.warning(
-                "Camera %s does not expose hardware exposure control.",
+                "相機 %s 未提供硬體曝光控制，保留原生自動曝光。",
                 self.camera_id,
             )
             return
 
-        current_exposure = self._read_exposure(
-            capture,
-            self._exposure_property,
-        )
-        initial_exposure = (
-            current_exposure
-            if current_exposure is not None
-            else self._FALLBACK_EXPOSURE
-        )
-        for manual_value in self._manual_auto_exposure_values(backend):
-            if manual_value is not None:
-                auto_property = getattr(
-                    self.cv2,
-                    "CAP_PROP_AUTO_EXPOSURE",
-                    None,
-                )
-                if auto_property is not None:
-                    self._set_property(
-                        capture,
-                        auto_property,
-                        manual_value,
-                    )
+        initial_exposure = self._read_exposure()
+        if initial_exposure is None:
+            self._custom_control_available = False
+            logger.warning(
+                "相機 %s 無法讀取硬體曝光值，保留原生自動曝光。",
+                self.camera_id,
+            )
+            return
 
-            self._current_exposure = initial_exposure
-            if self._apply_and_verify_exposure(
-                initial_exposure - self._EXPOSURE_STEP,
-            ):
-                self._supported = True
-                logger.info(
-                    "Camera %s enabled full-frame highlight exposure via %s at %s.",
-                    self.camera_id,
-                    backend or "AUTO",
-                    self._current_exposure,
-                )
-                return
+        # Native auto exposure may still be settling immediately after open.
+        # Establish the safety range only when the first sustained correction
+        # is requested, not from this early transient value.
+        self._initial_exposure = None
+        self._minimum_exposure = None
+        self._maximum_exposure = None
+        self._current_exposure = initial_exposure
 
-        self._restore_native_auto_exposure(capture, backend)
-        logger.warning(
-            "Camera %s backend %s did not apply hardware exposure changes.",
-            self.camera_id,
-            backend or "AUTO",
+    def should_publish(
+        self,
+        image: Any,
+        measured_at: float,
+    ) -> bool:
+        if measured_at < self._settling_until:
+            return False
+
+        pending = self._pending_exposure
+        if pending is None:
+            return True
+
+        metrics = self._measure_frame(image)
+        self._pending_exposure = None
+        if metrics is not None and self._exposure_change_applied(
+            pending,
+            metrics,
+        ):
+            applied = self._read_exposure()
+            self._current_exposure = (
+                applied
+                if applied is not None
+                else pending.requested
+            )
+            self._failed_commands = 0
+            self._reset_meter()
+            return True
+
+        self._failed_commands += 1
+        self._restore_native_auto_exposure()
+        self._reset_exposure_range()
+        self._reset_meter()
+        self._settling_until = (
+            measured_at
+            + self._NATIVE_AUTO_SETTLING_SECONDS
         )
+        if self._failed_commands >= self._MAXIMUM_FAILED_COMMANDS:
+            self._custom_control_available = False
+            logger.warning(
+                "相機 %s 的驅動未套用曝光命令，已停止自訂控制並保留原生自動曝光。",
+                self.camera_id,
+            )
+        return False
 
-    def adjust(
+    def observe(
         self,
         image: Any,
         measured_at: float,
     ) -> None:
-        if not self._supported or self._capture is None:
-            return
-        if measured_at < self._next_adjustment_at:
+        if not self._custom_control_available:
             return
 
-        self._next_adjustment_at = (
-            measured_at
-            + self._ADJUSTMENT_INTERVAL_SECONDS
+        metrics = self._measure_frame(image)
+        if metrics is None:
+            return
+
+        if self._window_started_at is None:
+            self._window_started_at = measured_at
+        self._window_metrics.append(metrics)
+        if (
+            measured_at - self._window_started_at
+            < self._MEASUREMENT_WINDOW_SECONDS
+        ):
+            return
+
+        window_metrics = self._average_metrics(self._window_metrics)
+        self._window_metrics.clear()
+        self._window_started_at = measured_at
+        self._smoothed_metrics = self._smooth_metrics(
+            self._smoothed_metrics,
+            window_metrics,
         )
-        measurement = self._measure_full_frame_highlights(image)
-        if measurement is None:
+        direction = self._next_direction(self._smoothed_metrics)
+        if direction == 0 or not self._can_write(direction, measured_at):
             return
 
-        highlight_level, clipped_ratio = measurement
-        exposure_delta = self._exposure_delta(
-            highlight_level,
-            clipped_ratio,
+        self._apply_exposure_step(
+            direction,
+            self._smoothed_metrics,
+            measured_at,
         )
-        if exposure_delta == 0.0:
-            return
 
-        requested_exposure = self._current_exposure + exposure_delta
-        if not self._apply_and_verify_exposure(requested_exposure):
-            logger.warning(
-                "Camera %s backend %s stopped applying exposure changes.",
-                self.camera_id,
-                self._backend or "AUTO",
-            )
-            self._supported = False
-
-    def _exposure_delta(
+    def _next_direction(
         self,
-        highlight_level: float,
-        clipped_ratio: float,
-    ) -> float:
-        upper_limit = (
-            self._TARGET_HIGHLIGHT_LEVEL
-            + self._HIGHLIGHT_HYSTERESIS
+        metrics: _ExposureMetrics,
+    ) -> int:
+        severe = (
+            metrics.high > 235.0
+            or metrics.clipped_ratio > 0.10
         )
-        lower_limit = (
-            self._TARGET_HIGHLIGHT_LEVEL
-            - self._HIGHLIGHT_HYSTERESIS
+        bright = (
+            metrics.high > 220.0
+            or (
+                metrics.peak > 248.0
+                and metrics.clipped_ratio > 0.02
+            )
         )
 
-        if (
-            clipped_ratio >= self._SEVERE_CLIPPED_PIXEL_LIMIT
-            or highlight_level >= 252.0
-        ):
-            return -self._FAST_EXPOSURE_STEP
-        if (
-            clipped_ratio >= self._CLIPPED_PIXEL_LIMIT
-            or highlight_level > upper_limit
-        ):
-            return -self._EXPOSURE_STEP
-        if (
-            clipped_ratio < self._CLIPPED_PIXEL_LIMIT / 4
-            and highlight_level < lower_limit
-        ):
-            return self._EXPOSURE_STEP
-        return 0.0
+        if metrics.high < 180.0 and metrics.clipped_ratio < 0.02:
+            bright = False
+            severe = False
+        if metrics.median < 25.0 and metrics.clipped_ratio <= 0.10:
+            bright = False
+            severe = False
 
-    def _measure_full_frame_highlights(
+        dark = (
+            not bright
+            and metrics.high < 170.0
+            and metrics.peak < 225.0
+            and metrics.clipped_ratio < 0.001
+        )
+
+        self._severe_windows = self._severe_windows + 1 if severe else 0
+        self._bright_windows = self._bright_windows + 1 if bright else 0
+        self._dark_windows = self._dark_windows + 1 if dark else 0
+
+        if (
+            self._severe_windows >= self._SEVERE_CONFIRMATION_WINDOWS
+            or self._bright_windows >= self._BRIGHT_CONFIRMATION_WINDOWS
+        ):
+            self._reset_confirmation_windows()
+            return -1
+        if self._dark_windows >= self._DARK_CONFIRMATION_WINDOWS:
+            self._reset_confirmation_windows()
+            return 1
+        return 0
+
+    def _can_write(
+        self,
+        direction: int,
+        measured_at: float,
+    ) -> bool:
+        elapsed = measured_at - self._last_write_at
+        if elapsed < self._MINIMUM_WRITE_INTERVAL_SECONDS:
+            return False
+        return not (
+            self._last_direction not in (0, direction)
+            and elapsed < self._REVERSAL_COOLDOWN_SECONDS
+        )
+
+    def _apply_exposure_step(
+        self,
+        direction: int,
+        metrics: _ExposureMetrics,
+        measured_at: float,
+    ) -> None:
+        current = self._read_exposure()
+        if current is None:
+            self._register_command_failure(measured_at)
+            return
+
+        if self._initial_exposure is None:
+            self._initial_exposure = current
+            self._minimum_exposure = (
+                current
+                + self._MINIMUM_INITIAL_OFFSET
+            )
+            self._maximum_exposure = (
+                current
+                + self._MAXIMUM_INITIAL_OFFSET
+            )
+
+        minimum = self._minimum_exposure
+        maximum = self._maximum_exposure
+        if minimum is None or maximum is None:
+            self._register_command_failure(measured_at)
+            return
+
+        requested = min(
+            maximum,
+            max(
+                minimum,
+                current + direction * self._EXPOSURE_STEP,
+            ),
+        )
+        if math.isclose(
+            requested,
+            current,
+            abs_tol=self._PROPERTY_TOLERANCE,
+        ):
+            return
+
+        if not self._enable_manual_exposure():
+            self._register_command_failure(measured_at)
+            return
+        self._set_property(
+            self._exposure_property,
+            requested,
+        )
+        self._pending_exposure = _PendingExposure(
+            previous=current,
+            requested=requested,
+            direction=direction,
+            high_before=metrics.high,
+        )
+        self._last_write_at = measured_at
+        self._last_direction = direction
+        self._settling_until = measured_at + self._SETTLING_SECONDS
+
+    def _exposure_change_applied(
+        self,
+        pending: _PendingExposure,
+        metrics: _ExposureMetrics,
+    ) -> bool:
+        applied = self._read_exposure()
+        property_changed = (
+            applied is not None
+            and not math.isclose(
+                applied,
+                pending.previous,
+                abs_tol=self._PROPERTY_TOLERANCE,
+            )
+        )
+        visible_change = (
+            pending.high_before - metrics.high
+            if pending.direction < 0
+            else metrics.high - pending.high_before
+        )
+        return property_changed or visible_change >= self._MINIMUM_VISIBLE_RESPONSE
+
+    def _register_command_failure(self, measured_at: float) -> None:
+        self._failed_commands += 1
+        self._restore_native_auto_exposure()
+        self._reset_exposure_range()
+        self._last_write_at = measured_at
+        self._settling_until = (
+            measured_at
+            + self._NATIVE_AUTO_SETTLING_SECONDS
+        )
+        self._reset_meter()
+        if self._failed_commands >= self._MAXIMUM_FAILED_COMMANDS:
+            self._custom_control_available = False
+            logger.warning(
+                "相機 %s 無法安全控制硬體曝光，已改用原生自動曝光。",
+                self.camera_id,
+            )
+
+    def _enable_manual_exposure(self) -> bool:
+        if self._manual_exposure:
+            return True
+        if self._capture is None:
+            return False
+
+        auto_property = getattr(
+            self.cv2,
+            "CAP_PROP_AUTO_EXPOSURE",
+            None,
+        )
+        if auto_property is None:
+            return False
+
+        backend = str(self._backend or "").upper()
+        values = (
+            (0.0, 0.25)
+            if backend == "MSMF"
+            else (0.25, 0.0)
+        )
+        for value in values:
+            if self._set_property(auto_property, value):
+                self._manual_exposure = True
+                return True
+        return False
+
+    def _restore_native_auto_exposure(self) -> None:
+        if self._capture is None:
+            return
+
+        auto_property = getattr(
+            self.cv2,
+            "CAP_PROP_AUTO_EXPOSURE",
+            None,
+        )
+        if auto_property is None:
+            return
+
+        backend = str(self._backend or "").upper()
+        values = (
+            (1.0, 0.75)
+            if backend == "MSMF"
+            else (0.75, 1.0)
+        )
+        for value in values:
+            if self._set_property(auto_property, value):
+                self._manual_exposure = False
+                return
+
+    def _set_property(
+        self,
+        property_id: Any,
+        value: float,
+    ) -> bool:
+        if self._capture is None or property_id is None:
+            return False
+        try:
+            return bool(self._capture.set(property_id, value))
+        except Exception:
+            return False
+
+    def _read_exposure(self) -> float | None:
+        if self._capture is None or self._exposure_property is None:
+            return None
+        try:
+            value = float(self._capture.get(self._exposure_property))
+        except Exception:
+            return None
+        return value if math.isfinite(value) else None
+
+    def _measure_frame(
         self,
         image: Any,
-    ) -> tuple[float, float] | None:
+    ) -> _ExposureMetrics | None:
         shape = getattr(image, "shape", None)
         if shape is None or len(shape) < 2:
             return None
 
-        sampled = np.asarray(
-            image[
-                ::self._SAMPLE_STRIDE,
-                ::self._SAMPLE_STRIDE,
-            ],
-            dtype=np.float32,
-        )
+        try:
+            sampled = np.asarray(
+                image[
+                    ::self._SAMPLE_STRIDE,
+                    ::self._SAMPLE_STRIDE,
+                ],
+                dtype=np.float32,
+            )
+        except Exception:
+            return None
         if sampled.size == 0:
             return None
 
@@ -196,103 +462,63 @@ class CameraHighlightExposureController:
         else:
             luminance = sampled
 
-        return (
-            float(np.percentile(luminance, 99.0)),
-            float(np.mean(luminance >= self._CLIPPED_LEVEL)),
+        return _ExposureMetrics(
+            median=float(np.percentile(luminance, 50.0)),
+            high=float(np.percentile(luminance, 90.0)),
+            peak=float(np.percentile(luminance, 99.0)),
+            clipped_ratio=float(
+                np.mean(luminance >= self._CLIPPED_LEVEL)
+            ),
         )
 
     @staticmethod
-    def _manual_auto_exposure_values(
-        backend: str | None,
-    ) -> tuple[float | None, ...]:
-        backend_name = str(backend or "").upper()
-        return (
-            (0.25, 0.0, None)
-            if backend_name in {"DSHOW", "MSMF"}
-            else (0.0, 0.25, None)
+    def _average_metrics(
+        metrics: list[_ExposureMetrics],
+    ) -> _ExposureMetrics:
+        count = max(1, len(metrics))
+        return _ExposureMetrics(
+            median=sum(item.median for item in metrics) / count,
+            high=sum(item.high for item in metrics) / count,
+            peak=sum(item.peak for item in metrics) / count,
+            clipped_ratio=(
+                sum(item.clipped_ratio for item in metrics) / count
+            ),
         )
 
-    def _apply_and_verify_exposure(
-        self,
-        requested_exposure: float,
-    ) -> bool:
-        if self._capture is None or self._exposure_property is None:
-            return False
+    @classmethod
+    def _smooth_metrics(
+        cls,
+        previous: _ExposureMetrics | None,
+        current: _ExposureMetrics,
+    ) -> _ExposureMetrics:
+        if previous is None:
+            return current
 
-        previous_exposure = self._read_exposure(
-            self._capture,
-            self._exposure_property,
+        alpha = cls._EMA_ALPHA
+        retained = 1.0 - alpha
+        return _ExposureMetrics(
+            median=previous.median * retained + current.median * alpha,
+            high=previous.high * retained + current.high * alpha,
+            peak=previous.peak * retained + current.peak * alpha,
+            clipped_ratio=(
+                previous.clipped_ratio * retained
+                + current.clipped_ratio * alpha
+            ),
         )
-        self._set_property(
-            self._capture,
-            self._exposure_property,
-            requested_exposure,
-        )
-        applied_exposure = self._read_exposure(
-            self._capture,
-            self._exposure_property,
-        )
-        if applied_exposure is None:
-            return False
-        if (
-            previous_exposure is not None
-            and not math.isclose(
-                requested_exposure,
-                previous_exposure,
-                abs_tol=self._PROPERTY_TOLERANCE,
-            )
-            and math.isclose(
-                applied_exposure,
-                previous_exposure,
-                abs_tol=self._PROPERTY_TOLERANCE,
-            )
-        ):
-            return False
 
-        self._current_exposure = applied_exposure
-        return True
+    def _reset_meter(self) -> None:
+        self._window_started_at = None
+        self._window_metrics.clear()
+        self._smoothed_metrics = None
+        self._reset_confirmation_windows()
 
-    def _restore_native_auto_exposure(
-        self,
-        capture: Any,
-        backend: str | None,
-    ) -> None:
-        auto_property = getattr(
-            self.cv2,
-            "CAP_PROP_AUTO_EXPOSURE",
-            None,
-        )
-        if auto_property is None:
-            return
+    def _reset_exposure_range(self) -> None:
+        self._initial_exposure = None
+        self._minimum_exposure = None
+        self._maximum_exposure = None
+        self._current_exposure = None
 
-        backend_name = str(backend or "").upper()
-        values = (
-            (0.75, 1.0)
-            if backend_name in {"DSHOW", "MSMF"}
-            else (1.0, 0.75, 3.0)
-        )
-        for value in values:
-            if self._set_property(capture, auto_property, value):
-                return
-
-    @staticmethod
-    def _set_property(
-        capture: Any,
-        property_id: Any,
-        value: float,
-    ) -> bool:
-        try:
-            return bool(capture.set(property_id, value))
-        except Exception:
-            return False
-
-    @staticmethod
-    def _read_exposure(
-        capture: Any,
-        property_id: Any,
-    ) -> float | None:
-        try:
-            value = float(capture.get(property_id))
-        except Exception:
-            return None
-        return value if math.isfinite(value) else None
+    def _reset_confirmation_windows(self) -> None:
+        self._bright_windows = 0
+        self._severe_windows = 0
+        self._dark_windows = 0

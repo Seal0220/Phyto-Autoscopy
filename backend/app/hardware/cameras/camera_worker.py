@@ -240,10 +240,11 @@ class CameraWorker:
                     if self._stop_event.is_set():
                         break
 
-                    self._exposure_controller.adjust(
+                    if not self._exposure_controller.should_publish(
                         image,
                         started_at,
-                    )
+                    ):
+                        continue
 
                     try:
                         encoded_ok, encoded = self.cv2.imencode(
@@ -300,6 +301,11 @@ class CameraWorker:
                             "相機 %s 已恢復影像串流。",
                             self.camera_id,
                         )
+
+                    self._exposure_controller.observe(
+                        image,
+                        published_at,
+                    )
 
                     frame_interval = 1.0 / max(1, self.config.capture_fps)
                     remaining = frame_interval - (time.monotonic() - started_at)
