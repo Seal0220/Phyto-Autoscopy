@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,13 @@ class _PendingExposure:
     high_before: float
 
 
+@dataclass(frozen=True)
+class _ExposureControllerStatus:
+    exposure_value: float | None
+    metering_region: tuple[float, float, float, float] | None
+    overexposed_regions: tuple[tuple[float, float, float, float], ...]
+
+
 class CameraHighlightExposureController:
     """Continuously protect highlights without chasing individual frames."""
 
@@ -34,6 +42,13 @@ class CameraHighlightExposureController:
     _EMA_ALPHA = 0.25
     _SAMPLE_STRIDE = 8
     _CLIPPED_LEVEL = 250.0
+    _METERING_HORIZONTAL_INSET_RATIO = 0.08
+
+    _HIGHLIGHT_DETECTION_INTERVAL_SECONDS = 0.5
+    _HIGHLIGHT_SAMPLE_STRIDE = 4
+    _HIGHLIGHT_LEVEL = 248.0
+    _MINIMUM_HIGHLIGHT_AREA_RATIO = 0.001
+    _MAXIMUM_HIGHLIGHT_REGIONS = 8
 
     _BRIGHT_CONFIRMATION_WINDOWS = 3
     _SEVERE_CONFIRMATION_WINDOWS = 2
@@ -77,6 +92,15 @@ class CameraHighlightExposureController:
         self._pending_exposure: _PendingExposure | None = None
         self._failed_commands = 0
 
+        self._status_lock = Lock()
+        self._reported_exposure: float | None = None
+        self._metering_region: tuple[float, float, float, float] | None = None
+        self._overexposed_regions: tuple[
+            tuple[float, float, float, float],
+            ...
+        ] = ()
+        self._last_highlight_detection_at = float("-inf")
+
     def configure(
         self,
         capture: Any,
@@ -99,6 +123,9 @@ class CameraHighlightExposureController:
         self._last_direction = 0
         self._settling_until = 0.0
         self._current_exposure = None
+        self._last_highlight_detection_at = float("-inf")
+        self._set_reported_exposure(None)
+        self._set_visualization_status(None, ())
         self._reset_meter()
 
         if self._exposure_property is None:
@@ -118,6 +145,16 @@ class CameraHighlightExposureController:
             return
 
         self._current_exposure = initial_exposure
+        if str(backend or "").upper() != "MSMF":
+            self._set_reported_exposure(initial_exposure)
+
+    def status(self) -> _ExposureControllerStatus:
+        with self._status_lock:
+            return _ExposureControllerStatus(
+                exposure_value=self._reported_exposure,
+                metering_region=self._metering_region,
+                overexposed_regions=self._overexposed_regions,
+            )
 
     def should_publish(
         self,
@@ -136,6 +173,7 @@ class CameraHighlightExposureController:
             # set() 成功後以最後下達的值繼續逐級調整，避免每次都重寫同一級。
             self._pending_exposure = None
             self._current_exposure = pending.requested
+            self._set_reported_exposure(pending.requested)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -154,6 +192,7 @@ class CameraHighlightExposureController:
                 if applied is not None
                 else pending.requested
             )
+            self._set_reported_exposure(self._current_exposure)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -189,6 +228,16 @@ class CameraHighlightExposureController:
         image: Any,
         measured_at: float,
     ) -> None:
+        if (
+            measured_at - self._last_highlight_detection_at
+            >= self._HIGHLIGHT_DETECTION_INTERVAL_SECONDS
+        ):
+            self._last_highlight_detection_at = measured_at
+            self._set_visualization_status(
+                self._normalized_metering_region(image),
+                self._detect_overexposed_regions(image),
+            )
+
         if not self._custom_control_available:
             return
 
@@ -329,6 +378,7 @@ class CameraHighlightExposureController:
         # MSMF 的曝光 setter 本身會以 Manual flag 寫入硬體。
         self._manual_exposure = True
         self._current_exposure = requested
+        self._set_reported_exposure(requested)
         self._blocked_direction = 0
         self._failed_commands = 0
         self._pending_exposure = _PendingExposure(
@@ -436,6 +486,7 @@ class CameraHighlightExposureController:
         for value in values:
             if self._set_property(auto_property, value):
                 self._manual_exposure = False
+                self._set_reported_exposure(None)
                 return
 
     def _set_property(
@@ -463,14 +514,9 @@ class CameraHighlightExposureController:
         self,
         image: Any,
     ) -> _ExposureMetrics | None:
-        shape = getattr(image, "shape", None)
-        if shape is None or len(shape) < 2:
+        metering_image = self._metering_image(image)
+        if metering_image is None:
             return None
-
-        metering_image = image
-        if self.camera_id in self._LOWER_HALF_METERING_CAMERAS:
-            image_height = int(shape[0])
-            metering_image = image[image_height // 2 :, :]
 
         try:
             sampled = np.asarray(
@@ -502,6 +548,191 @@ class CameraHighlightExposureController:
                 np.mean(luminance >= self._CLIPPED_LEVEL)
             ),
         )
+
+    def _metering_image(self, image: Any) -> Any | None:
+        bounds = self._metering_bounds(image)
+        if bounds is None:
+            return None
+        left, top, right, bottom = bounds
+        return image[top:bottom, left:right]
+
+    def _metering_bounds(
+        self,
+        image: Any,
+    ) -> tuple[int, int, int, int] | None:
+        shape = getattr(image, "shape", None)
+        if shape is None or len(shape) < 2:
+            return None
+
+        image_height = int(shape[0])
+        image_width = int(shape[1])
+        if image_height <= 0 or image_width <= 0:
+            return None
+
+        horizontal_inset = int(
+            round(image_width * self._METERING_HORIZONTAL_INSET_RATIO)
+        )
+        horizontal_inset = min(
+            max(0, horizontal_inset),
+            max(0, image_width // 2 - 1),
+        )
+        top = (
+            image_height // 2
+            if self.camera_id in self._LOWER_HALF_METERING_CAMERAS
+            else 0
+        )
+        return (
+            horizontal_inset,
+            top,
+            image_width - horizontal_inset,
+            image_height,
+        )
+
+    def _detect_overexposed_regions(
+        self,
+        image: Any,
+    ) -> tuple[tuple[float, float, float, float], ...]:
+        bounds = self._metering_bounds(image)
+        shape = getattr(image, "shape", None)
+        if bounds is None or shape is None:
+            return ()
+
+        left, top, right, bottom = bounds
+        image_height = int(shape[0])
+        image_width = int(shape[1])
+        metering_image = image[top:bottom, left:right]
+        stride = self._HIGHLIGHT_SAMPLE_STRIDE
+
+        try:
+            sampled = np.asarray(
+                metering_image[::stride, ::stride],
+                dtype=np.float32,
+            )
+        except Exception:
+            return ()
+        if sampled.size == 0:
+            return ()
+
+        if sampled.ndim >= 3 and sampled.shape[2] >= 3:
+            luminance = (
+                sampled[..., 0] * 0.114
+                + sampled[..., 1] * 0.587
+                + sampled[..., 2] * 0.299
+            )
+        else:
+            luminance = sampled
+
+        mask = np.asarray(
+            luminance >= self._HIGHLIGHT_LEVEL,
+            dtype=np.uint8,
+        )
+        if not np.any(mask):
+            return ()
+
+        try:
+            kernel = np.ones((3, 3), dtype=np.uint8)
+            mask = self.cv2.morphologyEx(
+                mask,
+                self.cv2.MORPH_CLOSE,
+                kernel,
+                iterations=2,
+            )
+            component_count, _labels, stats, _centroids = (
+                self.cv2.connectedComponentsWithStats(
+                    mask,
+                    connectivity=8,
+                )
+            )
+        except Exception:
+            return ()
+
+        minimum_area = max(
+            4,
+            int(round(mask.size * self._MINIMUM_HIGHLIGHT_AREA_RATIO)),
+        )
+        components: list[tuple[int, int, int, int, int]] = []
+        for component_index in range(1, int(component_count)):
+            component_left = int(stats[component_index, 0])
+            component_top = int(stats[component_index, 1])
+            component_width = int(stats[component_index, 2])
+            component_height = int(stats[component_index, 3])
+            component_area = int(stats[component_index, 4])
+            if component_area < minimum_area:
+                continue
+            components.append((
+                component_area,
+                component_left,
+                component_top,
+                component_width,
+                component_height,
+            ))
+
+        components.sort(reverse=True)
+        regions: list[tuple[float, float, float, float]] = []
+        for (
+            _area,
+            component_left,
+            component_top,
+            component_width,
+            component_height,
+        ) in components[:self._MAXIMUM_HIGHLIGHT_REGIONS]:
+            region_left = max(
+                left,
+                left + (component_left - 1) * stride,
+            )
+            region_top = max(
+                top,
+                top + (component_top - 1) * stride,
+            )
+            region_right = min(
+                right,
+                left
+                + (component_left + component_width + 1) * stride,
+            )
+            region_bottom = min(
+                bottom,
+                top
+                + (component_top + component_height + 1) * stride,
+            )
+            regions.append((
+                round(region_left / image_width, 6),
+                round(region_top / image_height, 6),
+                round((region_right - region_left) / image_width, 6),
+                round((region_bottom - region_top) / image_height, 6),
+            ))
+        return tuple(regions)
+
+    def _normalized_metering_region(
+        self,
+        image: Any,
+    ) -> tuple[float, float, float, float] | None:
+        bounds = self._metering_bounds(image)
+        shape = getattr(image, "shape", None)
+        if bounds is None or shape is None:
+            return None
+
+        left, top, right, bottom = bounds
+        image_height = int(shape[0])
+        image_width = int(shape[1])
+        return (
+            round(left / image_width, 6),
+            round(top / image_height, 6),
+            round((right - left) / image_width, 6),
+            round((bottom - top) / image_height, 6),
+        )
+
+    def _set_reported_exposure(self, value: float | None) -> None:
+        with self._status_lock:
+            self._reported_exposure = value
+
+    def _set_visualization_status(
+        self,
+        metering_region: tuple[float, float, float, float] | None,
+        regions: tuple[tuple[float, float, float, float], ...],
+    ) -> None:
+        with self._status_lock:
+            self._metering_region = metering_region
+            self._overexposed_regions = regions
 
     @staticmethod
     def _average_metrics(

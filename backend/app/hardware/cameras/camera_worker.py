@@ -24,6 +24,9 @@ class CameraWorkerState:
     backend: str | None
     sequence: int
     actual_fps: float
+    exposure_value: float | None
+    metering_region: tuple[float, float, float, float] | None
+    overexposed_regions: tuple[tuple[float, float, float, float], ...]
 
 
 class CameraWorker:
@@ -117,6 +120,7 @@ class CameraWorker:
         return stopped
 
     def state(self) -> CameraWorkerState:
+        exposure = self._exposure_controller.status()
         with self._condition:
             actual_fps = self._actual_fps if self._frame_is_current() else 0.0
             return CameraWorkerState(
@@ -125,6 +129,9 @@ class CameraWorker:
                 backend=self._backend,
                 sequence=self._sequence,
                 actual_fps=round(actual_fps, 2),
+                exposure_value=exposure.exposure_value,
+                metering_region=exposure.metering_region,
+                overexposed_regions=exposure.overexposed_regions,
             )
 
     def wait_for_frame(

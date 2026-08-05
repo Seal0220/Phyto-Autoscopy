@@ -10,7 +10,10 @@ import {
   FiAperture,
   FiRefreshCw,
 } from "react-icons/fi";
-import { PiCrosshairBold } from "react-icons/pi";
+import {
+  PiCrosshairBold,
+  PiRectangleDashedBold,
+} from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import CameraGuideOverlay from "@/components/media/CameraGuideOverlay";
@@ -25,6 +28,14 @@ function formatFps(value) {
     : "0";
 }
 
+function formatExposure(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const exposure = Number(value);
+  if (!Number.isFinite(exposure)) return "—";
+  if (Number.isInteger(exposure)) return String(exposure);
+  return exposure.toFixed(2).replace(/\.?0+$/, "");
+}
+
 export default function CameraStream({
   cameraId,
   label,
@@ -32,6 +43,11 @@ export default function CameraStream({
   enabled,
   connected,
   actualFps,
+  width,
+  height,
+  exposureValue,
+  meteringRegion,
+  overexposedRegions,
   calibrated = false,
   streamPath,
   onNotify,
@@ -41,7 +57,12 @@ export default function CameraStream({
   const [retryScheduled, setRetryScheduled] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const [undistortionEnabled, setUndistortionEnabled] = useState(false);
-  const [guideVisible, setGuideVisible] = useState(false);
+  const [crosshairVisible, setCrosshairVisible] = useState(false);
+  const [exposureVisible, setExposureVisible] = useState(false);
+  const [frameSize, setFrameSize] = useState(() => ({
+    width: Number(width) || 16,
+    height: Number(height) || 9,
+  }));
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const failureNotifiedRef = useRef(false);
@@ -64,12 +85,24 @@ export default function CameraStream({
     enabled,
   ]);
 
-  const handleStreamLoad = useCallback(() => {
+  const handleStreamLoad = useCallback((event) => {
     if (!enabled) return;
     clearRetryTimer();
     retryCountRef.current = 0;
     failureNotifiedRef.current = false;
     setStreamFailed(false);
+    const naturalWidth = Number(event?.currentTarget?.naturalWidth);
+    const naturalHeight = Number(event?.currentTarget?.naturalHeight);
+    if (naturalWidth > 0 && naturalHeight > 0) {
+      setFrameSize((current) => (
+        current.width === naturalWidth && current.height === naturalHeight
+          ? current
+          : {
+            width: naturalWidth,
+            height: naturalHeight,
+          }
+      ));
+    }
   }, [
     clearRetryTimer,
     enabled,
@@ -123,6 +156,24 @@ export default function CameraStream({
   }, [calibrated]);
 
   useEffect(() => {
+    const configuredWidth = Number(width);
+    const configuredHeight = Number(height);
+    if (configuredWidth <= 0 || configuredHeight <= 0) return;
+
+    setFrameSize((current) => (
+      current.width === configuredWidth && current.height === configuredHeight
+        ? current
+        : {
+          width: configuredWidth,
+          height: configuredHeight,
+        }
+    ));
+  }, [
+    height,
+    width,
+  ]);
+
+  useEffect(() => {
     const updatePageVisibility = () => {
       setPageVisible(document.visibilityState === "visible");
     };
@@ -153,9 +204,12 @@ export default function CameraStream({
     : undistortionEnabled
       ? "顯示原始影像"
       : "套用即時去畸變";
-  const guideTitle = guideVisible
-    ? "隱藏曝光輔助框與中心十字"
-    : "顯示曝光輔助框與中心十字";
+  const crosshairTitle = crosshairVisible
+    ? "隱藏中心十字"
+    : "顯示中心十字";
+  const exposureTitle = exposureVisible
+    ? "隱藏曝光輔助框"
+    : "顯示曝光輔助框";
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
@@ -172,7 +226,12 @@ export default function CameraStream({
           />
           <CameraGuideOverlay
             cameraId={cameraId}
-            visible={guideVisible}
+            crosshairVisible={crosshairVisible}
+            exposureVisible={exposureVisible}
+            frameWidth={frameSize.width}
+            frameHeight={frameSize.height}
+            meteringRegion={meteringRegion}
+            overexposedRegions={overexposedRegions}
           />
         </div>
       ) : (
@@ -186,9 +245,16 @@ export default function CameraStream({
       >
         {label}
       </span>
-      <span className="absolute bottom-4 left-4 z-10 rounded-lg border border-white/15 bg-[#07130f]/80 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-xl">
-        FPS: {formatFps(actualFps)}
-      </span>
+      <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2 max-[420px]:bottom-16">
+        <span className="rounded-lg border border-white/15 bg-[#07130f]/80 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-xl">
+          FPS: {formatFps(actualFps)}
+        </span>
+        {exposureVisible ? (
+          <span className="rounded-lg border border-white/15 bg-[#07130f]/80 px-2.5 py-1 text-xs font-black text-white shadow-lg backdrop-blur-xl">
+            曝光: {formatExposure(exposureValue)}
+          </span>
+        ) : null}
+      </div>
       {streamFailed ? (
         <div className="absolute inset-2 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
           <div className="grid justify-items-center gap-3">
@@ -214,14 +280,27 @@ export default function CameraStream({
       {streamActive ? (
         <>
           <Button
-            className="absolute right-28 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
-            variant={guideVisible ? "primary" : "default"}
-            aria-label={guideTitle}
-            aria-pressed={guideVisible}
-            title={guideTitle}
-            onClick={() => setGuideVisible((current) => !current)}
+            className="absolute right-40 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
+            variant={crosshairVisible ? "primary" : "default"}
+            aria-label={crosshairTitle}
+            aria-pressed={crosshairVisible}
+            title={crosshairTitle}
+            onClick={() => setCrosshairVisible((current) => !current)}
           >
             <PiCrosshairBold
+              className="size-6 shrink-0"
+              aria-hidden="true"
+            />
+          </Button>
+          <Button
+            className="absolute right-28 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
+            variant={exposureVisible ? "primary" : "default"}
+            aria-label={exposureTitle}
+            aria-pressed={exposureVisible}
+            title={exposureTitle}
+            onClick={() => setExposureVisible((current) => !current)}
+          >
+            <PiRectangleDashedBold
               className="size-6 shrink-0"
               aria-hidden="true"
             />
@@ -255,7 +334,12 @@ export default function CameraStream({
           >
             <CameraGuideOverlay
               cameraId={cameraId}
-              visible={guideVisible}
+              crosshairVisible={crosshairVisible}
+              exposureVisible={exposureVisible}
+              frameWidth={frameSize.width}
+              frameHeight={frameSize.height}
+              meteringRegion={meteringRegion}
+              overexposedRegions={overexposedRegions}
             />
             {streamFailed ? (
               <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">

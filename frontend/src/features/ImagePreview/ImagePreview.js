@@ -153,6 +153,11 @@ export default function ImagePreview({
                 enabled={enabled}
                 connected={connected}
                 actualFps={imagePreview?.actual_fps}
+                width={imagePreview?.width}
+                height={imagePreview?.height}
+                exposureValue={imagePreview?.exposure_value}
+                meteringRegion={imagePreview?.metering_region}
+                overexposedRegions={imagePreview?.overexposed_regions}
                 calibrated={calibratedCameraIds.has(imagePreviewId)}
                 onNotify={onNotify}
               />

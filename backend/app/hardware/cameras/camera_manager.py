@@ -172,6 +172,8 @@ class OpenCVCameraManager:
             preview_clients = self._preview_clients.get(camera_id, 0)
             manager_error = self._last_error.get(camera_id)
         state = worker.state() if worker is not None else None
+        metering_region = getattr(state, "metering_region", None)
+        overexposed_regions = getattr(state, "overexposed_regions", ())
         return CameraStatus(
             camera_id=camera_id,
             camera_name=config.device_name,
@@ -183,6 +185,26 @@ class OpenCVCameraManager:
             height=config.height,
             preview_fps=config.preview_fps,
             actual_fps=getattr(state, "actual_fps", 0.0),
+            exposure_value=getattr(state, "exposure_value", None),
+            metering_region=(
+                {
+                    "x": metering_region[0],
+                    "y": metering_region[1],
+                    "width": metering_region[2],
+                    "height": metering_region[3],
+                }
+                if metering_region is not None
+                else None
+            ),
+            overexposed_regions=[
+                {
+                    "x": region[0],
+                    "y": region[1],
+                    "width": region[2],
+                    "height": region[3],
+                }
+                for region in overexposed_regions
+            ],
             last_error=manager_error or (state.error if state is not None else None),
         )
 

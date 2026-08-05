@@ -286,6 +286,11 @@ function CalibrationIntrinsicCard({
         enabled={enabled}
         connected={connected}
         actualFps={cameraStatus?.actual_fps}
+        width={cameraStatus?.width}
+        height={cameraStatus?.height}
+        exposureValue={cameraStatus?.exposure_value}
+        meteringRegion={cameraStatus?.metering_region}
+        overexposedRegions={cameraStatus?.overexposed_regions}
         calibrated={intrinsics?.status === "valid"}
         streamPath={boardProfileId
           ? `/api/calibration/cameras/${camera.id}/stream?board_profile_id=${encodeURIComponent(boardProfileId)}`

@@ -3,6 +3,13 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class CameraFrameRegion(BaseModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    width: float = Field(ge=0.0, le=1.0)
+    height: float = Field(ge=0.0, le=1.0)
+
+
 class CameraStatus(BaseModel):
     camera_id: str
     camera_name: str
@@ -14,6 +21,9 @@ class CameraStatus(BaseModel):
     height: int | None = None
     preview_fps: int | None = None
     actual_fps: float = Field(default=0.0, ge=0)
+    exposure_value: float | None = None
+    metering_region: CameraFrameRegion | None = None
+    overexposed_regions: list[CameraFrameRegion] = Field(default_factory=list)
     last_error: str | None = None
 
 
