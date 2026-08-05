@@ -10,8 +10,10 @@ import {
   FiAperture,
   FiRefreshCw,
 } from "react-icons/fi";
+import { PiCrosshairBold } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
+import CameraGuideOverlay from "@/components/media/CameraGuideOverlay";
 import FullscreenImage from "@/components/media/FullscreenImage";
 
 const RETRY_DELAYS_MS = [1500, 3000, 5000];
@@ -39,6 +41,7 @@ export default function CameraStream({
   const [retryScheduled, setRetryScheduled] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const [undistortionEnabled, setUndistortionEnabled] = useState(false);
+  const [guideVisible, setGuideVisible] = useState(false);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const failureNotifiedRef = useRef(false);
@@ -150,19 +153,28 @@ export default function CameraStream({
     : undistortionEnabled
       ? "顯示原始影像"
       : "套用即時去畸變";
+  const guideTitle = guideVisible
+    ? "隱藏曝光輔助框與中心十字"
+    : "顯示曝光輔助框與中心十字";
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
       {streamActive ? (
-        // 原生 img 才能維持後端 MJPEG 串流連線。
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          className="block aspect-video w-full rounded-2xl bg-black/40 object-contain"
-          src={streamSource}
-          alt={`${label} 即時預覽`}
-          onLoad={handleStreamLoad}
-          onError={handleStreamError}
-        />
+        <div className="relative aspect-video w-full rounded-2xl bg-black/40">
+          {/* 原生 img 才能維持後端 MJPEG 串流連線。 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className="block size-full rounded-2xl object-contain"
+            src={streamSource}
+            alt={`${label} 即時預覽`}
+            onLoad={handleStreamLoad}
+            onError={handleStreamError}
+          />
+          <CameraGuideOverlay
+            cameraId={cameraId}
+            visible={guideVisible}
+          />
+        </div>
       ) : (
         <div className="grid aspect-video w-full place-items-center rounded-2xl bg-black/40 p-4 text-center text-sm font-bold text-neutral-400">
           {enabled ? "等待相機連線…" : "相機未啟用"}
@@ -202,6 +214,19 @@ export default function CameraStream({
       {streamActive ? (
         <>
           <Button
+            className="absolute right-28 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
+            variant={guideVisible ? "primary" : "default"}
+            aria-label={guideTitle}
+            aria-pressed={guideVisible}
+            title={guideTitle}
+            onClick={() => setGuideVisible((current) => !current)}
+          >
+            <PiCrosshairBold
+              className="size-6 shrink-0"
+              aria-hidden="true"
+            />
+          </Button>
+          <Button
             className="absolute right-16 bottom-4 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"
             variant={undistortionEnabled ? "primary" : "default"}
             disabled={!calibrated}
@@ -228,6 +253,10 @@ export default function CameraStream({
             onLoad={handleStreamLoad}
             onError={handleStreamError}
           >
+            <CameraGuideOverlay
+              cameraId={cameraId}
+              visible={guideVisible}
+            />
             {streamFailed ? (
               <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">
                 <div className="grid justify-items-center gap-3">

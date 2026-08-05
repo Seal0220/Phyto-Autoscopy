@@ -131,6 +131,17 @@ class CameraHighlightExposureController:
         if pending is None:
             return True
 
+        if str(self._backend or "").upper() == "MSMF":
+            # MSMF 的 CAP_PROP_EXPOSURE 讀值是驅動預設值，不是目前值；
+            # set() 成功後以最後下達的值繼續逐級調整，避免每次都重寫同一級。
+            self._pending_exposure = None
+            self._current_exposure = pending.requested
+            self._control_verified = True
+            self._blocked_direction = 0
+            self._failed_commands = 0
+            self._reset_meter()
+            return True
+
         metrics = self._measure_frame(image)
         self._pending_exposure = None
         if metrics is not None and self._exposure_change_applied(
@@ -277,9 +288,14 @@ class CameraHighlightExposureController:
         metrics: _ExposureMetrics,
         measured_at: float,
     ) -> None:
-        current = self._read_exposure()
+        current = self._current_exposure
         if current is None:
-            self._register_command_failure(measured_at)
+            current = self._read_exposure()
+        if current is None:
+            self._register_command_failure(
+                measured_at,
+                direction,
+            )
             return
 
         requested = (
@@ -293,13 +309,28 @@ class CameraHighlightExposureController:
         ):
             return
 
-        if not self._enable_manual_exposure():
-            self._register_command_failure(measured_at)
+        backend = str(self._backend or "").upper()
+        if backend != "MSMF" and not self._enable_manual_exposure():
+            self._register_command_failure(
+                measured_at,
+                direction,
+            )
             return
-        self._set_property(
+        if not self._set_property(
             self._exposure_property,
             requested,
-        )
+        ):
+            self._register_command_failure(
+                measured_at,
+                direction,
+            )
+            return
+
+        # MSMF 的曝光 setter 本身會以 Manual flag 寫入硬體。
+        self._manual_exposure = True
+        self._current_exposure = requested
+        self._blocked_direction = 0
+        self._failed_commands = 0
         self._pending_exposure = _PendingExposure(
             previous=current,
             requested=requested,
@@ -331,15 +362,26 @@ class CameraHighlightExposureController:
         )
         return property_changed or visible_change >= self._MINIMUM_VISIBLE_RESPONSE
 
-    def _register_command_failure(self, measured_at: float) -> None:
+    def _register_command_failure(
+        self,
+        measured_at: float,
+        direction: int,
+    ) -> None:
         self._failed_commands += 1
-        self._restore_native_auto_exposure()
         self._last_write_at = measured_at
+        self._reset_meter()
+
+        if self._control_verified:
+            # 只有 driver 明確拒絕寫入時才視為到達該方向的硬體邊界；
+            # 保留目前手動曝光，之後仍可往反方向調整。
+            self._blocked_direction = direction
+            return
+
+        self._restore_native_auto_exposure()
         self._settling_until = (
             measured_at
             + self._NATIVE_AUTO_SETTLING_SECONDS
         )
-        self._reset_meter()
         if self._failed_commands >= self._MAXIMUM_FAILED_COMMANDS:
             self._custom_control_available = False
             logger.warning(
