@@ -28,6 +28,12 @@ class _PendingExposure:
 
 
 @dataclass(frozen=True)
+class _BrighteningGuard:
+    exposure: float
+    retry_high: float
+
+
+@dataclass(frozen=True)
 class _ExposureControllerStatus:
     exposure_value: float | None
     metering_region: tuple[float, float, float, float] | None
@@ -53,6 +59,8 @@ class CameraHighlightExposureController:
     _BRIGHT_CONFIRMATION_WINDOWS = 3
     _SEVERE_CONFIRMATION_WINDOWS = 2
     _DARK_CONFIRMATION_WINDOWS = 6
+    _BRIGHT_HIGH_LEVEL = 220.0
+    _BRIGHTENING_RETRY_HIGH_MARGIN = 12.0
     _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
     _REVERSAL_COOLDOWN_SECONDS = 10.0
     _SETTLING_SECONDS = 1.5
@@ -90,6 +98,8 @@ class CameraHighlightExposureController:
         self._last_direction = 0
         self._settling_until = 0.0
         self._pending_exposure: _PendingExposure | None = None
+        self._last_applied_exposure: _PendingExposure | None = None
+        self._brightening_guard: _BrighteningGuard | None = None
         self._failed_commands = 0
 
         self._status_lock = Lock()
@@ -118,6 +128,8 @@ class CameraHighlightExposureController:
         self._control_verified = False
         self._blocked_direction = 0
         self._pending_exposure = None
+        self._last_applied_exposure = None
+        self._brightening_guard = None
         self._failed_commands = 0
         self._last_write_at = float("-inf")
         self._last_direction = 0
@@ -174,6 +186,7 @@ class CameraHighlightExposureController:
             self._pending_exposure = None
             self._current_exposure = pending.requested
             self._set_reported_exposure(pending.requested)
+            self._record_applied_exposure(pending)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -193,6 +206,7 @@ class CameraHighlightExposureController:
                 else pending.requested
             )
             self._set_reported_exposure(self._current_exposure)
+            self._record_applied_exposure(pending)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -280,7 +294,7 @@ class CameraHighlightExposureController:
             or metrics.clipped_ratio > 0.10
         )
         bright = (
-            metrics.high > 220.0
+            metrics.high > self._BRIGHT_HIGH_LEVEL
             or (
                 metrics.peak > 248.0
                 and metrics.clipped_ratio > 0.02
@@ -357,6 +371,12 @@ class CameraHighlightExposureController:
             abs_tol=self._PROPERTY_TOLERANCE,
         ):
             return
+        if self._brightening_is_guarded(
+            direction,
+            requested,
+            metrics,
+        ):
+            return
 
         backend = str(self._backend or "").upper()
         if backend != "MSMF" and not self._enable_manual_exposure():
@@ -390,6 +410,67 @@ class CameraHighlightExposureController:
         self._last_write_at = measured_at
         self._last_direction = direction
         self._settling_until = measured_at + self._SETTLING_SECONDS
+
+    def _brightening_is_guarded(
+        self,
+        direction: int,
+        requested: float,
+        metrics: _ExposureMetrics,
+    ) -> bool:
+        guard = self._brightening_guard
+        return bool(
+            direction > 0
+            and guard is not None
+            and requested >= guard.exposure - self._PROPERTY_TOLERANCE
+            and metrics.high > guard.retry_high
+        )
+
+    def _record_applied_exposure(
+        self,
+        pending: _PendingExposure,
+    ) -> None:
+        """Learn a safe-side deadband around discrete exposure steps."""
+        previous = self._last_applied_exposure
+        reversed_last_brightening = (
+            pending.direction < 0
+            and previous is not None
+            and previous.direction > 0
+            and math.isclose(
+                previous.requested,
+                pending.previous,
+                abs_tol=self._PROPERTY_TOLERANCE,
+            )
+            and math.isclose(
+                previous.previous,
+                pending.requested,
+                abs_tol=self._PROPERTY_TOLERANCE,
+            )
+        )
+        if reversed_last_brightening:
+            overshoot = max(
+                0.0,
+                pending.high_before - self._BRIGHT_HIGH_LEVEL,
+            )
+            retry_margin = max(
+                self._BRIGHTENING_RETRY_HIGH_MARGIN,
+                overshoot,
+            )
+            self._brightening_guard = _BrighteningGuard(
+                exposure=pending.previous,
+                retry_high=max(
+                    0.0,
+                    previous.high_before - retry_margin,
+                ),
+            )
+        elif (
+            pending.direction > 0
+            and self._brightening_guard is not None
+            and pending.requested
+            >= self._brightening_guard.exposure - self._PROPERTY_TOLERANCE
+        ):
+            self._brightening_guard = None
+
+        self._last_applied_exposure = pending
 
     def _exposure_change_applied(
         self,
@@ -486,6 +567,8 @@ class CameraHighlightExposureController:
         for value in values:
             if self._set_property(auto_property, value):
                 self._manual_exposure = False
+                self._last_applied_exposure = None
+                self._brightening_guard = None
                 self._set_reported_exposure(None)
                 return
 
