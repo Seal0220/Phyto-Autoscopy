@@ -29,6 +29,7 @@ class _PendingExposure:
 class CameraHighlightExposureController:
     """Continuously protect highlights without chasing individual frames."""
 
+    _LOWER_HALF_METERING_CAMERAS = frozenset({"side", "rotating"})
     _MEASUREMENT_WINDOW_SECONDS = 1.0
     _EMA_ALPHA = 0.25
     _SAMPLE_STRIDE = 8
@@ -43,8 +44,6 @@ class CameraHighlightExposureController:
     _NATIVE_AUTO_SETTLING_SECONDS = 1.0
 
     _EXPOSURE_STEP = 1.0
-    _MINIMUM_INITIAL_OFFSET = -4.0
-    _MAXIMUM_INITIAL_OFFSET = 2.0
     _PROPERTY_TOLERANCE = 0.25
     _MINIMUM_VISIBLE_RESPONSE = 6.0
     _MAXIMUM_FAILED_COMMANDS = 2
@@ -59,12 +58,11 @@ class CameraHighlightExposureController:
         self._capture: Any | None = None
         self._backend: str | None = None
         self._exposure_property: Any | None = None
-        self._initial_exposure: float | None = None
-        self._minimum_exposure: float | None = None
-        self._maximum_exposure: float | None = None
         self._current_exposure: float | None = None
         self._custom_control_available = True
         self._manual_exposure = False
+        self._control_verified = False
+        self._blocked_direction = 0
 
         self._window_started_at: float | None = None
         self._window_metrics: list[_ExposureMetrics] = []
@@ -93,12 +91,14 @@ class CameraHighlightExposureController:
         )
         self._custom_control_available = self._exposure_property is not None
         self._manual_exposure = False
+        self._control_verified = False
+        self._blocked_direction = 0
         self._pending_exposure = None
         self._failed_commands = 0
         self._last_write_at = float("-inf")
         self._last_direction = 0
         self._settling_until = 0.0
-        self._reset_exposure_range()
+        self._current_exposure = None
         self._reset_meter()
 
         if self._exposure_property is None:
@@ -117,12 +117,6 @@ class CameraHighlightExposureController:
             )
             return
 
-        # Native auto exposure may still be settling immediately after open.
-        # Establish the safety range only when the first sustained correction
-        # is requested, not from this early transient value.
-        self._initial_exposure = None
-        self._minimum_exposure = None
-        self._maximum_exposure = None
         self._current_exposure = initial_exposure
 
     def should_publish(
@@ -149,13 +143,23 @@ class CameraHighlightExposureController:
                 if applied is not None
                 else pending.requested
             )
+            self._control_verified = True
+            self._blocked_direction = 0
             self._failed_commands = 0
+            self._reset_meter()
+            return True
+
+        if self._control_verified:
+            # A controller that has already moved successfully has reached a
+            # driver/hardware boundary in this direction.  Keep manual mode
+            # and allow movement in the opposite direction later.
+            self._blocked_direction = pending.direction
+            self._current_exposure = self._read_exposure()
             self._reset_meter()
             return True
 
         self._failed_commands += 1
         self._restore_native_auto_exposure()
-        self._reset_exposure_range()
         self._reset_meter()
         self._settling_until = (
             measured_at
@@ -258,6 +262,8 @@ class CameraHighlightExposureController:
         measured_at: float,
     ) -> bool:
         elapsed = measured_at - self._last_write_at
+        if direction == self._blocked_direction:
+            return False
         if elapsed < self._MINIMUM_WRITE_INTERVAL_SECONDS:
             return False
         return not (
@@ -276,29 +282,9 @@ class CameraHighlightExposureController:
             self._register_command_failure(measured_at)
             return
 
-        if self._initial_exposure is None:
-            self._initial_exposure = current
-            self._minimum_exposure = (
-                current
-                + self._MINIMUM_INITIAL_OFFSET
-            )
-            self._maximum_exposure = (
-                current
-                + self._MAXIMUM_INITIAL_OFFSET
-            )
-
-        minimum = self._minimum_exposure
-        maximum = self._maximum_exposure
-        if minimum is None or maximum is None:
-            self._register_command_failure(measured_at)
-            return
-
-        requested = min(
-            maximum,
-            max(
-                minimum,
-                current + direction * self._EXPOSURE_STEP,
-            ),
+        requested = (
+            current
+            + direction * self._EXPOSURE_STEP
         )
         if math.isclose(
             requested,
@@ -348,7 +334,6 @@ class CameraHighlightExposureController:
     def _register_command_failure(self, measured_at: float) -> None:
         self._failed_commands += 1
         self._restore_native_auto_exposure()
-        self._reset_exposure_range()
         self._last_write_at = measured_at
         self._settling_until = (
             measured_at
@@ -440,9 +425,14 @@ class CameraHighlightExposureController:
         if shape is None or len(shape) < 2:
             return None
 
+        metering_image = image
+        if self.camera_id in self._LOWER_HALF_METERING_CAMERAS:
+            image_height = int(shape[0])
+            metering_image = image[image_height // 2 :, :]
+
         try:
             sampled = np.asarray(
-                image[
+                metering_image[
                     ::self._SAMPLE_STRIDE,
                     ::self._SAMPLE_STRIDE,
                 ],
@@ -511,12 +501,6 @@ class CameraHighlightExposureController:
         self._window_metrics.clear()
         self._smoothed_metrics = None
         self._reset_confirmation_windows()
-
-    def _reset_exposure_range(self) -> None:
-        self._initial_exposure = None
-        self._minimum_exposure = None
-        self._maximum_exposure = None
-        self._current_exposure = None
 
     def _reset_confirmation_windows(self) -> None:
         self._bright_windows = 0
