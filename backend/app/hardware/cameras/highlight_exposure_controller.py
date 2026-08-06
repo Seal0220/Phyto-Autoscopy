@@ -28,12 +28,6 @@ class _PendingExposure:
 
 
 @dataclass(frozen=True)
-class _BrighteningGuard:
-    exposure: float
-    retry_high: float
-
-
-@dataclass(frozen=True)
 class _ExposureControllerStatus:
     exposure_value: float | None
     metering_region: tuple[float, float, float, float] | None
@@ -41,11 +35,12 @@ class _ExposureControllerStatus:
 
 
 class CameraHighlightExposureController:
-    """Continuously protect highlights without chasing individual frames."""
+    """Use one fuzzy decision layer to continuously balance exposure."""
 
     _LOWER_HALF_METERING_CAMERAS = frozenset({"side", "rotating"})
     _MEASUREMENT_WINDOW_SECONDS = 1.0
     _EMA_ALPHA = 0.25
+    _FUZZY_STATE_ALPHA = 0.25
     _SAMPLE_STRIDE = 8
     _CLIPPED_LEVEL = 250.0
     _METERING_HORIZONTAL_INSET_RATIO = 0.08
@@ -56,13 +51,23 @@ class CameraHighlightExposureController:
     _MINIMUM_HIGHLIGHT_AREA_RATIO = 0.001
     _MAXIMUM_HIGHLIGHT_REGIONS = 8
 
-    _BRIGHT_CONFIRMATION_WINDOWS = 3
-    _SEVERE_CONFIRMATION_WINDOWS = 2
-    _DARK_CONFIRMATION_WINDOWS = 6
-    _BRIGHT_HIGH_LEVEL = 220.0
-    _BRIGHTENING_RETRY_HIGH_MARGIN = 12.0
+    _FUZZY_DARK_MEDIAN_FULL = 42.0
+    _FUZZY_DARK_MEDIAN_NONE = 78.0
+    _FUZZY_DARK_HIGH_FULL = 125.0
+    _FUZZY_DARK_HIGH_NONE = 175.0
+    _FUZZY_DARK_PEAK_FULL = 185.0
+    _FUZZY_DARK_PEAK_NONE = 225.0
+
+    _FUZZY_BRIGHT_HIGH_NONE = 195.0
+    _FUZZY_BRIGHT_HIGH_FULL = 235.0
+    _FUZZY_BRIGHT_PEAK_NONE = 235.0
+    _FUZZY_BRIGHT_PEAK_FULL = 252.0
+    _FUZZY_BRIGHT_CLIPPED_NONE = 0.005
+    _FUZZY_BRIGHT_CLIPPED_FULL = 0.02
+
+    _FUZZY_BRIGHTEN_THRESHOLD = 0.55
+    _FUZZY_DARKEN_THRESHOLD = -0.35
     _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
-    _REVERSAL_COOLDOWN_SECONDS = 10.0
     _SETTLING_SECONDS = 1.5
     _NATIVE_AUTO_SETTLING_SECONDS = 1.0
 
@@ -90,16 +95,11 @@ class CameraHighlightExposureController:
         self._window_started_at: float | None = None
         self._window_metrics: list[_ExposureMetrics] = []
         self._smoothed_metrics: _ExposureMetrics | None = None
-        self._bright_windows = 0
-        self._severe_windows = 0
-        self._dark_windows = 0
+        self._fuzzy_control_state = 0.0
 
         self._last_write_at = float("-inf")
-        self._last_direction = 0
         self._settling_until = 0.0
         self._pending_exposure: _PendingExposure | None = None
-        self._last_applied_exposure: _PendingExposure | None = None
-        self._brightening_guard: _BrighteningGuard | None = None
         self._failed_commands = 0
 
         self._status_lock = Lock()
@@ -128,17 +128,14 @@ class CameraHighlightExposureController:
         self._control_verified = False
         self._blocked_direction = 0
         self._pending_exposure = None
-        self._last_applied_exposure = None
-        self._brightening_guard = None
         self._failed_commands = 0
         self._last_write_at = float("-inf")
-        self._last_direction = 0
         self._settling_until = 0.0
         self._current_exposure = None
         self._last_highlight_detection_at = float("-inf")
         self._set_reported_exposure(None)
         self._set_visualization_status(None, ())
-        self._reset_meter()
+        self._reset_meter(clear_control_state=True)
 
         if self._exposure_property is None:
             logger.warning(
@@ -174,7 +171,7 @@ class CameraHighlightExposureController:
         measured_at: float,
     ) -> bool:
         if measured_at < self._settling_until:
-            return False
+            return True
 
         pending = self._pending_exposure
         if pending is None:
@@ -186,7 +183,6 @@ class CameraHighlightExposureController:
             self._pending_exposure = None
             self._current_exposure = pending.requested
             self._set_reported_exposure(pending.requested)
-            self._record_applied_exposure(pending)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -206,7 +202,6 @@ class CameraHighlightExposureController:
                 else pending.requested
             )
             self._set_reported_exposure(self._current_exposure)
-            self._record_applied_exposure(pending)
             self._control_verified = True
             self._blocked_direction = 0
             self._failed_commands = 0
@@ -275,7 +270,21 @@ class CameraHighlightExposureController:
             self._smoothed_metrics,
             window_metrics,
         )
-        direction = self._next_direction(self._smoothed_metrics)
+        raw_control = self._fuzzy_control_value(
+            self._smoothed_metrics,
+        )
+        self._fuzzy_control_state = self._smooth_control_state(
+            self._fuzzy_control_state,
+            raw_control,
+        )
+
+        if (
+            self._pending_exposure is not None
+            or measured_at < self._settling_until
+        ):
+            return
+
+        direction = self._next_direction(self._fuzzy_control_state)
         if direction == 0 or not self._can_write(direction, measured_at):
             return
 
@@ -287,48 +296,111 @@ class CameraHighlightExposureController:
 
     def _next_direction(
         self,
-        metrics: _ExposureMetrics,
+        control: float,
     ) -> int:
-        severe = (
-            metrics.high > 235.0
-            or metrics.clipped_ratio > 0.10
-        )
-        bright = (
-            metrics.high > self._BRIGHT_HIGH_LEVEL
-            or (
-                metrics.peak > 248.0
-                and metrics.clipped_ratio > 0.02
-            )
-        )
-
-        if metrics.high < 180.0 and metrics.clipped_ratio < 0.02:
-            bright = False
-            severe = False
-        if metrics.median < 25.0 and metrics.clipped_ratio <= 0.10:
-            bright = False
-            severe = False
-
-        dark = (
-            not bright
-            and metrics.high < 170.0
-            and metrics.peak < 225.0
-            and metrics.clipped_ratio < 0.001
-        )
-
-        self._severe_windows = self._severe_windows + 1 if severe else 0
-        self._bright_windows = self._bright_windows + 1 if bright else 0
-        self._dark_windows = self._dark_windows + 1 if dark else 0
-
-        if (
-            self._severe_windows >= self._SEVERE_CONFIRMATION_WINDOWS
-            or self._bright_windows >= self._BRIGHT_CONFIRMATION_WINDOWS
-        ):
-            self._reset_confirmation_windows()
+        if control <= self._FUZZY_DARKEN_THRESHOLD:
             return -1
-        if self._dark_windows >= self._DARK_CONFIRMATION_WINDOWS:
-            self._reset_confirmation_windows()
+        if control >= self._FUZZY_BRIGHTEN_THRESHOLD:
             return 1
         return 0
+
+    def _fuzzy_control_value(
+        self,
+        metrics: _ExposureMetrics,
+    ) -> float:
+        """Return -1 for bright, +1 for dark, with a fuzzy hold region."""
+        dark_median = self._falling_membership(
+            metrics.median,
+            self._FUZZY_DARK_MEDIAN_FULL,
+            self._FUZZY_DARK_MEDIAN_NONE,
+        )
+        dark_high = self._falling_membership(
+            metrics.high,
+            self._FUZZY_DARK_HIGH_FULL,
+            self._FUZZY_DARK_HIGH_NONE,
+        )
+        dark_peak = self._falling_membership(
+            metrics.peak,
+            self._FUZZY_DARK_PEAK_FULL,
+            self._FUZZY_DARK_PEAK_NONE,
+        )
+        highlight_safety = self._falling_membership(
+            metrics.clipped_ratio,
+            self._FUZZY_BRIGHT_CLIPPED_NONE,
+            self._FUZZY_BRIGHT_CLIPPED_FULL,
+        )
+        dark_membership = (
+            dark_median * 0.45
+            + dark_high * 0.35
+            + dark_peak * 0.20
+        ) * highlight_safety
+
+        bright_high = self._rising_membership(
+            metrics.high,
+            self._FUZZY_BRIGHT_HIGH_NONE,
+            self._FUZZY_BRIGHT_HIGH_FULL,
+        )
+        bright_peak = self._rising_membership(
+            metrics.peak,
+            self._FUZZY_BRIGHT_PEAK_NONE,
+            self._FUZZY_BRIGHT_PEAK_FULL,
+        )
+        bright_clipped = self._rising_membership(
+            metrics.clipped_ratio,
+            self._FUZZY_BRIGHT_CLIPPED_NONE,
+            self._FUZZY_BRIGHT_CLIPPED_FULL,
+        )
+        bright_membership = max(
+            bright_clipped,
+            bright_high * 0.45
+            + bright_peak * 0.25
+            + bright_clipped * 0.30,
+        )
+
+        return max(
+            -1.0,
+            min(1.0, dark_membership - bright_membership),
+        )
+
+    @staticmethod
+    def _rising_membership(
+        value: float,
+        starts_at: float,
+        full_at: float,
+    ) -> float:
+        if value <= starts_at:
+            return 0.0
+        if value >= full_at:
+            return 1.0
+        return (value - starts_at) / (full_at - starts_at)
+
+    @classmethod
+    def _falling_membership(
+        cls,
+        value: float,
+        full_until: float,
+        ends_at: float,
+    ) -> float:
+        return 1.0 - cls._rising_membership(
+            value,
+            full_until,
+            ends_at,
+        )
+
+    @classmethod
+    def _smooth_control_state(
+        cls,
+        previous: float,
+        current: float,
+    ) -> float:
+        alpha = cls._FUZZY_STATE_ALPHA
+        return max(
+            -1.0,
+            min(
+                1.0,
+                previous * (1.0 - alpha) + current * alpha,
+            ),
+        )
 
     def _can_write(
         self,
@@ -338,12 +410,7 @@ class CameraHighlightExposureController:
         elapsed = measured_at - self._last_write_at
         if direction == self._blocked_direction:
             return False
-        if elapsed < self._MINIMUM_WRITE_INTERVAL_SECONDS:
-            return False
-        return not (
-            self._last_direction not in (0, direction)
-            and elapsed < self._REVERSAL_COOLDOWN_SECONDS
-        )
+        return elapsed >= self._MINIMUM_WRITE_INTERVAL_SECONDS
 
     def _apply_exposure_step(
         self,
@@ -371,13 +438,6 @@ class CameraHighlightExposureController:
             abs_tol=self._PROPERTY_TOLERANCE,
         ):
             return
-        if self._brightening_is_guarded(
-            direction,
-            requested,
-            metrics,
-        ):
-            return
-
         backend = str(self._backend or "").upper()
         if backend != "MSMF" and not self._enable_manual_exposure():
             self._register_command_failure(
@@ -408,69 +468,7 @@ class CameraHighlightExposureController:
             high_before=metrics.high,
         )
         self._last_write_at = measured_at
-        self._last_direction = direction
         self._settling_until = measured_at + self._SETTLING_SECONDS
-
-    def _brightening_is_guarded(
-        self,
-        direction: int,
-        requested: float,
-        metrics: _ExposureMetrics,
-    ) -> bool:
-        guard = self._brightening_guard
-        return bool(
-            direction > 0
-            and guard is not None
-            and requested >= guard.exposure - self._PROPERTY_TOLERANCE
-            and metrics.high > guard.retry_high
-        )
-
-    def _record_applied_exposure(
-        self,
-        pending: _PendingExposure,
-    ) -> None:
-        """Learn a safe-side deadband around discrete exposure steps."""
-        previous = self._last_applied_exposure
-        reversed_last_brightening = (
-            pending.direction < 0
-            and previous is not None
-            and previous.direction > 0
-            and math.isclose(
-                previous.requested,
-                pending.previous,
-                abs_tol=self._PROPERTY_TOLERANCE,
-            )
-            and math.isclose(
-                previous.previous,
-                pending.requested,
-                abs_tol=self._PROPERTY_TOLERANCE,
-            )
-        )
-        if reversed_last_brightening:
-            overshoot = max(
-                0.0,
-                pending.high_before - self._BRIGHT_HIGH_LEVEL,
-            )
-            retry_margin = max(
-                self._BRIGHTENING_RETRY_HIGH_MARGIN,
-                overshoot,
-            )
-            self._brightening_guard = _BrighteningGuard(
-                exposure=pending.previous,
-                retry_high=max(
-                    0.0,
-                    previous.high_before - retry_margin,
-                ),
-            )
-        elif (
-            pending.direction > 0
-            and self._brightening_guard is not None
-            and pending.requested
-            >= self._brightening_guard.exposure - self._PROPERTY_TOLERANCE
-        ):
-            self._brightening_guard = None
-
-        self._last_applied_exposure = pending
 
     def _exposure_change_applied(
         self,
@@ -567,8 +565,6 @@ class CameraHighlightExposureController:
         for value in values:
             if self._set_property(auto_property, value):
                 self._manual_exposure = False
-                self._last_applied_exposure = None
-                self._brightening_guard = None
                 self._set_reported_exposure(None)
                 return
 
@@ -852,13 +848,13 @@ class CameraHighlightExposureController:
             ),
         )
 
-    def _reset_meter(self) -> None:
+    def _reset_meter(
+        self,
+        *,
+        clear_control_state: bool = False,
+    ) -> None:
         self._window_started_at = None
         self._window_metrics.clear()
         self._smoothed_metrics = None
-        self._reset_confirmation_windows()
-
-    def _reset_confirmation_windows(self) -> None:
-        self._bright_windows = 0
-        self._severe_windows = 0
-        self._dark_windows = 0
+        if clear_control_state:
+            self._fuzzy_control_state = 0.0
