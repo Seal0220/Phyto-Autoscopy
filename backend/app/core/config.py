@@ -82,6 +82,23 @@ def path_settings_config_payload(
     return payload
 
 
+class CameraMeteringRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    width: float = Field(ge=0.05, le=1.0)
+    height: float = Field(ge=0.05, le=1.0)
+
+    @model_validator(mode="after")
+    def remain_inside_frame(self) -> "CameraMeteringRegion":
+        if self.x + self.width > 1.0 + 1e-6:
+            raise ValueError("測光區域不可超出影像右側。")
+        if self.y + self.height > 1.0 + 1e-6:
+            raise ValueError("測光區域不可超出影像下方。")
+        return self
+
+
 class CameraConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -108,6 +125,7 @@ class CameraConfig(BaseModel):
         ge=0,
         le=10000,
     )
+    metering_region: CameraMeteringRegion | None = None
 
 
 def default_camera_configs() -> dict[str, CameraConfig]:

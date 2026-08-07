@@ -46,6 +46,12 @@ class CameraManagerInterface(Protocol):
 
     def reconnect_all(self) -> list[CameraStatus]: ...
 
+    def set_metering_region(
+        self,
+        camera_id: str,
+        metering_region: Any | None,
+    ) -> CameraStatus: ...
+
     def close_all(self) -> None: ...
 
 
@@ -173,6 +179,14 @@ class OpenCVCameraManager:
             manager_error = self._last_error.get(camera_id)
         state = worker.state() if worker is not None else None
         metering_region = getattr(state, "metering_region", None)
+        if metering_region is None and config.metering_region is not None:
+            configured_region = config.metering_region
+            metering_region = (
+                configured_region.x,
+                configured_region.y,
+                configured_region.width,
+                configured_region.height,
+            )
         overexposed_regions = getattr(state, "overexposed_regions", ())
         return CameraStatus(
             camera_id=camera_id,
@@ -273,6 +287,18 @@ class OpenCVCameraManager:
             for camera_id, config in self.registry.all().items():
                 self._replace_worker(camera_id, config)
         return self.get_statuses()
+
+    def set_metering_region(
+        self,
+        camera_id: str,
+        metering_region: Any | None,
+    ) -> CameraStatus:
+        self.registry.get(camera_id)
+        with self._lock:
+            worker = self._workers.get(camera_id)
+        if worker is not None:
+            worker.set_metering_region(metering_region)
+        return self.get_status(camera_id)
 
     def close_all(self) -> None:
         with self._lifecycle_lock:

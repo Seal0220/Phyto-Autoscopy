@@ -108,6 +108,7 @@ class MockCameraManager:
             height=config.height,
             preview_fps=config.preview_fps,
             actual_fps=round(actual_fps, 2),
+            metering_region=config.metering_region,
             last_error=last_error,
         )
 
@@ -232,6 +233,14 @@ class MockCameraManager:
                 self._last_error[camera_id] = None
             self._condition.notify_all()
         return self.get_statuses()
+
+    def set_metering_region(
+        self,
+        camera_id: str,
+        metering_region,
+    ) -> CameraStatus:
+        self.registry.get(camera_id)
+        return self.get_status(camera_id)
 
     def close_all(self) -> None:
         with self._condition:

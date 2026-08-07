@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CameraFrameRegion(BaseModel):
@@ -8,6 +8,21 @@ class CameraFrameRegion(BaseModel):
     y: float = Field(ge=0.0, le=1.0)
     width: float = Field(ge=0.0, le=1.0)
     height: float = Field(ge=0.0, le=1.0)
+
+
+class CameraMeteringRegionUpdate(BaseModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    width: float = Field(ge=0.05, le=1.0)
+    height: float = Field(ge=0.05, le=1.0)
+
+    @model_validator(mode="after")
+    def remain_inside_frame(self) -> "CameraMeteringRegionUpdate":
+        if self.x + self.width > 1.0 + 1e-6:
+            raise ValueError("測光區域不可超出影像右側。")
+        if self.y + self.height > 1.0 + 1e-6:
+            raise ValueError("測光區域不可超出影像下方。")
+        return self
 
 
 class CameraStatus(BaseModel):

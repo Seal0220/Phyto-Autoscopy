@@ -19,6 +19,7 @@ import { SelectInput } from "@/components/inputs/Input";
 import CameraStream from "@/components/media/CameraStream";
 import InnerPanel from "@/components/panels/InnerPanel";
 import { StatusPill } from "@/components/panels/Panel";
+import { updateCameraMeteringRegion } from "@/lib/cameraUtils";
 
 import { CALIBRATION_CAMERAS } from "../calibrationConfig";
 import { intrinsicCaptureNotice } from "../lib/calibrationUtils";
@@ -292,6 +293,7 @@ function CalibrationIntrinsicCard({
         meteringRegion={cameraStatus?.metering_region}
         overexposedRegions={cameraStatus?.overexposed_regions}
         calibrated={intrinsics?.status === "valid"}
+        onSaveMeteringRegion={updateCameraMeteringRegion}
         streamPath={boardProfileId
           ? `/api/calibration/cameras/${camera.id}/stream?board_profile_id=${encodeURIComponent(boardProfileId)}`
           : undefined

@@ -6,9 +6,11 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.calibration.live_undistortion import LiveFrameUndistorter
+from app.core.config import save_settings_group
 from app.core.state import AppContext, get_context
 from app.core.exceptions import CalibrationError, CameraError
 from app.models.camera_models import (
+    CameraMeteringRegionUpdate,
     CameraSettingsUpdate,
     CameraStatus,
     CaptureRequest,
@@ -133,6 +135,57 @@ def reconnect_all_cameras(
 def reconnect_camera(camera_id: str, context: AppContext = Depends(get_context)) -> CameraStatus:
     ensure_calibration_unlocked(context)
     return context.camera_manager.reconnect(camera_id)
+
+
+@router.post(
+    "/{camera_id}/metering-region",
+    response_model=CameraStatus,
+)
+def update_camera_metering_region(
+    camera_id: str,
+    update: CameraMeteringRegionUpdate,
+    context: AppContext = Depends(get_context),
+) -> CameraStatus:
+    ensure_manual_changes_allowed(context)
+    with context._settings_lock:
+        try:
+            current = context.settings.cameras[camera_id]
+        except KeyError as exc:
+            raise CameraError(f"找不到相機：{camera_id}") from exc
+
+        previous = current
+        candidate = type(current).model_validate({
+            **current.model_dump(mode="python"),
+            "metering_region": update.model_dump(mode="python"),
+        })
+        context.settings.cameras[camera_id] = candidate
+        payload = {
+            "cameras": {
+                key: value.model_dump(mode="json")
+                for key, value in context.settings.cameras.items()
+            },
+        }
+
+        try:
+            save_settings_group("cameras", payload)
+            return context.camera_manager.set_metering_region(
+                camera_id,
+                candidate.metering_region,
+            )
+        except Exception:
+            context.settings.cameras[camera_id] = previous
+            rollback_payload = {
+                "cameras": {
+                    key: value.model_dump(mode="json")
+                    for key, value in context.settings.cameras.items()
+                },
+            }
+            save_settings_group("cameras", rollback_payload)
+            context.camera_manager.set_metering_region(
+                camera_id,
+                previous.metering_region,
+            )
+            raise
 
 
 @router.post("/{camera_id}/settings")

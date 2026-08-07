@@ -18,6 +18,7 @@ import {
 import Button from "@/components/buttons/Button";
 import CameraGuideOverlay from "@/components/media/CameraGuideOverlay";
 import FullscreenImage from "@/components/media/FullscreenImage";
+import { messageFromError } from "@/lib/httpUtils";
 
 const RETRY_DELAYS_MS = [1500, 3000, 5000];
 
@@ -48,8 +49,10 @@ export default function CameraStream({
   exposureValue,
   meteringRegion,
   overexposedRegions,
+  meteringRegionDisabled = false,
   calibrated = false,
   streamPath,
+  onSaveMeteringRegion,
   onNotify,
 }) {
   const [retryToken, setRetryToken] = useState(0);
@@ -59,6 +62,10 @@ export default function CameraStream({
   const [undistortionEnabled, setUndistortionEnabled] = useState(false);
   const [crosshairVisible, setCrosshairVisible] = useState(false);
   const [exposureVisible, setExposureVisible] = useState(false);
+  const [editableMeteringRegion, setEditableMeteringRegion] = useState(
+    meteringRegion,
+  );
+  const [meteringRegionSaving, setMeteringRegionSaving] = useState(false);
   const [frameSize, setFrameSize] = useState(() => ({
     width: Number(width) || 16,
     height: Number(height) || 9,
@@ -66,6 +73,8 @@ export default function CameraStream({
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const failureNotifiedRef = useRef(false);
+  const meteringRegionEditingRef = useRef(false);
+  const meteringRegionSavingRef = useRef(false);
 
   const clearRetryTimer = useCallback(() => {
     window.clearTimeout(retryTimerRef.current);
@@ -156,6 +165,21 @@ export default function CameraStream({
   }, [calibrated]);
 
   useEffect(() => {
+    if (
+      meteringRegionEditingRef.current
+      || meteringRegionSavingRef.current
+    ) {
+      return;
+    }
+    setEditableMeteringRegion(meteringRegion);
+  }, [
+    meteringRegion?.height,
+    meteringRegion?.width,
+    meteringRegion?.x,
+    meteringRegion?.y,
+  ]);
+
+  useEffect(() => {
     const configuredWidth = Number(width);
     const configuredHeight = Number(height);
     if (configuredWidth <= 0 || configuredHeight <= 0) return;
@@ -189,6 +213,51 @@ export default function CameraStream({
     window.clearTimeout(retryTimerRef.current);
   }, []);
 
+  const updateMeteringRegionDraft = useCallback((region) => {
+    meteringRegionEditingRef.current = true;
+    setEditableMeteringRegion(region);
+  }, []);
+
+  const cancelMeteringRegionEdit = useCallback((region) => {
+    meteringRegionEditingRef.current = false;
+    setEditableMeteringRegion(region || meteringRegion);
+  }, [meteringRegion]);
+
+  const commitMeteringRegion = useCallback(async (region) => {
+    meteringRegionEditingRef.current = false;
+    if (typeof onSaveMeteringRegion !== "function") return;
+
+    meteringRegionSavingRef.current = true;
+    setMeteringRegionSaving(true);
+    try {
+      const result = await onSaveMeteringRegion(
+        cameraId,
+        region,
+      );
+      setEditableMeteringRegion(
+        result?.metering_region || region,
+      );
+    } catch (error) {
+      setEditableMeteringRegion(meteringRegion);
+      onNotify?.(
+        messageFromError(
+          error,
+          `${label}測光區域儲存失敗。`,
+        ),
+        "error",
+      );
+    } finally {
+      meteringRegionSavingRef.current = false;
+      setMeteringRegionSaving(false);
+    }
+  }, [
+    cameraId,
+    label,
+    meteringRegion,
+    onNotify,
+    onSaveMeteringRegion,
+  ]);
+
   const source = streamPath
     || `/api/cameras/${encodeURIComponent(cameraId)}/stream`;
   const separator = source.includes("?") ? "&" : "?";
@@ -208,8 +277,14 @@ export default function CameraStream({
     ? "隱藏中心十字"
     : "顯示中心十字";
   const exposureTitle = exposureVisible
-    ? "隱藏曝光輔助框"
-    : "顯示曝光輔助框";
+    ? "隱藏測光輔助框"
+    : "顯示並調整測光輔助框";
+  const exposureEditable = Boolean(
+    exposureVisible
+    && onSaveMeteringRegion
+    && !meteringRegionDisabled
+    && !meteringRegionSaving,
+  );
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-black/35 p-2">
@@ -230,8 +305,12 @@ export default function CameraStream({
             exposureVisible={exposureVisible}
             frameWidth={frameSize.width}
             frameHeight={frameSize.height}
-            meteringRegion={meteringRegion}
+            meteringRegion={editableMeteringRegion}
             overexposedRegions={overexposedRegions}
+            exposureEditable={exposureEditable}
+            onMeteringRegionChange={updateMeteringRegionDraft}
+            onMeteringRegionCommit={commitMeteringRegion}
+            onMeteringRegionCancel={cancelMeteringRegionEdit}
           />
         </div>
       ) : (
@@ -338,8 +417,12 @@ export default function CameraStream({
               exposureVisible={exposureVisible}
               frameWidth={frameSize.width}
               frameHeight={frameSize.height}
-              meteringRegion={meteringRegion}
+              meteringRegion={editableMeteringRegion}
               overexposedRegions={overexposedRegions}
+              exposureEditable={exposureEditable}
+              onMeteringRegionChange={updateMeteringRegionDraft}
+              onMeteringRegionCommit={commitMeteringRegion}
+              onMeteringRegionCancel={cancelMeteringRegionEdit}
             />
             {streamFailed ? (
               <div className="absolute inset-0 z-20 grid place-items-center rounded-2xl bg-[#07130f]/90 p-4 text-center backdrop-blur-xl">

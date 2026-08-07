@@ -134,6 +134,9 @@ class CameraWorker:
                 overexposed_regions=exposure.overexposed_regions,
             )
 
+    def set_metering_region(self, metering_region: Any | None) -> None:
+        self._exposure_controller.set_metering_region(metering_region)
+
     def wait_for_frame(
         self,
         *,
@@ -364,7 +367,11 @@ class CameraWorker:
                     prop,
                     exc_info=True,
                 )
-        self._exposure_controller.configure(capture, backend)
+        self._exposure_controller.configure(
+            capture,
+            backend,
+            self.config.metering_region,
+        )
 
     def _set_disconnected(self, error: str) -> bool:
         with self._condition:

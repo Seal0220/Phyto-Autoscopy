@@ -18,6 +18,7 @@ import {
 } from "@/components/panels/Panel";
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
+import { updateCameraMeteringRegion } from "@/lib/cameraUtils";
 
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
@@ -158,7 +159,9 @@ export default function ImagePreview({
                 exposureValue={imagePreview?.exposure_value}
                 meteringRegion={imagePreview?.metering_region}
                 overexposedRegions={imagePreview?.overexposed_regions}
+                meteringRegionDisabled={scheduleActive}
                 calibrated={calibratedCameraIds.has(imagePreviewId)}
+                onSaveMeteringRegion={updateCameraMeteringRegion}
                 onNotify={onNotify}
               />
               <footer className="flex min-h-[3.4rem] min-w-0 flex-wrap items-center gap-2 border-t border-white/15 bg-white/[0.035] px-3 py-2">
