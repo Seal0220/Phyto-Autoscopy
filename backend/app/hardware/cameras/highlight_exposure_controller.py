@@ -62,22 +62,22 @@ class CameraHighlightExposureController:
     _MINIMUM_HIGHLIGHT_AREA_RATIO = 0.001
     _MAXIMUM_HIGHLIGHT_REGIONS = 8
 
-    _FUZZY_DARK_MEDIAN_FULL = 42.0
-    _FUZZY_DARK_MEDIAN_NONE = 78.0
+    _FUZZY_DARK_MEDIAN_FULL = 65.0
+    _FUZZY_DARK_MEDIAN_NONE = 95.0
     _FUZZY_DARK_HIGH_FULL = 125.0
     _FUZZY_DARK_HIGH_NONE = 175.0
     _FUZZY_DARK_PEAK_FULL = 185.0
     _FUZZY_DARK_PEAK_NONE = 225.0
 
-    _FUZZY_BRIGHT_MEDIAN_NONE = 105.0
-    _FUZZY_BRIGHT_MEDIAN_FULL = 145.0
-    _FUZZY_BRIGHT_HIGH_NONE = 195.0
-    _FUZZY_BRIGHT_HIGH_FULL = 235.0
-    _FUZZY_BRIGHT_PEAK_NONE = 235.0
-    _FUZZY_BRIGHT_PEAK_FULL = 252.0
-
+    _FUZZY_BRIGHT_MEDIAN_NONE = 135.0
+    _FUZZY_BRIGHT_MEDIAN_FULL = 175.0
+    _FUZZY_BRIGHT_HIGH_NONE = 205.0
+    _FUZZY_BRIGHT_HIGH_FULL = 240.0
+    _FUZZY_BRIGHT_PEAK_NONE = 240.0
+    _FUZZY_BRIGHT_PEAK_FULL = 253.0
+    
     _FUZZY_BRIGHTEN_THRESHOLD = 0.55
-    _FUZZY_DARKEN_THRESHOLD = -0.35
+    _FUZZY_DARKEN_THRESHOLD = -0.4
 
     _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
     _SEVERE_WRITE_INTERVAL_SECONDS = 0.75
@@ -344,24 +344,20 @@ class CameraHighlightExposureController:
         return 0
 
     def _fuzzy_control_value(self, metrics: _ExposureMetrics) -> float:
-        dark_median = self._falling_membership(
+        dark_membership = self._falling_membership(
             metrics.median,
             self._FUZZY_DARK_MEDIAN_FULL,
             self._FUZZY_DARK_MEDIAN_NONE,
         )
 
-        dark_membership = dark_median
-
-        bright_median = self._rising_membership(
+        bright_membership = self._rising_membership(
             metrics.median,
             self._FUZZY_BRIGHT_MEDIAN_NONE,
             self._FUZZY_BRIGHT_MEDIAN_FULL,
         )
 
-        bright_membership = bright_median
-
         if metrics.highlight_ratio > self._ACCEPTABLE_HIGHLIGHT_RATIO:
-            highlight_excess = self._rising_membership(
+            highlight_membership = self._rising_membership(
                 metrics.highlight_ratio,
                 self._ACCEPTABLE_HIGHLIGHT_RATIO,
                 self._HIGHLIGHT_WARNING_FULL_RATIO,
@@ -379,22 +375,16 @@ class CameraHighlightExposureController:
                 self._FUZZY_BRIGHT_PEAK_FULL,
             )
 
-            highlight_brightness = (
-                bright_high * 0.65
-                + bright_peak * 0.35
-            )
+            highlight_brightness = bright_high * 0.7 + bright_peak * 0.3
 
             bright_membership = max(
                 bright_membership,
-                highlight_excess * highlight_brightness,
+                highlight_membership * highlight_brightness,
             )
 
         return max(
             -1.0,
-            min(
-                1.0,
-                dark_membership - bright_membership,
-            ),
+            min(1.0, dark_membership - bright_membership),
         )
         
     @staticmethod
