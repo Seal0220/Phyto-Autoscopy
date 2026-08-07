@@ -69,13 +69,13 @@ class CameraHighlightExposureController:
     _FUZZY_DARK_PEAK_FULL = 185.0
     _FUZZY_DARK_PEAK_NONE = 225.0
 
-    _FUZZY_BRIGHT_HIGH_NONE = 195.0
-    _FUZZY_BRIGHT_HIGH_FULL = 235.0
-    _FUZZY_BRIGHT_PEAK_NONE = 235.0
-    _FUZZY_BRIGHT_PEAK_FULL = 252.0
+    _FUZZY_BRIGHT_HIGH_NONE = 175.0
+    _FUZZY_BRIGHT_HIGH_FULL = 220.0
+    _FUZZY_BRIGHT_PEAK_NONE = 220.0
+    _FUZZY_BRIGHT_PEAK_FULL = 248.0
 
     _FUZZY_BRIGHTEN_THRESHOLD = 0.55
-    _FUZZY_DARKEN_THRESHOLD = -0.35
+    _FUZZY_DARKEN_THRESHOLD = -0.3
 
     _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
     _SEVERE_WRITE_INTERVAL_SECONDS = 0.75
@@ -352,47 +352,42 @@ class CameraHighlightExposureController:
             self._FUZZY_DARK_HIGH_FULL,
             self._FUZZY_DARK_HIGH_NONE,
         )
-        dark_peak = self._falling_membership(
-            metrics.peak,
-            self._FUZZY_DARK_PEAK_FULL,
-            self._FUZZY_DARK_PEAK_NONE,
+
+        dark_membership = dark_median * 0.65 + dark_high * 0.35
+
+        bright_high = self._rising_membership(
+            metrics.high,
+            self._FUZZY_BRIGHT_HIGH_NONE,
+            self._FUZZY_BRIGHT_HIGH_FULL,
         )
 
-        dark_membership = dark_median * 0.50 + dark_high * 0.35 + dark_peak * 0.15
+        bright_peak = self._rising_membership(
+            metrics.peak,
+            self._FUZZY_BRIGHT_PEAK_NONE,
+            self._FUZZY_BRIGHT_PEAK_FULL,
+        )
+
+        brightness_membership = bright_high * 0.70 + bright_peak * 0.30
 
         if metrics.highlight_ratio <= self._ACCEPTABLE_HIGHLIGHT_RATIO:
-            bright_membership = 0.0
+            highlight_membership = 0.0
         else:
-            highlight_excess = self._rising_membership(
+            highlight_membership = self._rising_membership(
                 metrics.highlight_ratio,
                 self._ACCEPTABLE_HIGHLIGHT_RATIO,
                 self._HIGHLIGHT_WARNING_FULL_RATIO,
             )
-            bright_high = self._rising_membership(
-                metrics.high,
-                self._FUZZY_BRIGHT_HIGH_NONE,
-                self._FUZZY_BRIGHT_HIGH_FULL,
-            )
-            bright_peak = self._rising_membership(
-                metrics.peak,
-                self._FUZZY_BRIGHT_PEAK_NONE,
-                self._FUZZY_BRIGHT_PEAK_FULL,
-            )
-            clipping_excess = self._rising_membership(
-                metrics.clipped_ratio,
-                self._ACCEPTABLE_HIGHLIGHT_RATIO,
-                self._HIGHLIGHT_WARNING_FULL_RATIO,
-            )
 
-            brightness_evidence = (
-                bright_high * 0.50
-                + bright_peak * 0.30
-                + clipping_excess * 0.20
-            )
-            bright_membership = highlight_excess * max(0.55, brightness_evidence)
+        bright_membership = max(
+            brightness_membership,
+            highlight_membership,
+        )
 
-        return max(-1.0, min(1.0, dark_membership - bright_membership))
-
+        return max(
+            -1.0,
+            min(1.0, dark_membership - bright_membership),
+        )
+        
     @staticmethod
     def _rising_membership(
         value: float,
