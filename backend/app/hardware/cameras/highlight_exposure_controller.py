@@ -101,6 +101,7 @@ class CameraHighlightExposureController:
 
     _MAXIMUM_FAILED_COMMANDS = 2
     _MAXIMUM_MSMF_UNVERIFIED_COMMANDS = 8
+    _BLOCKED_DIRECTION_RETRY_SECONDS = 15.0
 
     def __init__(self, camera_id: str, cv2_module: Any) -> None:
         self.camera_id = camera_id
@@ -115,6 +116,7 @@ class CameraHighlightExposureController:
         self._manual_exposure = False
         self._control_verified = False
         self._blocked_direction = 0
+        self._blocked_until = 0.0
 
         self._window_started_at: float | None = None
         self._window_metrics: list[_ExposureMetrics] = []
@@ -146,6 +148,7 @@ class CameraHighlightExposureController:
         self._manual_exposure = False
         self._control_verified = False
         self._blocked_direction = 0
+        self._blocked_until = 0.0
         self._pending_exposure = None
         self._failed_commands = 0
         self._last_write_at = float("-inf")
@@ -207,6 +210,7 @@ class CameraHighlightExposureController:
             self._set_reported_exposure(self._current_exposure)
             self._control_verified = True
             self._blocked_direction = 0
+            self._blocked_until = 0.0
             self._failed_commands = 0
             self._reset_meter(clear_control_state=pending.severe)
             return True
@@ -220,41 +224,54 @@ class CameraHighlightExposureController:
                 self._reset_meter(clear_control_state=pending.severe)
                 return True
 
-            self._restore_native_auto_exposure()
+            self._current_exposure = pending.requested
+            self._set_reported_exposure(pending.requested)
+            self._block_direction(
+                pending.direction,
+                measured_at,
+            )
+            self._failed_commands = 0
             self._reset_meter(clear_control_state=True)
-            self._settling_until = measured_at + self._NATIVE_AUTO_SETTLING_SECONDS
-            self._custom_control_available = False
 
             logger.warning(
-                "相機 %s 的 MSMF 曝光命令連續未產生可觀察影像變化，已停止自訂曝光控制並恢復原生自動曝光。",
+                "相機 %s 的 MSMF 曝光命令連續未產生可觀察影像變化，已暫停同方向調整並持續測光。",
                 self.camera_id,
             )
-            return False
+            return True
 
         if self._control_verified:
-            self._blocked_direction = pending.direction
             current = self._read_exposure()
 
             if current is not None:
                 self._current_exposure = current
                 self._set_reported_exposure(current)
 
+            self._block_direction(
+                pending.direction,
+                measured_at,
+            )
+            self._failed_commands = 0
             self._reset_meter(clear_control_state=pending.severe)
             return True
 
-        self._failed_commands += 1
-        self._restore_native_auto_exposure()
-        self._reset_meter(clear_control_state=True)
-        self._settling_until = measured_at + self._NATIVE_AUTO_SETTLING_SECONDS
-
-        if self._failed_commands >= self._MAXIMUM_FAILED_COMMANDS:
-            self._custom_control_available = False
-            logger.warning(
-                "相機 %s 的驅動未套用曝光命令，已停止自訂控制並保留原生自動曝光。",
-                self.camera_id,
-            )
-
-        return False
+        current = self._read_exposure()
+        self._current_exposure = (
+            current
+            if current is not None
+            else pending.requested
+        )
+        self._set_reported_exposure(self._current_exposure)
+        self._block_direction(
+            pending.direction,
+            measured_at,
+        )
+        self._failed_commands = 0
+        self._reset_meter(clear_control_state=pending.severe)
+        logger.warning(
+            "相機 %s 無法從目前影像確認曝光變化，已暫停同方向調整並持續測光。",
+            self.camera_id,
+        )
+        return True
 
     def observe(self, image: Any, measured_at: float) -> None:
         if (
@@ -423,7 +440,11 @@ class CameraHighlightExposureController:
         severe: bool,
     ) -> bool:
         if direction == self._blocked_direction:
-            return False
+            if measured_at < self._blocked_until:
+                return False
+
+            self._blocked_direction = 0
+            self._blocked_until = 0.0
 
         interval = (
             self._SEVERE_WRITE_INTERVAL_SECONDS
@@ -470,6 +491,7 @@ class CameraHighlightExposureController:
         self._current_exposure = requested
         self._set_reported_exposure(requested)
         self._blocked_direction = 0
+        self._blocked_until = 0.0
 
         self._pending_exposure = _PendingExposure(
             previous=current,
@@ -573,7 +595,10 @@ class CameraHighlightExposureController:
         self._reset_meter()
 
         if self._control_verified:
-            self._blocked_direction = direction
+            self._block_direction(
+                direction,
+                measured_at,
+            )
             return
 
         self._restore_native_auto_exposure()
@@ -585,6 +610,17 @@ class CameraHighlightExposureController:
                 "相機 %s 無法安全控制硬體曝光，已改用原生自動曝光。",
                 self.camera_id,
             )
+
+    def _block_direction(
+        self,
+        direction: int,
+        measured_at: float,
+    ) -> None:
+        self._blocked_direction = direction
+        self._blocked_until = (
+            measured_at
+            + self._BLOCKED_DIRECTION_RETRY_SECONDS
+        )
 
     def _enable_manual_exposure(self) -> bool:
         if self._manual_exposure:

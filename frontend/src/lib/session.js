@@ -6,7 +6,7 @@ import {
 } from "@/lib/sessionToken";
 
 export const SESSION_COOKIE_NAME = "phyto_autoscopy_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 12;
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 function sessionSecret() {
   const value = process.env.PHYTO_AUTOSCOPY_SESSION_SECRET;
@@ -30,9 +30,28 @@ export async function getSession() {
 }
 
 export async function createOperatorSession() {
-  const session = {
+  return writeSession({
     actor: "operator",
     role: "operator",
+  });
+}
+
+export async function renewSession(session) {
+  if (!session) return null;
+
+  return writeSession({
+    actor: session.actor,
+    role: session.role,
+  });
+}
+
+async function writeSession({
+  actor,
+  role,
+}) {
+  const session = {
+    actor,
+    role,
     expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
   };
   const store = await cookies();

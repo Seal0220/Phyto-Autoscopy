@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getSession } from "@/lib/session";
+import {
+  getSession,
+  renewSession,
+} from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +44,29 @@ export async function GET() {
       },
     );
   }
+
+  try {
+    session = await renewSession(session);
+  } catch (error) {
+    console.error("Session renewal failed", {
+      type: error instanceof Error ? error.name : typeof error,
+    });
+    return NextResponse.json(
+      {
+        detail: "登入狀態暫時無法更新，請稍後再試。",
+        code: "AUTH_SERVICE_UNAVAILABLE",
+        retryable: true,
+      },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": "1",
+        },
+      },
+    );
+  }
+
   return NextResponse.json(
     {
       actor: session.actor,

@@ -16,6 +16,8 @@ import {
 const DEFAULT_COMMAND_TIMEOUT_MS = 20000;
 const RECONNECT_DELAYS_MS = [1200, 2500, 5000, 10000, 20000, 30000];
 const STABLE_CONNECTION_MS = 30000;
+const SOCKET_STALE_AFTER_MS = 10000;
+const SOCKET_WATCHDOG_INTERVAL_MS = 5000;
 const REPEATED_ERROR_DELAY_MS = 10000;
 
 function socketUrl(ticket) {
@@ -90,8 +92,10 @@ export default function usePhytoSocket() {
   useEffect(() => {
     let stopped = false;
     let retryTimer;
+    let watchdogTimer;
     let ticketController;
     let reconnectAttempt = 0;
+    let lastActivityAt = Date.now();
 
     const rejectPending = (error) => {
       for (const pending of pendingRef.current.values()) {
@@ -116,9 +120,47 @@ export default function usePhytoSocket() {
       }
     };
 
+    const reconnectIfStale = () => {
+      if (
+        stopped
+        || document.visibilityState !== "visible"
+        || Date.now() - lastActivityAt <= SOCKET_STALE_AFTER_MS
+      ) {
+        return;
+      }
+
+      window.clearTimeout(retryTimer);
+      reconnectAttempt = 0;
+      lastActivityAt = Date.now();
+      abortRequest(
+        ticketController,
+        "即時連線長時間未收到狀態，正在重新連線。",
+      );
+
+      const socket = socketRef.current;
+      if (socket) {
+        socketRef.current = null;
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+
+        try {
+          socket.close();
+        } catch {
+          // Replacing the stale connection does not depend on close succeeding.
+        }
+      }
+
+      rejectPending(new Error("即時連線已逾時，正在重新連線。"));
+      setConnection("reconnecting");
+      void connect();
+    };
+
     const connect = async () => {
       if (stopped) return;
 
+      lastActivityAt = Date.now();
       setConnection("connecting");
       abortRequest(
         ticketController,
@@ -180,10 +222,12 @@ export default function usePhytoSocket() {
           setAuthExpired(false);
           setConnection("connected");
           socketOpenedAt = Date.now();
+          lastActivityAt = socketOpenedAt;
         };
         socket.onmessage = (event) => {
           if (stopped || socketRef.current !== socket) return;
 
+          lastActivityAt = Date.now();
           let message;
 
           try {
@@ -312,9 +356,30 @@ export default function usePhytoSocket() {
     };
 
     void connect();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        reconnectIfStale();
+      }
+    };
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+    window.addEventListener("online", reconnectIfStale);
+    watchdogTimer = window.setInterval(
+      reconnectIfStale,
+      SOCKET_WATCHDOG_INTERVAL_MS,
+    );
+
     return () => {
       stopped = true;
       window.clearTimeout(retryTimer);
+      window.clearInterval(watchdogTimer);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
+      window.removeEventListener("online", reconnectIfStale);
       abortRequest(ticketController);
       rejectPending(new Error("即時連線已關閉。"));
       const socket = socketRef.current;

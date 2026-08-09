@@ -6,10 +6,12 @@ import {
 } from "react";
 
 import usePhytoSocket from "@/hooks/usePhytoSocket";
+import useSessionGuard from "@/hooks/useSessionGuard";
 
 const PhytoSocketContext = createContext(null);
 
 export default function PhytoSocketProvider({ children }) {
+  useSessionGuard();
   const socket = usePhytoSocket();
 
   return (
