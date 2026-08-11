@@ -86,6 +86,8 @@ class CameraHighlightExposureController:
     _NATIVE_AUTO_SETTLING_SECONDS = 1.0
 
     _EXPOSURE_STEP = 1.0
+    _MINIMUM_EXPOSURE = -20.0
+    _MAXIMUM_EXPOSURE = 40.0
     _ADAPTIVE_EXPOSURE_THRESHOLD = 16.0
 
     _DARKEN_RATIO = 0.08
@@ -474,6 +476,12 @@ class CameraHighlightExposureController:
         requested = self._requested_exposure(current, direction, severe=severe)
 
         if math.isclose(requested, current, abs_tol=self._PROPERTY_TOLERANCE):
+            self._last_write_at = measured_at
+            self._block_direction(
+                direction,
+                measured_at,
+            )
+            self._reset_meter(clear_control_state=True)
             return
 
         backend = str(self._backend or "").upper()
@@ -538,9 +546,18 @@ class CameraHighlightExposureController:
                 )
                 requested = current + step
 
-            return float(round(requested))
+            return self._clamp_exposure(float(round(requested)))
 
-        return current + direction * self._EXPOSURE_STEP
+        return self._clamp_exposure(
+            current + direction * self._EXPOSURE_STEP,
+        )
+
+    @classmethod
+    def _clamp_exposure(cls, value: float) -> float:
+        return min(
+            cls._MAXIMUM_EXPOSURE,
+            max(cls._MINIMUM_EXPOSURE, value),
+        )
 
     def _exposure_change_applied(
         self,
@@ -679,7 +696,10 @@ class CameraHighlightExposureController:
         except Exception:
             return None
 
-        return value if math.isfinite(value) else None
+        if math.isnan(value):
+            return None
+
+        return self._clamp_exposure(value)
 
     def _measure_frame(self, image: Any) -> _ExposureMetrics | None:
         metering_image = self._metering_image(image)
@@ -959,7 +979,11 @@ class CameraHighlightExposureController:
 
     def _set_reported_exposure(self, value: float | None) -> None:
         with self._status_lock:
-            self._reported_exposure = value
+            self._reported_exposure = (
+                self._clamp_exposure(value)
+                if value is not None and not math.isnan(value)
+                else None
+            )
 
     def _set_visualization_status(
         self,
