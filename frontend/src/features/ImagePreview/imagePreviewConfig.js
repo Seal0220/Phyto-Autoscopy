@@ -102,13 +102,13 @@ export const IMAGE_PREVIEW_FIELD_META = {
     suffix: "px",
   },
   jpeg_quality: {
-    label: "JPEG 品質",
+    label: "預覽 JPEG 品質",
     type: "number",
     min: 1,
     max: 100,
     step: 1,
     suffix: "%",
-    description: "數值越高，影像品質與檔案大小越高。",
+    description: "只控制即時預覽串流的 JPEG 壓縮品質，不影響無損 PNG 拍照檔。",
   },
   installation_height_mm: {
     label: "安裝高度",

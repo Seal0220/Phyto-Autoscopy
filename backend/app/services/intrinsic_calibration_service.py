@@ -12,6 +12,7 @@ from app.analysis.run_metadata import next_dated_identifier, utc_now_iso
 from app.calibration.camera_models import OpenCVCompatibilityError
 from app.calibration.intrinsic_solver import solve_intrinsic_run
 from app.calibration.quality_metrics import is_duplicate_pose, sample_coverage
+from app.core.constants import CAPTURE_IMAGE_EXTENSION
 from app.core.exceptions import CalibrationError
 from app.models.calibration_models import (
     CameraIntrinsics,
@@ -119,6 +120,9 @@ class IntrinsicCalibrationService:
     ) -> None:
         directory = self.root / "runs" / run_id
         for path in (
+            directory
+            / "captures"
+            / f"{sample_id}{CAPTURE_IMAGE_EXTENSION}",
             directory / "captures" / f"{sample_id}.jpg",
             directory / "previews" / f"{sample_id}.jpg",
         ):

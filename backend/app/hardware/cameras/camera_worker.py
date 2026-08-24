@@ -296,6 +296,7 @@ class CameraWorker:
                     frame = CameraFrame(
                         camera_id=self.camera_id,
                         data=encoded.tobytes(),
+                        raw_image=image,
                     )
                     with self._condition:
                         if self._stop_event.is_set():

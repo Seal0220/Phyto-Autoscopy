@@ -12,6 +12,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import AppSettings
+from app.core.constants import CAPTURE_IMAGE_SUFFIXES
 from app.core.exceptions import RecordError
 from app.models.record_models import RecordDetail, RecordSummary
 from app.repositories.record_repository import RecordRepository
@@ -184,7 +185,15 @@ class RecordService:
                     "name": round_path.name,
                     "snapshot_count": len(snapshots),
                     "capture_count": sum(
-                        len(list(snapshot.glob("*.jpg")))
+                        sum(
+                            1
+                            for image_path in snapshot.iterdir()
+                            if (
+                                image_path.is_file()
+                                and image_path.suffix.lower()
+                                in CAPTURE_IMAGE_SUFFIXES
+                            )
+                        )
                         for snapshot in snapshots
                     ),
                 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.core.exceptions import CameraError, StorageError, public_error_detail
+from app.hardware.cameras.camera_image import encode_lossless_capture
 from app.models.camera_models import SnapshotResult
 from app.services.storage_service import StorageService
 
@@ -16,12 +17,13 @@ class SnapshotService:
 
     def snapshot_camera(self, camera_id: str) -> SnapshotResult:
         frame = self.camera_manager.capture(camera_id)
+        image_data = encode_lossless_capture(frame)
         status = self.camera_manager.get_status(camera_id)
         try:
             path = self.storage.save_snapshot(
                 camera_id,
                 frame.timestamp,
-                frame.data,
+                image_data,
             )
         except (OSError, ValueError) as exc:
             logger.exception("Failed to persist camera snapshot: %s", camera_id)

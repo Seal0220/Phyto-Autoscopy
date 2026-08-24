@@ -154,7 +154,7 @@ def test_schedule_modes_write_isolated_images_and_logs(tmp_path, monkeypatch) ->
             }
             image_names = {
                 path.name
-                for path in mode_dir.glob("rounds/round.*/snapshot.*/*.jpg")
+                for path in mode_dir.glob("rounds/round.*/snapshot.*/*.png")
             }
             assert image_names
             assert all(

@@ -12,7 +12,7 @@ def test_rotating_path_uses_cycle_and_angle(tmp_path) -> None:
     storage = StorageService(settings)
     storage.create_record_layout("record_test_001")
     path = storage.next_capture_path("record_test_001", "rotating", cycle_id=2, angle_deg=15)
-    assert path.name == "angle_015.0.jpg"
+    assert path.name == "angle_015.0.png"
     assert path.parent.name == "cycle_000002"
 
 

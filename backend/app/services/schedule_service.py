@@ -9,6 +9,7 @@ from threading import Event, RLock, Thread
 
 from app.core.config import AppSettings
 from app.core.constants import (
+    CAPTURE_IMAGE_EXTENSION,
     CAPTURE_MODE_ABBREVIATIONS,
     CAPTURE_MODE_NAMES,
 )
@@ -331,7 +332,8 @@ class ScheduleService:
                     f"{payload['abbreviation']}."
                     f"{runtime.folder.rsplit('.', 1)[1]}_"
                     "r.{round}_s.{snapshot}_"
-                    "{YYYY.MM.DD-hh.mm.ss.xxxxxx}.jpg"
+                    "{YYYY.MM.DD-hh.mm.ss.xxxxxx}"
+                    f"{CAPTURE_IMAGE_EXTENSION}"
                 )
                 payload["log_pattern"] = (
                     f"modes/{runtime.folder}/mode.log.csv"

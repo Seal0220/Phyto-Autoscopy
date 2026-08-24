@@ -227,7 +227,7 @@ def test_preview_snapshot_is_flat_and_does_not_create_record(tmp_path, monkeypat
 
         assert response.status_code == 200
         assert response.json()["file_path"].startswith("side_")
-        assert response.json()["file_path"].endswith(".jpg")
+        assert response.json()["file_path"].endswith(".png")
         snapshot_path = (
             tmp_path / "data" / "snapshots" / response.json()["file_path"]
         )

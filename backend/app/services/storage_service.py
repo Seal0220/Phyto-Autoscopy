@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.core.config import AppSettings
 from app.core.constants import (
     CAMERA_ROLES,
+    CAPTURE_IMAGE_EXTENSION,
+    CAPTURE_IMAGE_SUFFIXES,
     CAPTURE_MODE_ABBREVIATIONS,
     CAPTURE_MODE_NAMES,
     METADATA_FIELDS,
@@ -240,12 +242,16 @@ class StorageService:
             folder = record_dir / "rotating" / f"cycle_{cycle:06d}"
             folder.mkdir(parents=True, exist_ok=True)
             angle = 0.0 if angle_deg is None else angle_deg
-            return folder / f"angle_{angle:05.1f}.jpg"
+            return folder / f"angle_{angle:05.1f}{CAPTURE_IMAGE_EXTENSION}"
 
         folder = record_dir / camera_id
         folder.mkdir(parents=True, exist_ok=True)
-        next_index = len(list(folder.glob("*.jpg"))) + 1
-        return folder / f"{next_index:06d}.jpg"
+        next_index = sum(
+            1
+            for path in folder.iterdir()
+            if path.is_file() and path.suffix.lower() in CAPTURE_IMAGE_SUFFIXES
+        ) + 1
+        return folder / f"{next_index:06d}{CAPTURE_IMAGE_EXTENSION}"
 
     def next_mode_capture_path(
         self,
@@ -275,7 +281,8 @@ class StorageService:
         abbreviation, mode_number = self._mode_filename_parts(mode_folder)
         filename = (
             f"{camera_id}-{abbreviation}.{mode_number}_"
-            f"r.{round_number:02d}_s.{capture_index:02d}_{timestamp}.jpg"
+            f"r.{round_number:02d}_s.{capture_index:02d}_{timestamp}"
+            f"{CAPTURE_IMAGE_EXTENSION}"
         )
         return folder / filename
 
@@ -304,7 +311,9 @@ class StorageService:
         candidate_time = captured_at
         while True:
             timestamp = format_storage_timestamp(candidate_time)
-            path = directory / f"{camera_id}_{timestamp}.jpg"
+            path = directory / (
+                f"{camera_id}_{timestamp}{CAPTURE_IMAGE_EXTENSION}"
+            )
             if not path.exists():
                 return path
             candidate_time += timedelta(microseconds=1)

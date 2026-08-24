@@ -6,7 +6,9 @@ from pathlib import Path
 from threading import RLock
 
 from app.calibration.board_detection import BoardDetectionResult, detect_board
+from app.core.constants import CAPTURE_IMAGE_EXTENSION
 from app.core.exceptions import CalibrationError
+from app.hardware.cameras.camera_image import encode_lossless_capture
 from app.models.calibration_models import CalibrationBoardProfile
 
 
@@ -35,8 +37,9 @@ class CalibrationCaptureService:
     ) -> tuple[object, BoardDetectionResult]:
         try:
             frame = self.camera_manager.capture(camera_id)
+            image_data = encode_lossless_capture(frame)
             return frame, detect_board(
-                frame.data,
+                image_data,
                 board,
                 include_preview=include_preview,
             )
@@ -55,10 +58,15 @@ class CalibrationCaptureService:
         preview_jpeg: bytes | None,
     ) -> tuple[str, str | None]:
         directory = self.root / "intrinsics" / "runs" / run_id
-        image_path = directory / "captures" / f"{sample_id}.jpg"
+        image_path = (
+            directory
+            / "captures"
+            / f"{sample_id}{CAPTURE_IMAGE_EXTENSION}"
+        )
         preview_path = directory / "previews" / f"{sample_id}.jpg"
+        image_data = encode_lossless_capture(frame)
         with self._save_lock:
-            self.storage_service.save_bytes(image_path, frame.data)
+            self.storage_service.save_bytes(image_path, image_data)
             if preview_jpeg is not None:
                 self.storage_service.save_bytes(preview_path, preview_jpeg)
         return image_path.as_posix(), (
@@ -88,11 +96,15 @@ class CalibrationCaptureService:
                     raise CalibrationError(
                         f"外參同步擷取時無法取得相機 {camera_id} 影像：{error}。"
                     ) from error
+        image_data_by_camera = {
+            camera_id: encode_lossless_capture(frame)
+            for camera_id, frame in frames.items()
+        }
         detections: dict[str, BoardDetectionResult] = {}
-        for camera_id, frame in frames.items():
+        for camera_id in frames:
             try:
                 detections[camera_id] = detect_board(
-                    frame.data,
+                    image_data_by_camera[camera_id],
                     board,
                     include_preview=True,
                 )
@@ -103,9 +115,14 @@ class CalibrationCaptureService:
         directory = self.root / "extrinsics" / profile_id / "captures" / observation_id
         image_paths: dict[str, str] = {}
         with self._save_lock:
-            for camera_id, frame in frames.items():
-                image_path = directory / f"{camera_id}.jpg"
-                self.storage_service.save_bytes(image_path, frame.data)
+            for camera_id in frames:
+                image_path = directory / (
+                    f"{camera_id}{CAPTURE_IMAGE_EXTENSION}"
+                )
+                self.storage_service.save_bytes(
+                    image_path,
+                    image_data_by_camera[camera_id],
+                )
                 image_paths[camera_id] = image_path.as_posix()
                 preview = detections[camera_id].preview_jpeg
                 if preview is not None:

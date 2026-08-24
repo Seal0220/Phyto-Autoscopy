@@ -4,6 +4,7 @@ from datetime import datetime
 
 from app.core.config import AppSettings
 from app.core.exceptions import CameraError, public_error_detail
+from app.hardware.cameras.camera_image import encode_lossless_capture
 from app.models.camera_models import CaptureResult
 from app.models.capture_models import MetadataRecord
 from app.services.metadata_service import MetadataService
@@ -40,6 +41,7 @@ class CaptureService:
     ) -> CaptureResult:
         record = self.records.get_capture_record(record_id)
         frame = self.camera_manager.capture(camera_id)
+        image_data = encode_lossless_capture(frame)
         status = self.camera_manager.get_status(camera_id)
         motor_status = self.motor_controller.status()
         if mode_folder is not None:
@@ -62,7 +64,7 @@ class CaptureService:
                 angle_deg,
                 record.record_path,
             )
-        self.storage.save_bytes(path, frame.data)
+        self.storage.save_bytes(path, image_data)
         relative_path = self.storage.relative_to_record(
             record.record_id,
             path,
@@ -126,6 +128,7 @@ class CaptureService:
         """Capture one physical frame and persist a copy for every due schedule mode."""
         record = self.records.get_capture_record(record_id)
         frame = self.camera_manager.capture(camera_id)
+        image_data = encode_lossless_capture(frame)
         status = self.camera_manager.get_status(camera_id)
         motor_status = self.motor_controller.status()
         results: dict[str, CaptureResult] = {}
@@ -143,7 +146,7 @@ class CaptureService:
                 continuous,
                 record.record_path,
             )
-            self.storage.save_bytes(path, frame.data)
+            self.storage.save_bytes(path, image_data)
             relative_path = self.storage.relative_to_record(
                 record.record_id,
                 path,
