@@ -309,7 +309,7 @@ class CameraHighlightExposureController:
 
     def _fuzzy_control_value(self, metrics: _ExposureMetrics) -> float:
         dark_membership = self._falling_membership(
-            metrics.peak,
+            metrics.high,
             self.settings.fuzzy_dark_peak_full,
             self.settings.fuzzy_dark_peak_none,
         )
@@ -676,9 +676,17 @@ class CameraHighlightExposureController:
         else:
             luminance = sampled
 
+        accepted_peak_percentile = max(
+            0.0,
+            min(
+                100.0,
+                (1.0 - self.settings.acceptable_highlight_ratio) * 100.0,
+            ),
+        )
+
         return _ExposureMetrics(
             median=float(np.percentile(luminance, 50.0)),
-            high=float(np.percentile(luminance, 90.0)),
+            high=float(np.percentile(luminance, accepted_peak_percentile)),
             peak=float(np.max(luminance)),
             highlight_ratio=float(
                 np.mean(luminance >= self.settings.highlight_level)
