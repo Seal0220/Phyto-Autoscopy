@@ -35,8 +35,18 @@ SETTINGS_FILES = {
 }
 
 
-def _normalized_settings_payload(group: str, payload: dict) -> dict:
-    return deepcopy(payload)
+def _normalized_settings_payload(
+    group: str,
+    payload: dict,
+    settings: AppSettings | None = None,
+) -> dict:
+    normalized = deepcopy(payload)
+    if group == "cameras" and settings is not None:
+        normalized.setdefault(
+            "camera_control",
+            settings.camera_control.model_dump(mode="json"),
+        )
+    return normalized
 
 
 @router.get("")
@@ -51,6 +61,7 @@ def get_settings_group(group: str, context: AppContext = Depends(get_context)) -
     payload = _normalized_settings_payload(
         group,
         read_json_file(get_config_dir() / SETTINGS_FILES[group]),
+        context.settings,
     )
     if group == "default":
         payload["paths"] = context.settings.paths.model_dump(mode="json")
@@ -73,13 +84,25 @@ def update_settings_batch(
 
     ensure_manual_changes_allowed(context)
     with context._settings_lock:
+        normalized_payloads = {
+            group: _normalized_settings_payload(
+                group,
+                payload,
+                context.settings,
+            )
+            for group, payload in update.payloads.items()
+        }
         previous_payloads = {
             group: read_json_file(get_config_dir() / SETTINGS_FILES[group])
             for group in groups
         }
         candidate_data = context.settings.model_dump(mode="python")
-        for group, payload in update.payloads.items():
-            candidate_data[group] = payload.get(group, {})
+        for group, payload in normalized_payloads.items():
+            if group == "cameras":
+                candidate_data["cameras"] = payload.get("cameras", {})
+                candidate_data["camera_control"] = payload["camera_control"]
+            else:
+                candidate_data[group] = payload.get(group, {})
 
         try:
             candidate = AppSettings.model_validate(candidate_data)
@@ -88,10 +111,10 @@ def update_settings_batch(
 
         saved_groups: list[str] = []
         try:
-            for group, payload in update.payloads.items():
+            for group, payload in normalized_payloads.items():
                 save_settings_group(group, payload)
                 saved_groups.append(group)
-            apply_runtime_settings(context, candidate, "schedule")
+            apply_runtime_settings(context, candidate, "cameras")
         except Exception:
             for group in reversed(saved_groups):
                 try:
@@ -100,7 +123,7 @@ def update_settings_batch(
                     logger.exception("Failed to restore settings group: %s", group)
             raise
 
-        for group, payload in update.payloads.items():
+        for group, payload in normalized_payloads.items():
             try:
                 SettingsRepository(context.database).snapshot(group, payload)
             except Exception:
@@ -124,7 +147,11 @@ def update_settings_group(
             raise ConfigError(f"找不到設定群組：{group}")
         config_path = get_config_dir() / SETTINGS_FILES[group]
         previous_payload = read_json_file(config_path)
-        normalized_payload = _normalized_settings_payload(group, update.payload)
+        normalized_payload = _normalized_settings_payload(
+            group,
+            update.payload,
+            context.settings,
+        )
         candidate = build_candidate_settings(context, group, normalized_payload)
         if group == "default":
             normalized_payload["paths"] = path_settings_config_payload(candidate.paths)

@@ -99,6 +99,119 @@ class CameraMeteringRegion(BaseModel):
         return self
 
 
+class CameraExposureControlSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    measurement_window_seconds: float = Field(default=1.0, gt=0, le=60)
+    metric_ema_alpha: float = Field(default=0.25, gt=0, le=1)
+    fuzzy_state_alpha: float = Field(default=0.25, gt=0, le=1)
+    sample_stride: int = Field(default=8, ge=1, le=64)
+    highlight_level: float = Field(default=248.0, ge=0, le=255)
+    clipped_level: float = Field(default=250.0, ge=0, le=255)
+    metering_horizontal_inset_ratio: float = Field(default=0.08, ge=0, lt=0.5)
+    acceptable_highlight_ratio: float = Field(default=0.30, ge=0, le=1)
+    highlight_warning_full_ratio: float = Field(default=0.45, ge=0, le=1)
+    severe_highlight_ratio: float = Field(default=0.50, ge=0, le=1)
+    severe_clipped_ratio: float = Field(default=0.40, ge=0, le=1)
+    highlight_detection_interval_seconds: float = Field(default=0.5, gt=0, le=60)
+    highlight_sample_stride: int = Field(default=4, ge=1, le=64)
+    minimum_highlight_area_ratio: float = Field(default=0.001, gt=0, le=1)
+    maximum_highlight_regions: int = Field(default=8, ge=1, le=100)
+    fuzzy_dark_median_full: float = Field(default=65.0, ge=0, le=255)
+    fuzzy_dark_median_none: float = Field(default=95.0, ge=0, le=255)
+    fuzzy_dark_high_full: float = Field(default=125.0, ge=0, le=255)
+    fuzzy_dark_high_none: float = Field(default=175.0, ge=0, le=255)
+    fuzzy_dark_peak_full: float = Field(default=185.0, ge=0, le=255)
+    fuzzy_dark_peak_none: float = Field(default=225.0, ge=0, le=255)
+    fuzzy_bright_median_none: float = Field(default=135.0, ge=0, le=255)
+    fuzzy_bright_median_full: float = Field(default=175.0, ge=0, le=255)
+    fuzzy_bright_high_none: float = Field(default=205.0, ge=0, le=255)
+    fuzzy_bright_high_full: float = Field(default=240.0, ge=0, le=255)
+    fuzzy_bright_peak_none: float = Field(default=240.0, ge=0, le=255)
+    fuzzy_bright_peak_full: float = Field(default=253.0, ge=0, le=255)
+    fuzzy_brighten_threshold: float = Field(default=0.55, ge=-1, le=1)
+    fuzzy_darken_threshold: float = Field(default=-0.4, ge=-1, le=1)
+    minimum_write_interval_seconds: float = Field(default=3.0, ge=0, le=300)
+    severe_write_interval_seconds: float = Field(default=0.75, ge=0, le=300)
+    settling_seconds: float = Field(default=1.5, ge=0, le=300)
+    severe_settling_seconds: float = Field(default=0.75, ge=0, le=300)
+    native_auto_settling_seconds: float = Field(default=1.0, ge=0, le=300)
+    exposure_step: float = Field(default=1.0, gt=0)
+    minimum_exposure: float = -20.0
+    maximum_exposure: float = 100.0
+    adaptive_exposure_threshold: float = 16.0
+    positive_exposure_floor: float = Field(default=1.0, ge=0)
+    darken_ratio: float = Field(default=0.08, gt=0, le=1)
+    minimum_darken_step: float = Field(default=2.0, gt=0)
+    severe_darken_ratio: float = Field(default=0.18, gt=0, le=1)
+    minimum_severe_darken_step: float = Field(default=5.0, gt=0)
+    brighten_ratio: float = Field(default=0.05, gt=0, le=1)
+    minimum_brighten_step: float = Field(default=2.0, gt=0)
+    property_tolerance: float = Field(default=0.25, ge=0)
+    minimum_visible_response: float = Field(default=4.0, ge=0)
+    minimum_ratio_response: float = Field(default=0.015, ge=0, le=1)
+    maximum_failed_commands: int = Field(default=2, ge=1, le=100)
+    maximum_msmf_unverified_commands: int = Field(default=8, ge=1, le=100)
+    blocked_direction_retry_seconds: float = Field(default=15.0, ge=0, le=3600)
+    msmf_manual_exposure_modes: tuple[float, ...] = (0.0, 0.25)
+    default_manual_exposure_modes: tuple[float, ...] = (0.25, 0.0)
+    msmf_auto_exposure_modes: tuple[float, ...] = (1.0, 0.75)
+    default_auto_exposure_modes: tuple[float, ...] = (0.75, 1.0)
+
+    @model_validator(mode="after")
+    def validate_ranges(self) -> "CameraExposureControlSettings":
+        if self.maximum_exposure <= self.minimum_exposure:
+            raise ValueError("曝光上限必須大於曝光下限。")
+        ordered_pairs = (
+            (self.fuzzy_dark_median_full, self.fuzzy_dark_median_none),
+            (self.fuzzy_dark_high_full, self.fuzzy_dark_high_none),
+            (self.fuzzy_dark_peak_full, self.fuzzy_dark_peak_none),
+            (self.fuzzy_bright_median_none, self.fuzzy_bright_median_full),
+            (self.fuzzy_bright_high_none, self.fuzzy_bright_high_full),
+            (self.fuzzy_bright_peak_none, self.fuzzy_bright_peak_full),
+            (self.acceptable_highlight_ratio, self.highlight_warning_full_ratio),
+        )
+        if any(start > end for start, end in ordered_pairs):
+            raise ValueError("曝光模糊控制門檻的起始值不可大於完整值。")
+        if self.fuzzy_darken_threshold >= self.fuzzy_brighten_threshold:
+            raise ValueError("曝光變暗門檻必須小於變亮門檻。")
+        return self
+
+
+class CameraControlSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pixel_format: str = Field(default="MJPG", min_length=4, max_length=4)
+    buffer_size: int = Field(default=1, ge=1, le=32)
+    open_retry_seconds: float = Field(default=1.0, gt=0, le=300)
+    maximum_open_retry_seconds: float = Field(default=30.0, gt=0, le=3600)
+    read_failure_limit: int = Field(default=3, ge=1, le=100)
+    read_failure_retry_seconds: float = Field(default=0.1, ge=0, le=60)
+    frame_wait_seconds: float = Field(default=3.0, gt=0, le=300)
+    stale_frame_minimum_seconds: float = Field(default=1.0, gt=0, le=300)
+    stale_frame_periods: float = Field(default=3.0, gt=0, le=300)
+    close_timeout_seconds: float = Field(default=2.0, gt=0, le=300)
+    fps_smoothing_factor: float = Field(default=0.25, gt=0, le=1)
+    stream_startup_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
+    stream_recovery_grace_seconds: float = Field(default=30.0, gt=0, le=3600)
+    stream_retry_seconds: float = Field(default=1.0, gt=0, le=60)
+    exposure: CameraExposureControlSettings = Field(
+        default_factory=CameraExposureControlSettings
+    )
+
+    @field_validator("pixel_format")
+    @classmethod
+    def normalize_pixel_format(cls, value: str) -> str:
+        return value.upper()
+
+    @model_validator(mode="after")
+    def validate_retry_range(self) -> "CameraControlSettings":
+        if self.maximum_open_retry_seconds < self.open_retry_seconds:
+            raise ValueError("相機最大重連間隔不可小於初始重連間隔。")
+        return self
+
+
 class CameraConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -126,6 +239,7 @@ class CameraConfig(BaseModel):
         le=10000,
     )
     metering_region: CameraMeteringRegion | None = None
+    metering_vertical_start_ratio: float = Field(default=0.0, ge=0.0, lt=1.0)
 
 
 def default_camera_configs() -> dict[str, CameraConfig]:
@@ -137,10 +251,12 @@ def default_camera_configs() -> dict[str, CameraConfig]:
         "side": CameraConfig(
             device_name="CHLOROCULUS EYE-SIDE",
             device_index=1,
+            metering_vertical_start_ratio=0.5,
         ),
         "rotating": CameraConfig(
             device_name="CHLOROCULUS EYE-ARM",
             device_index=2,
+            metering_vertical_start_ratio=0.5,
         ),
     }
 
@@ -339,6 +455,7 @@ class AppSettings(BaseModel):
     hardware: HardwareSettings = Field(default_factory=HardwareSettings)
     paths: PathSettings = Field(default_factory=PathSettings)
     cameras: dict[str, CameraConfig] = Field(default_factory=default_camera_configs)
+    camera_control: CameraControlSettings = Field(default_factory=CameraControlSettings)
     motor: MotorSettings = Field(default_factory=MotorSettings)
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)

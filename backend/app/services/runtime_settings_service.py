@@ -20,8 +20,14 @@ def build_candidate_settings(context: AppContext, group: str, payload: dict) -> 
     current = context.settings.model_dump(mode="python")
     if group == "default":
         candidate_data = deep_merge(current, payload)
+    elif group == "cameras":
+        candidate_data = current
+        candidate_data["cameras"] = payload.get("cameras", {})
+        candidate_data["camera_control"] = payload.get(
+            "camera_control",
+            current["camera_control"],
+        )
     elif group in {
-        "cameras",
         "motor",
         "schedule",
         "analysis",

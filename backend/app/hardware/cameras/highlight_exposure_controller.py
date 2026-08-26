@@ -8,6 +8,8 @@ from typing import Any
 
 import numpy as np
 
+from app.core.config import CameraExposureControlSettings
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,73 +43,21 @@ class _ExposureControllerStatus:
 
 
 class CameraHighlightExposureController:
-    _LOWER_HALF_METERING_CAMERAS = frozenset({"side", "rotating"})
-
-    _MEASUREMENT_WINDOW_SECONDS = 1.0
-    _EMA_ALPHA = 0.25
-    _FUZZY_STATE_ALPHA = 0.25
-    _SAMPLE_STRIDE = 8
-
-    _HIGHLIGHT_LEVEL = 248.0
-    _CLIPPED_LEVEL = 250.0
-    _METERING_HORIZONTAL_INSET_RATIO = 0.08
-
-    _ACCEPTABLE_HIGHLIGHT_RATIO = 0.30
-    _HIGHLIGHT_WARNING_FULL_RATIO = 0.45
-    _SEVERE_HIGHLIGHT_RATIO = 0.50
-    _SEVERE_CLIPPED_RATIO = 0.40
-
-    _HIGHLIGHT_DETECTION_INTERVAL_SECONDS = 0.5
-    _HIGHLIGHT_SAMPLE_STRIDE = 4
-    _MINIMUM_HIGHLIGHT_AREA_RATIO = 0.001
-    _MAXIMUM_HIGHLIGHT_REGIONS = 8
-
-    _FUZZY_DARK_MEDIAN_FULL = 65.0
-    _FUZZY_DARK_MEDIAN_NONE = 95.0
-    _FUZZY_DARK_HIGH_FULL = 125.0
-    _FUZZY_DARK_HIGH_NONE = 175.0
-    _FUZZY_DARK_PEAK_FULL = 185.0
-    _FUZZY_DARK_PEAK_NONE = 225.0
-
-    _FUZZY_BRIGHT_MEDIAN_NONE = 135.0
-    _FUZZY_BRIGHT_MEDIAN_FULL = 175.0
-    _FUZZY_BRIGHT_HIGH_NONE = 205.0
-    _FUZZY_BRIGHT_HIGH_FULL = 240.0
-    _FUZZY_BRIGHT_PEAK_NONE = 240.0
-    _FUZZY_BRIGHT_PEAK_FULL = 253.0
-    
-    _FUZZY_BRIGHTEN_THRESHOLD = 0.55
-    _FUZZY_DARKEN_THRESHOLD = -0.4
-
-    _MINIMUM_WRITE_INTERVAL_SECONDS = 3.0
-    _SEVERE_WRITE_INTERVAL_SECONDS = 0.75
-    _SETTLING_SECONDS = 1.5
-    _SEVERE_SETTLING_SECONDS = 0.75
-    _NATIVE_AUTO_SETTLING_SECONDS = 1.0
-
-    _EXPOSURE_STEP = 1.0
-    _MINIMUM_EXPOSURE = -20.0
-    _MAXIMUM_EXPOSURE = 40.0
-    _ADAPTIVE_EXPOSURE_THRESHOLD = 16.0
-
-    _DARKEN_RATIO = 0.08
-    _MINIMUM_DARKEN_STEP = 2.0
-    _SEVERE_DARKEN_RATIO = 0.18
-    _MINIMUM_SEVERE_DARKEN_STEP = 5.0
-    _BRIGHTEN_RATIO = 0.05
-    _MINIMUM_BRIGHTEN_STEP = 2.0
-
-    _PROPERTY_TOLERANCE = 0.25
-    _MINIMUM_VISIBLE_RESPONSE = 4.0
-    _MINIMUM_RATIO_RESPONSE = 0.015
-
-    _MAXIMUM_FAILED_COMMANDS = 2
-    _MAXIMUM_MSMF_UNVERIFIED_COMMANDS = 8
-    _BLOCKED_DIRECTION_RETRY_SECONDS = 15.0
-
-    def __init__(self, camera_id: str, cv2_module: Any) -> None:
+    def __init__(
+        self,
+        camera_id: str,
+        cv2_module: Any,
+        settings: CameraExposureControlSettings | None = None,
+        metering_vertical_start_ratio: float = 0.0,
+    ) -> None:
         self.camera_id = camera_id
         self.cv2 = cv2_module
+        self.settings = (
+            settings.model_copy(deep=True)
+            if settings is not None
+            else CameraExposureControlSettings()
+        )
+        self.metering_vertical_start_ratio = metering_vertical_start_ratio
 
         self._capture: Any | None = None
         self._backend: str | None = None
@@ -146,7 +96,10 @@ class CameraHighlightExposureController:
         self._capture = capture
         self._backend = backend
         self._exposure_property = getattr(self.cv2, "CAP_PROP_EXPOSURE", None)
-        self._custom_control_available = self._exposure_property is not None
+        self._custom_control_available = (
+            self.settings.enabled
+            and self._exposure_property is not None
+        )
         self._manual_exposure = False
         self._control_verified = False
         self._blocked_direction = 0
@@ -162,6 +115,10 @@ class CameraHighlightExposureController:
         self._custom_metering_region = self._normalize_metering_region(metering_region)
         self._set_visualization_status(self._custom_metering_region, ())
         self._reset_meter(clear_control_state=True)
+
+        if not self.settings.enabled:
+            logger.info("相機 %s 使用原生自動曝光。", self.camera_id)
+            return
 
         if self._exposure_property is None:
             logger.warning("相機 %s 未提供硬體曝光控制，保留原生自動曝光。", self.camera_id)
@@ -220,7 +177,10 @@ class CameraHighlightExposureController:
         if backend == "MSMF":
             self._failed_commands += 1
 
-            if self._failed_commands < self._MAXIMUM_MSMF_UNVERIFIED_COMMANDS:
+            if (
+                self._failed_commands
+                < self.settings.maximum_msmf_unverified_commands
+            ):
                 self._current_exposure = pending.requested
                 self._set_reported_exposure(pending.requested)
                 self._reset_meter(clear_control_state=pending.severe)
@@ -278,7 +238,7 @@ class CameraHighlightExposureController:
     def observe(self, image: Any, measured_at: float) -> None:
         if (
             measured_at - self._last_highlight_detection_at
-            >= self._HIGHLIGHT_DETECTION_INTERVAL_SECONDS
+            >= self.settings.highlight_detection_interval_seconds
         ):
             self._last_highlight_detection_at = measured_at
             self._set_visualization_status(
@@ -314,7 +274,10 @@ class CameraHighlightExposureController:
 
         self._window_metrics.append(metrics)
 
-        if measured_at - self._window_started_at < self._MEASUREMENT_WINDOW_SECONDS:
+        if (
+            measured_at - self._window_started_at
+            < self.settings.measurement_window_seconds
+        ):
             return
 
         window_metrics = self._average_metrics(self._window_metrics)
@@ -349,15 +312,15 @@ class CameraHighlightExposureController:
 
     def _is_severely_overexposed(self, metrics: _ExposureMetrics) -> bool:
         return (
-            metrics.highlight_ratio >= self._SEVERE_HIGHLIGHT_RATIO
-            or metrics.clipped_ratio >= self._SEVERE_CLIPPED_RATIO
+            metrics.highlight_ratio >= self.settings.severe_highlight_ratio
+            or metrics.clipped_ratio >= self.settings.severe_clipped_ratio
         )
 
     def _next_direction(self, control: float) -> int:
-        if control <= self._FUZZY_DARKEN_THRESHOLD:
+        if control <= self.settings.fuzzy_darken_threshold:
             return -1
 
-        if control >= self._FUZZY_BRIGHTEN_THRESHOLD:
+        if control >= self.settings.fuzzy_brighten_threshold:
             return 1
 
         return 0
@@ -365,33 +328,36 @@ class CameraHighlightExposureController:
     def _fuzzy_control_value(self, metrics: _ExposureMetrics) -> float:
         dark_membership = self._falling_membership(
             metrics.median,
-            self._FUZZY_DARK_MEDIAN_FULL,
-            self._FUZZY_DARK_MEDIAN_NONE,
+            self.settings.fuzzy_dark_median_full,
+            self.settings.fuzzy_dark_median_none,
         )
 
         bright_membership = self._rising_membership(
             metrics.median,
-            self._FUZZY_BRIGHT_MEDIAN_NONE,
-            self._FUZZY_BRIGHT_MEDIAN_FULL,
+            self.settings.fuzzy_bright_median_none,
+            self.settings.fuzzy_bright_median_full,
         )
 
-        if metrics.highlight_ratio > self._ACCEPTABLE_HIGHLIGHT_RATIO:
+        if (
+            metrics.highlight_ratio
+            > self.settings.acceptable_highlight_ratio
+        ):
             highlight_membership = self._rising_membership(
                 metrics.highlight_ratio,
-                self._ACCEPTABLE_HIGHLIGHT_RATIO,
-                self._HIGHLIGHT_WARNING_FULL_RATIO,
+                self.settings.acceptable_highlight_ratio,
+                self.settings.highlight_warning_full_ratio,
             )
 
             bright_high = self._rising_membership(
                 metrics.high,
-                self._FUZZY_BRIGHT_HIGH_NONE,
-                self._FUZZY_BRIGHT_HIGH_FULL,
+                self.settings.fuzzy_bright_high_none,
+                self.settings.fuzzy_bright_high_full,
             )
 
             bright_peak = self._rising_membership(
                 metrics.peak,
-                self._FUZZY_BRIGHT_PEAK_NONE,
-                self._FUZZY_BRIGHT_PEAK_FULL,
+                self.settings.fuzzy_bright_peak_none,
+                self.settings.fuzzy_bright_peak_full,
             )
 
             highlight_brightness = bright_high * 0.7 + bright_peak * 0.3
@@ -429,9 +395,8 @@ class CameraHighlightExposureController:
     ) -> float:
         return 1.0 - cls._rising_membership(value, full_until, ends_at)
 
-    @classmethod
-    def _smooth_control_state(cls, previous: float, current: float) -> float:
-        alpha = cls._FUZZY_STATE_ALPHA
+    def _smooth_control_state(self, previous: float, current: float) -> float:
+        alpha = self.settings.fuzzy_state_alpha
         return max(-1.0, min(1.0, previous * (1.0 - alpha) + current * alpha))
 
     def _can_write(
@@ -449,9 +414,9 @@ class CameraHighlightExposureController:
             self._blocked_until = 0.0
 
         interval = (
-            self._SEVERE_WRITE_INTERVAL_SECONDS
+            self.settings.severe_write_interval_seconds
             if severe
-            else self._MINIMUM_WRITE_INTERVAL_SECONDS
+            else self.settings.minimum_write_interval_seconds
         )
 
         return measured_at - self._last_write_at >= interval
@@ -475,7 +440,11 @@ class CameraHighlightExposureController:
 
         requested = self._requested_exposure(current, direction, severe=severe)
 
-        if math.isclose(requested, current, abs_tol=self._PROPERTY_TOLERANCE):
+        if math.isclose(
+            requested,
+            current,
+            abs_tol=self.settings.property_tolerance,
+        ):
             self._last_write_at = measured_at
             self._block_direction(
                 direction,
@@ -515,7 +484,9 @@ class CameraHighlightExposureController:
 
         self._last_write_at = measured_at
         self._settling_until = measured_at + (
-            self._SEVERE_SETTLING_SECONDS if severe else self._SETTLING_SECONDS
+            self.settings.severe_settling_seconds
+            if severe
+            else self.settings.settling_seconds
         )
 
     def _requested_exposure(
@@ -525,38 +496,40 @@ class CameraHighlightExposureController:
         *,
         severe: bool,
     ) -> float:
-        if current > self._ADAPTIVE_EXPOSURE_THRESHOLD:
+        if current > self.settings.adaptive_exposure_threshold:
             if direction < 0:
                 if severe:
                     step = max(
-                        self._MINIMUM_SEVERE_DARKEN_STEP,
-                        current * self._SEVERE_DARKEN_RATIO,
+                        self.settings.minimum_severe_darken_step,
+                        current * self.settings.severe_darken_ratio,
                     )
                 else:
                     step = max(
-                        self._MINIMUM_DARKEN_STEP,
-                        current * self._DARKEN_RATIO,
+                        self.settings.minimum_darken_step,
+                        current * self.settings.darken_ratio,
                     )
 
-                requested = max(1.0, current - step)
+                requested = max(
+                    self.settings.positive_exposure_floor,
+                    current - step,
+                )
             else:
                 step = max(
-                    self._MINIMUM_BRIGHTEN_STEP,
-                    current * self._BRIGHTEN_RATIO,
+                    self.settings.minimum_brighten_step,
+                    current * self.settings.brighten_ratio,
                 )
                 requested = current + step
 
             return self._clamp_exposure(float(round(requested)))
 
         return self._clamp_exposure(
-            current + direction * self._EXPOSURE_STEP,
+            current + direction * self.settings.exposure_step,
         )
 
-    @classmethod
-    def _clamp_exposure(cls, value: float) -> float:
+    def _clamp_exposure(self, value: float) -> float:
         return min(
-            cls._MAXIMUM_EXPOSURE,
-            max(cls._MINIMUM_EXPOSURE, value),
+            self.settings.maximum_exposure,
+            max(self.settings.minimum_exposure, value),
         )
 
     def _exposure_change_applied(
@@ -575,7 +548,7 @@ class CameraHighlightExposureController:
                 and not math.isclose(
                     applied,
                     pending.previous,
-                    abs_tol=self._PROPERTY_TOLERANCE,
+                    abs_tol=self.settings.property_tolerance,
                 )
             )
 
@@ -593,11 +566,11 @@ class CameraHighlightExposureController:
             clipped_change = metrics.clipped_ratio - pending.clipped_before
 
         visible_change = (
-            median_change >= self._MINIMUM_VISIBLE_RESPONSE
-            or high_change >= self._MINIMUM_VISIBLE_RESPONSE
-            or peak_change >= self._MINIMUM_VISIBLE_RESPONSE
-            or highlight_change >= self._MINIMUM_RATIO_RESPONSE
-            or clipped_change >= self._MINIMUM_RATIO_RESPONSE
+            median_change >= self.settings.minimum_visible_response
+            or high_change >= self.settings.minimum_visible_response
+            or peak_change >= self.settings.minimum_visible_response
+            or highlight_change >= self.settings.minimum_ratio_response
+            or clipped_change >= self.settings.minimum_ratio_response
         )
 
         return property_changed or visible_change
@@ -619,9 +592,12 @@ class CameraHighlightExposureController:
             return
 
         self._restore_native_auto_exposure()
-        self._settling_until = measured_at + self._NATIVE_AUTO_SETTLING_SECONDS
+        self._settling_until = (
+            measured_at
+            + self.settings.native_auto_settling_seconds
+        )
 
-        if self._failed_commands >= self._MAXIMUM_FAILED_COMMANDS:
+        if self._failed_commands >= self.settings.maximum_failed_commands:
             self._custom_control_available = False
             logger.warning(
                 "相機 %s 無法安全控制硬體曝光，已改用原生自動曝光。",
@@ -636,7 +612,7 @@ class CameraHighlightExposureController:
         self._blocked_direction = direction
         self._blocked_until = (
             measured_at
-            + self._BLOCKED_DIRECTION_RETRY_SECONDS
+            + self.settings.blocked_direction_retry_seconds
         )
 
     def _enable_manual_exposure(self) -> bool:
@@ -651,7 +627,11 @@ class CameraHighlightExposureController:
             return False
 
         backend = str(self._backend or "").upper()
-        values = (0.0, 0.25) if backend == "MSMF" else (0.25, 0.0)
+        values = (
+            self.settings.msmf_manual_exposure_modes
+            if backend == "MSMF"
+            else self.settings.default_manual_exposure_modes
+        )
 
         for value in values:
             if self._set_property(auto_property, value):
@@ -669,7 +649,11 @@ class CameraHighlightExposureController:
             return
 
         backend = str(self._backend or "").upper()
-        values = (1.0, 0.75) if backend == "MSMF" else (0.75, 1.0)
+        values = (
+            self.settings.msmf_auto_exposure_modes
+            if backend == "MSMF"
+            else self.settings.default_auto_exposure_modes
+        )
 
         for value in values:
             if self._set_property(auto_property, value):
@@ -709,7 +693,10 @@ class CameraHighlightExposureController:
 
         try:
             sampled = np.asarray(
-                metering_image[::self._SAMPLE_STRIDE, ::self._SAMPLE_STRIDE],
+                metering_image[
+                    ::self.settings.sample_stride,
+                    ::self.settings.sample_stride,
+                ],
                 dtype=np.float32,
             )
         except Exception:
@@ -731,8 +718,12 @@ class CameraHighlightExposureController:
             median=float(np.percentile(luminance, 50.0)),
             high=float(np.percentile(luminance, 90.0)),
             peak=float(np.percentile(luminance, 99.0)),
-            highlight_ratio=float(np.mean(luminance >= self._HIGHLIGHT_LEVEL)),
-            clipped_ratio=float(np.mean(luminance >= self._CLIPPED_LEVEL)),
+            highlight_ratio=float(
+                np.mean(luminance >= self.settings.highlight_level)
+            ),
+            clipped_ratio=float(
+                np.mean(luminance >= self.settings.clipped_level)
+            ),
         )
 
     def _metering_image(self, image: Any) -> Any | None:
@@ -778,17 +769,25 @@ class CameraHighlightExposureController:
             return left, top, right, bottom
 
         horizontal_inset = int(
-            round(image_width * self._METERING_HORIZONTAL_INSET_RATIO)
+            round(
+                image_width
+                * self.settings.metering_horizontal_inset_ratio
+            )
         )
         horizontal_inset = min(
             max(0, horizontal_inset),
             max(0, image_width // 2 - 1),
         )
 
-        top = (
-            image_height // 2
-            if self.camera_id in self._LOWER_HALF_METERING_CAMERAS
-            else 0
+        top = min(
+            image_height - 1,
+            max(
+                0,
+                int(round(
+                    image_height
+                    * self.metering_vertical_start_ratio
+                )),
+            ),
         )
 
         return horizontal_inset, top, image_width - horizontal_inset, image_height
@@ -853,7 +852,7 @@ class CameraHighlightExposureController:
         image_height = int(shape[0])
         image_width = int(shape[1])
         metering_image = image[top:bottom, left:right]
-        stride = self._HIGHLIGHT_SAMPLE_STRIDE
+        stride = self.settings.highlight_sample_stride
 
         try:
             sampled = np.asarray(
@@ -876,7 +875,7 @@ class CameraHighlightExposureController:
             luminance = sampled
 
         mask = np.asarray(
-            luminance >= self._HIGHLIGHT_LEVEL,
+            luminance >= self.settings.highlight_level,
             dtype=np.uint8,
         )
 
@@ -899,7 +898,10 @@ class CameraHighlightExposureController:
 
         minimum_area = max(
             4,
-            int(round(mask.size * self._MINIMUM_HIGHLIGHT_AREA_RATIO)),
+            int(round(
+                mask.size
+                * self.settings.minimum_highlight_area_ratio
+            )),
         )
 
         components: list[tuple[int, int, int, int, int]] = []
@@ -933,7 +935,7 @@ class CameraHighlightExposureController:
             component_top,
             component_width,
             component_height,
-        ) in components[:self._MAXIMUM_HIGHLIGHT_REGIONS]:
+        ) in components[:self.settings.maximum_highlight_regions]:
             region_left = max(left, left + (component_left - 1) * stride)
             region_top = max(top, top + (component_top - 1) * stride)
             region_right = min(
@@ -1006,16 +1008,15 @@ class CameraHighlightExposureController:
             clipped_ratio=sum(item.clipped_ratio for item in metrics) / count,
         )
 
-    @classmethod
     def _smooth_metrics(
-        cls,
+        self,
         previous: _ExposureMetrics | None,
         current: _ExposureMetrics,
     ) -> _ExposureMetrics:
         if previous is None:
             return current
 
-        alpha = cls._EMA_ALPHA
+        alpha = self.settings.metric_ema_alpha
         retained = 1.0 - alpha
 
         return _ExposureMetrics(

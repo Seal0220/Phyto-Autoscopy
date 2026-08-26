@@ -1,4 +1,78 @@
 {
+  "camera_control": {
+    "pixel_format": "MJPG",
+    "buffer_size": 1,
+    "open_retry_seconds": 1.0,
+    "maximum_open_retry_seconds": 30.0,
+    "read_failure_limit": 3,
+    "read_failure_retry_seconds": 0.1,
+    "frame_wait_seconds": 3.0,
+    "stale_frame_minimum_seconds": 1.0,
+    "stale_frame_periods": 3.0,
+    "close_timeout_seconds": 2.0,
+    "fps_smoothing_factor": 0.25,
+    "stream_startup_timeout_seconds": 10.0,
+    "stream_recovery_grace_seconds": 30.0,
+    "stream_retry_seconds": 1.0,
+    "exposure": {
+      "enabled": true,
+      "measurement_window_seconds": 1.0,
+      "metric_ema_alpha": 0.25,
+      "fuzzy_state_alpha": 0.25,
+      "sample_stride": 8,
+      "highlight_level": 248.0,
+      "clipped_level": 250.0,
+      "metering_horizontal_inset_ratio": 0.08,
+      "acceptable_highlight_ratio": 0.3,
+      "highlight_warning_full_ratio": 0.45,
+      "severe_highlight_ratio": 0.5,
+      "severe_clipped_ratio": 0.4,
+      "highlight_detection_interval_seconds": 0.5,
+      "highlight_sample_stride": 4,
+      "minimum_highlight_area_ratio": 0.001,
+      "maximum_highlight_regions": 8,
+      "fuzzy_dark_median_full": 65.0,
+      "fuzzy_dark_median_none": 95.0,
+      "fuzzy_dark_high_full": 125.0,
+      "fuzzy_dark_high_none": 175.0,
+      "fuzzy_dark_peak_full": 185.0,
+      "fuzzy_dark_peak_none": 225.0,
+      "fuzzy_bright_median_none": 135.0,
+      "fuzzy_bright_median_full": 175.0,
+      "fuzzy_bright_high_none": 205.0,
+      "fuzzy_bright_high_full": 240.0,
+      "fuzzy_bright_peak_none": 240.0,
+      "fuzzy_bright_peak_full": 253.0,
+      "fuzzy_brighten_threshold": 0.55,
+      "fuzzy_darken_threshold": -0.4,
+      "minimum_write_interval_seconds": 3.0,
+      "severe_write_interval_seconds": 0.75,
+      "settling_seconds": 1.5,
+      "severe_settling_seconds": 0.75,
+      "native_auto_settling_seconds": 1.0,
+      "exposure_step": 1.0,
+      "minimum_exposure": -20.0,
+      "maximum_exposure": 100.0,
+      "adaptive_exposure_threshold": 16.0,
+      "positive_exposure_floor": 1.0,
+      "darken_ratio": 0.08,
+      "minimum_darken_step": 2.0,
+      "severe_darken_ratio": 0.18,
+      "minimum_severe_darken_step": 5.0,
+      "brighten_ratio": 0.05,
+      "minimum_brighten_step": 2.0,
+      "property_tolerance": 0.25,
+      "minimum_visible_response": 4.0,
+      "minimum_ratio_response": 0.015,
+      "maximum_failed_commands": 2,
+      "maximum_msmf_unverified_commands": 8,
+      "blocked_direction_retry_seconds": 15.0,
+      "msmf_manual_exposure_modes": [0.0, 0.25],
+      "default_manual_exposure_modes": [0.25, 0.0],
+      "msmf_auto_exposure_modes": [1.0, 0.75],
+      "default_auto_exposure_modes": [0.75, 1.0]
+    }
+  },
   "cameras": {
     "top": {
       "device_name": "CHLOROCULUS EYE-TOP",
@@ -10,7 +84,8 @@
       "jpeg_quality": 100,
       "enabled": true,
       "installation_height_mm": null,
-      "horizontal_distance_to_origin_mm": null
+      "horizontal_distance_to_origin_mm": null,
+      "metering_vertical_start_ratio": 0.0
     },
     "side": {
       "device_name": "CHLOROCULUS EYE-SIDE",
@@ -22,7 +97,8 @@
       "jpeg_quality": 100,
       "enabled": false,
       "installation_height_mm": null,
-      "horizontal_distance_to_origin_mm": null
+      "horizontal_distance_to_origin_mm": null,
+      "metering_vertical_start_ratio": 0.5
     },
     "rotating": {
       "device_name": "CHLOROCULUS EYE-ARM",
@@ -34,7 +110,8 @@
       "jpeg_quality": 100,
       "enabled": false,
       "arm_height_mm": null,
-      "horizontal_distance_to_origin_mm": null
+      "horizontal_distance_to_origin_mm": null,
+      "metering_vertical_start_ratio": 0.5
     }
   }
 }

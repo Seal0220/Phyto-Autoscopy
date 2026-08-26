@@ -9,8 +9,6 @@ from app.core.exceptions import CameraError
 
 logger = logging.getLogger(__name__)
 
-FRAME_RECOVERY_GRACE_SECONDS = 30.0
-
 
 class ImagePreviewService:
     def __init__(self, camera_manager) -> None:
@@ -23,6 +21,7 @@ class ImagePreviewService:
         first_sequence: int | None = None,
         frame_undistorter=None,
     ) -> AsyncIterator[bytes]:
+        control_settings = self.camera_manager.settings.camera_control
         frame = first_frame
         sequence = first_sequence
         recovery_started_at: float | None = None
@@ -43,7 +42,7 @@ class ImagePreviewService:
                                 wait_for_frame,
                                 camera_id,
                                 after_sequence=sequence,
-                                timeout=3.0,
+                                timeout=control_settings.frame_wait_seconds,
                             )
                         else:
                             frame = await asyncio.to_thread(
@@ -58,9 +57,14 @@ class ImagePreviewService:
                         now = monotonic()
                         if recovery_started_at is None:
                             recovery_started_at = now
-                        if now - recovery_started_at >= FRAME_RECOVERY_GRACE_SECONDS:
+                        if (
+                            now - recovery_started_at
+                            >= control_settings.stream_recovery_grace_seconds
+                        ):
                             return
-                        await asyncio.sleep(1.0)
+                        await asyncio.sleep(
+                            control_settings.stream_retry_seconds
+                        )
                         continue
                     except Exception:
                         logger.exception(

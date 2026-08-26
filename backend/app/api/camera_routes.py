@@ -24,8 +24,6 @@ from app.services.schedule_lock import (
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
 
-CAMERA_STREAM_STARTUP_TIMEOUT_SECONDS = 10.0
-
 
 @router.get("", response_model=list[CameraStatus])
 def list_cameras(context: AppContext = Depends(get_context)) -> list[CameraStatus]:
@@ -67,7 +65,7 @@ async def camera_stream(
     first_frame, first_sequence = await asyncio.to_thread(
         context.camera_manager.wait_for_frame,
         camera_id,
-        timeout=CAMERA_STREAM_STARTUP_TIMEOUT_SECONDS,
+        timeout=context.settings.camera_control.stream_startup_timeout_seconds,
     )
     return StreamingResponse(
         context.image_preview_service.mjpeg_stream(
@@ -160,6 +158,9 @@ def update_camera_metering_region(
         })
         context.settings.cameras[camera_id] = candidate
         payload = {
+            "camera_control": context.settings.camera_control.model_dump(
+                mode="json"
+            ),
             "cameras": {
                 key: value.model_dump(mode="json")
                 for key, value in context.settings.cameras.items()
@@ -175,6 +176,9 @@ def update_camera_metering_region(
         except Exception:
             context.settings.cameras[camera_id] = previous
             rollback_payload = {
+                "camera_control": context.settings.camera_control.model_dump(
+                    mode="json"
+                ),
                 "cameras": {
                     key: value.model_dump(mode="json")
                     for key, value in context.settings.cameras.items()

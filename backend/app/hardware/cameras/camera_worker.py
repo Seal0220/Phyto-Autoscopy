@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from threading import Condition, Event, Lock, Thread, current_thread
 from typing import Any
 
-from app.core.config import CameraConfig
+from app.core.config import CameraConfig, CameraControlSettings
 from app.core.exceptions import CameraError
 from app.hardware.cameras.camera_identifier import open_opencv_capture
 from app.hardware.cameras.camera_types import CameraFrame
@@ -32,26 +32,30 @@ class CameraWorkerState:
 class CameraWorker:
     """Own one persistent VideoCapture and publish its newest encoded frame."""
 
-    _OPEN_RETRY_SECONDS = 1.0
-    _MAX_OPEN_RETRY_SECONDS = 30.0
-    _READ_FAILURE_LIMIT = 3
-    _FRAME_WAIT_SECONDS = 3.0
-    _CLOSE_TIMEOUT_SECONDS = 2.0
-    _FPS_SMOOTHING_FACTOR = 0.25
-
     def __init__(
         self,
         camera_id: str,
         config: CameraConfig,
         cv2_module: Any,
+        control_settings: CameraControlSettings | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.config = config.model_copy(deep=True)
+        self.control_settings = (
+            control_settings.model_copy(deep=True)
+            if control_settings is not None
+            else CameraControlSettings()
+        )
         self.cv2 = cv2_module
-        self.signature = self._config_signature(self.config)
+        self.signature = self._config_signature(
+            self.config,
+            self.control_settings,
+        )
         self._exposure_controller = CameraHighlightExposureController(
             camera_id,
             cv2_module,
+            self.control_settings.exposure,
+            self.config.metering_vertical_start_ratio,
         )
 
         self._condition = Condition(Lock())
@@ -69,7 +73,11 @@ class CameraWorker:
         self._backend: str | None = None
 
     @staticmethod
-    def _config_signature(config: CameraConfig) -> tuple[Any, ...]:
+    def _config_signature(
+        config: CameraConfig,
+        control_settings: CameraControlSettings | None = None,
+    ) -> tuple[Any, ...]:
+        controls = control_settings or CameraControlSettings()
         return (
             config.enabled,
             config.device_index,
@@ -77,6 +85,8 @@ class CameraWorker:
             config.height,
             config.capture_fps,
             config.jpeg_quality,
+            config.metering_vertical_start_ratio,
+            controls.model_dump_json(),
         )
 
     def start(self) -> None:
@@ -107,7 +117,7 @@ class CameraWorker:
             # VideoCapture.read() and release() are intentionally owned by the
             # reader thread.  Releasing from this thread while read() blocks
             # can deadlock some Windows camera drivers.
-            thread.join(timeout=self._CLOSE_TIMEOUT_SECONDS)
+            thread.join(timeout=self.control_settings.close_timeout_seconds)
             if thread.is_alive():
                 logger.warning(
                     "Camera reader did not stop within timeout: %s",
@@ -141,8 +151,10 @@ class CameraWorker:
         self,
         *,
         after_sequence: int | None = None,
-        timeout: float = _FRAME_WAIT_SECONDS,
+        timeout: float | None = None,
     ) -> tuple[CameraFrame, int]:
+        if timeout is None:
+            timeout = self.control_settings.frame_wait_seconds
         deadline = time.monotonic() + max(0.0, timeout)
         with self._condition:
             while not self._stop_event.is_set():
@@ -164,11 +176,15 @@ class CameraWorker:
     def _frame_is_current(self) -> bool:
         if self._frame is None or not self._connected:
             return False
-        maximum_age = max(1.0, 3.0 / max(1, self.config.capture_fps))
+        maximum_age = max(
+            self.control_settings.stale_frame_minimum_seconds,
+            self.control_settings.stale_frame_periods
+            / max(1, self.config.capture_fps),
+        )
         return time.monotonic() - self._frame_monotonic <= maximum_age
 
     def _run(self) -> None:
-        open_retry_seconds = self._OPEN_RETRY_SECONDS
+        open_retry_seconds = self.control_settings.open_retry_seconds
         while not self._stop_event.is_set():
             try:
                 capture, backend, error = open_opencv_capture(
@@ -184,7 +200,7 @@ class CameraWorker:
                     )
                 self._stop_event.wait(open_retry_seconds)
                 open_retry_seconds = min(
-                    self._MAX_OPEN_RETRY_SECONDS,
+                    self.control_settings.maximum_open_retry_seconds,
                     open_retry_seconds * 2,
                 )
                 continue
@@ -198,7 +214,7 @@ class CameraWorker:
                     )
                 self._stop_event.wait(open_retry_seconds)
                 open_retry_seconds = min(
-                    self._MAX_OPEN_RETRY_SECONDS,
+                    self.control_settings.maximum_open_retry_seconds,
                     open_retry_seconds * 2,
                 )
                 continue
@@ -242,9 +258,11 @@ class CameraWorker:
                                 "相機 %s 讀取失敗，正在重新連線。",
                                 self.camera_id,
                             )
-                        if read_failures >= self._READ_FAILURE_LIMIT:
+                        if read_failures >= self.control_settings.read_failure_limit:
                             break
-                        self._stop_event.wait(0.1)
+                        self._stop_event.wait(
+                            self.control_settings.read_failure_retry_seconds
+                        )
                         continue
 
                     if self._stop_event.is_set():
@@ -285,7 +303,7 @@ class CameraWorker:
                                 "相機 %s 影像編碼失敗，正在重新連線。",
                                 self.camera_id,
                             )
-                        if read_failures >= self._READ_FAILURE_LIMIT:
+                        if read_failures >= self.control_settings.read_failure_limit:
                             break
                         continue
 
@@ -311,7 +329,7 @@ class CameraWorker:
                         self._last_error = None
                         self._condition.notify_all()
                     published_frame = True
-                    open_retry_seconds = self._OPEN_RETRY_SECONDS
+                    open_retry_seconds = self.control_settings.open_retry_seconds
                     if recovery_detail not in (None, "正在連線相機。"):
                         logger.info(
                             "相機 %s 已恢復影像串流。",
@@ -336,7 +354,7 @@ class CameraWorker:
                 self._stop_event.wait(open_retry_seconds)
                 if not published_frame:
                     open_retry_seconds = min(
-                        self._MAX_OPEN_RETRY_SECONDS,
+                        self.control_settings.maximum_open_retry_seconds,
                         open_retry_seconds * 2,
                     )
 
@@ -349,9 +367,15 @@ class CameraWorker:
         fourcc_property = getattr(self.cv2, "CAP_PROP_FOURCC", None)
         fourcc_factory = getattr(self.cv2, "VideoWriter_fourcc", None)
         if fourcc_property is not None and fourcc_factory is not None:
-            properties.append((fourcc_property, fourcc_factory(*"MJPG")))
+            properties.append((
+                fourcc_property,
+                fourcc_factory(*self.control_settings.pixel_format),
+            ))
         properties.extend((
-            (getattr(self.cv2, "CAP_PROP_BUFFERSIZE", None), 1),
+            (
+                getattr(self.cv2, "CAP_PROP_BUFFERSIZE", None),
+                self.control_settings.buffer_size,
+            ),
             (getattr(self.cv2, "CAP_PROP_FRAME_WIDTH", None), self.config.width),
             (getattr(self.cv2, "CAP_PROP_FRAME_HEIGHT", None), self.config.height),
             (getattr(self.cv2, "CAP_PROP_FPS", None), self.config.capture_fps),
@@ -397,7 +421,7 @@ class CameraWorker:
             self._actual_fps = measured_fps
             return
 
-        factor = self._FPS_SMOOTHING_FACTOR
+        factor = self.control_settings.fps_smoothing_factor
         self._actual_fps = (
             self._actual_fps * (1.0 - factor)
             + measured_fps * factor

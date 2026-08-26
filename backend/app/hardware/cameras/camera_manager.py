@@ -240,7 +240,7 @@ class OpenCVCameraManager:
         sequence = worker.state().sequence
         frame, _sequence = worker.wait_for_frame(
             after_sequence=sequence,
-            timeout=3.0,
+            timeout=self.settings.camera_control.frame_wait_seconds,
         )
         return frame
 
@@ -325,15 +325,10 @@ class OpenCVCameraManager:
         self._cv2 = cv2
         return cv2
 
-    @staticmethod
-    def _signature(config: CameraConfig) -> tuple[Any, ...]:
-        return (
-            config.enabled,
-            config.device_index,
-            config.width,
-            config.height,
-            config.capture_fps,
-            config.jpeg_quality,
+    def _signature(self, config: CameraConfig) -> tuple[Any, ...]:
+        return CameraWorker._config_signature(
+            config,
+            self.settings.camera_control,
         )
 
     def _synchronize_workers(self) -> None:
@@ -433,7 +428,12 @@ class OpenCVCameraManager:
                     self._last_error[camera_id] = str(exc)
                 return
 
-            worker = CameraWorker(camera_id, config, cv2)
+            worker = CameraWorker(
+                camera_id,
+                config,
+                cv2,
+                self.settings.camera_control,
+            )
             with self._lock:
                 self._workers[camera_id] = worker
                 self._last_error[camera_id] = None
