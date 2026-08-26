@@ -200,6 +200,7 @@ class OpenCVCameraManager:
             preview_fps=config.preview_fps,
             actual_fps=getattr(state, "actual_fps", 0.0),
             exposure_value=getattr(state, "exposure_value", None),
+            brightness_value=getattr(state, "brightness_value", None),
             metering_region=(
                 {
                     "x": metering_region[0],

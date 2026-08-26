@@ -25,6 +25,7 @@ class CameraWorkerState:
     sequence: int
     actual_fps: float
     exposure_value: float | None
+    brightness_value: float | None
     metering_region: tuple[float, float, float, float] | None
     overexposed_regions: tuple[tuple[float, float, float, float], ...]
 
@@ -56,6 +57,7 @@ class CameraWorker:
             cv2_module,
             self.control_settings.exposure,
             self.config.metering_vertical_start_ratio,
+            self.config.brightness,
         )
 
         self._condition = Condition(Lock())
@@ -85,6 +87,7 @@ class CameraWorker:
             config.height,
             config.capture_fps,
             config.jpeg_quality,
+            config.brightness,
             config.metering_vertical_start_ratio,
             controls.model_dump_json(),
         )
@@ -140,6 +143,7 @@ class CameraWorker:
                 sequence=self._sequence,
                 actual_fps=round(actual_fps, 2),
                 exposure_value=exposure.exposure_value,
+                brightness_value=exposure.brightness_value,
                 metering_region=exposure.metering_region,
                 overexposed_regions=exposure.overexposed_regions,
             )

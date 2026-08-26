@@ -37,6 +37,7 @@ class CameraStatus(BaseModel):
     preview_fps: int | None = None
     actual_fps: float = Field(default=0.0, ge=0)
     exposure_value: float | None = None
+    brightness_value: float | None = Field(default=None, ge=0, le=100)
     metering_region: CameraFrameRegion | None = None
     overexposed_regions: list[CameraFrameRegion] = Field(default_factory=list)
     last_error: str | None = None
@@ -76,4 +77,5 @@ class CameraSettingsUpdate(BaseModel):
     preview_fps: int | None = Field(default=None, ge=1, le=60)
     capture_fps: int | None = Field(default=None, ge=1, le=60)
     jpeg_quality: int | None = Field(default=None, ge=1, le=100)
+    brightness: float | None = Field(default=None, ge=0, le=100)
     enabled: bool | None = None
