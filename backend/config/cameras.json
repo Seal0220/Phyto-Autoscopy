@@ -16,6 +16,8 @@
     "stream_retry_seconds": 1.0,
     "exposure": {
       "enabled": true,
+      "serialize_property_io": true,
+      "reassert_manual_exposure_on_write": true,
       "measurement_window_seconds": 1.0,
       "metric_ema_alpha": 0.25,
       "fuzzy_state_alpha": 0.25,
