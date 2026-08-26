@@ -106,11 +106,10 @@ class CameraExposureControlSettings(BaseModel):
     measurement_window_seconds: float = Field(default=1.0, gt=0, le=60)
     metric_ema_alpha: float = Field(default=0.25, gt=0, le=1)
     fuzzy_state_alpha: float = Field(default=0.25, gt=0, le=1)
-    sample_stride: int = Field(default=8, ge=1, le=64)
     highlight_level: float = Field(default=248.0, ge=0, le=255)
     clipped_level: float = Field(default=250.0, ge=0, le=255)
     metering_horizontal_inset_ratio: float = Field(default=0.08, ge=0, lt=0.5)
-    acceptable_highlight_ratio: float = Field(default=0.30, ge=0, le=1)
+    acceptable_highlight_ratio: float = Field(default=0.05, ge=0, le=1)
     highlight_warning_full_ratio: float = Field(default=0.45, ge=0, le=1)
     severe_highlight_ratio: float = Field(default=0.50, ge=0, le=1)
     severe_clipped_ratio: float = Field(default=0.40, ge=0, le=1)
@@ -118,16 +117,8 @@ class CameraExposureControlSettings(BaseModel):
     highlight_sample_stride: int = Field(default=4, ge=1, le=64)
     minimum_highlight_area_ratio: float = Field(default=0.001, gt=0, le=1)
     maximum_highlight_regions: int = Field(default=8, ge=1, le=100)
-    fuzzy_dark_median_full: float = Field(default=65.0, ge=0, le=255)
-    fuzzy_dark_median_none: float = Field(default=95.0, ge=0, le=255)
-    fuzzy_dark_high_full: float = Field(default=125.0, ge=0, le=255)
-    fuzzy_dark_high_none: float = Field(default=175.0, ge=0, le=255)
     fuzzy_dark_peak_full: float = Field(default=185.0, ge=0, le=255)
     fuzzy_dark_peak_none: float = Field(default=225.0, ge=0, le=255)
-    fuzzy_bright_median_none: float = Field(default=135.0, ge=0, le=255)
-    fuzzy_bright_median_full: float = Field(default=175.0, ge=0, le=255)
-    fuzzy_bright_high_none: float = Field(default=205.0, ge=0, le=255)
-    fuzzy_bright_high_full: float = Field(default=240.0, ge=0, le=255)
     fuzzy_bright_peak_none: float = Field(default=240.0, ge=0, le=255)
     fuzzy_bright_peak_full: float = Field(default=253.0, ge=0, le=255)
     fuzzy_brighten_threshold: float = Field(default=0.55, ge=-1, le=1)
@@ -140,12 +131,6 @@ class CameraExposureControlSettings(BaseModel):
     exposure_step: float = Field(default=1.0, gt=0)
     minimum_exposure: float = -20.0
     maximum_exposure: float = 100.0
-    brightness_step: float = Field(default=1.0, gt=0, le=100)
-    minimum_brightness: float = Field(default=0.0, ge=0, le=100)
-    maximum_brightness: float = Field(default=100.0, ge=0, le=100)
-    exposure_stable_windows_required: int = Field(default=2, ge=1, le=100)
-    brightness_darken_threshold: float = Field(default=-0.1, ge=-1, le=1)
-    brightness_brighten_threshold: float = Field(default=0.1, ge=-1, le=1)
     adaptive_exposure_threshold: float = 16.0
     positive_exposure_floor: float = Field(default=1.0, ge=0)
     darken_ratio: float = Field(default=0.08, gt=0, le=1)
@@ -160,25 +145,17 @@ class CameraExposureControlSettings(BaseModel):
     maximum_failed_commands: int = Field(default=2, ge=1, le=100)
     maximum_msmf_unverified_commands: int = Field(default=8, ge=1, le=100)
     blocked_direction_retry_seconds: float = Field(default=15.0, ge=0, le=3600)
-    msmf_manual_exposure_modes: tuple[float, ...] = (0.25, 0.0)
+    msmf_manual_exposure_modes: tuple[float, ...] = (0.0, 0.25)
     default_manual_exposure_modes: tuple[float, ...] = (0.25, 0.0)
-    msmf_auto_exposure_modes: tuple[float, ...] = (0.75, 1.0)
+    msmf_auto_exposure_modes: tuple[float, ...] = (1.0, 0.75)
     default_auto_exposure_modes: tuple[float, ...] = (0.75, 1.0)
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "CameraExposureControlSettings":
         if self.maximum_exposure <= self.minimum_exposure:
             raise ValueError("曝光上限必須大於曝光下限。")
-        if self.maximum_brightness <= self.minimum_brightness:
-            raise ValueError("亮度上限必須大於亮度下限。")
-        if self.brightness_darken_threshold >= self.brightness_brighten_threshold:
-            raise ValueError("亮度變暗門檻必須小於變亮門檻。")
         ordered_pairs = (
-            (self.fuzzy_dark_median_full, self.fuzzy_dark_median_none),
-            (self.fuzzy_dark_high_full, self.fuzzy_dark_high_none),
             (self.fuzzy_dark_peak_full, self.fuzzy_dark_peak_none),
-            (self.fuzzy_bright_median_none, self.fuzzy_bright_median_full),
-            (self.fuzzy_bright_high_none, self.fuzzy_bright_high_full),
             (self.fuzzy_bright_peak_none, self.fuzzy_bright_peak_full),
             (self.acceptable_highlight_ratio, self.highlight_warning_full_ratio),
         )
@@ -232,7 +209,6 @@ class CameraConfig(BaseModel):
     preview_fps: int = Field(default=5, ge=1, le=60)
     capture_fps: int = Field(default=10, ge=1, le=60)
     jpeg_quality: int = 95
-    brightness: float = Field(default=50.0, ge=0.0, le=100.0)
     enabled: bool = True
     installation_height_mm: float | None = Field(
         default=None,
