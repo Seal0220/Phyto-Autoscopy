@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import logging
 import math
-from contextlib import nullcontext
 from dataclasses import dataclass
-from threading import Lock, RLock
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -44,8 +43,6 @@ class _ExposureControllerStatus:
 
 
 class CameraHighlightExposureController:
-    _property_io_lock = RLock()
-
     def __init__(
         self,
         camera_id: str,
@@ -457,9 +454,7 @@ class CameraHighlightExposureController:
             return
 
         backend = str(self._backend or "").upper()
-        manual_enabled = self._enable_manual_exposure(
-            force=self.settings.reassert_manual_exposure_on_write,
-        )
+        manual_enabled = self._enable_manual_exposure()
 
         if not manual_enabled and backend != "MSMF":
             self._register_command_failure(measured_at, direction)
@@ -468,9 +463,6 @@ class CameraHighlightExposureController:
         if not self._set_property(self._exposure_property, requested):
             self._register_command_failure(measured_at, direction)
             return
-
-        if self.settings.reassert_manual_exposure_on_write:
-            self._enable_manual_exposure(force=True)
 
         self._manual_exposure = True
         self._current_exposure = requested
@@ -606,9 +598,9 @@ class CameraHighlightExposureController:
         )
 
         if self._failed_commands >= self.settings.maximum_failed_commands:
-            self._failed_commands = 0
+            self._custom_control_available = False
             logger.warning(
-                "相機 %s 暫時無法確認硬體曝光變化，保留原生自動曝光並持續重試。",
+                "相機 %s 無法安全控制硬體曝光，已改用原生自動曝光。",
                 self.camera_id,
             )
 
@@ -623,8 +615,8 @@ class CameraHighlightExposureController:
             + self.settings.blocked_direction_retry_seconds
         )
 
-    def _enable_manual_exposure(self, *, force: bool = False) -> bool:
-        if self._manual_exposure and not force:
+    def _enable_manual_exposure(self) -> bool:
+        if self._manual_exposure:
             return True
 
         if self._capture is None:
@@ -675,13 +667,7 @@ class CameraHighlightExposureController:
             return False
 
         try:
-            lock = (
-                self._property_io_lock
-                if self.settings.serialize_property_io
-                else nullcontext()
-            )
-            with lock:
-                return bool(self._capture.set(property_id, value))
+            return bool(self._capture.set(property_id, value))
         except Exception:
             return False
 
@@ -690,13 +676,7 @@ class CameraHighlightExposureController:
             return None
 
         try:
-            lock = (
-                self._property_io_lock
-                if self.settings.serialize_property_io
-                else nullcontext()
-            )
-            with lock:
-                value = float(self._capture.get(self._exposure_property))
+            value = float(self._capture.get(self._exposure_property))
         except Exception:
             return None
 

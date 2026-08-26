@@ -103,8 +103,6 @@ class CameraExposureControlSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    serialize_property_io: bool = True
-    reassert_manual_exposure_on_write: bool = True
     measurement_window_seconds: float = Field(default=1.0, gt=0, le=60)
     metric_ema_alpha: float = Field(default=0.25, gt=0, le=1)
     fuzzy_state_alpha: float = Field(default=0.25, gt=0, le=1)
