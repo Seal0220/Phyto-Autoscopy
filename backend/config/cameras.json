@@ -58,15 +58,67 @@
       "maximum_failed_commands": 2,
       "maximum_msmf_unverified_commands": 8,
       "blocked_direction_retry_seconds": 15.0,
-      "msmf_manual_exposure_modes": [0.0, 0.25],
-      "default_manual_exposure_modes": [0.25, 0.0],
-      "msmf_auto_exposure_modes": [1.0, 0.75],
-      "default_auto_exposure_modes": [0.75, 1.0]
+      "msmf_manual_exposure_modes": [
+        0.0,
+        0.25
+      ],
+      "default_manual_exposure_modes": [
+        0.25,
+        0.0
+      ],
+      "msmf_auto_exposure_modes": [
+        1.0,
+        0.75
+      ],
+      "default_auto_exposure_modes": [
+        0.75,
+        1.0
+      ]
     }
   },
   "cameras": {
     "top": {
       "device_name": "CHLOROCULUS EYE-TOP",
+      "device_index": 1,
+      "width": 1280,
+      "height": 960,
+      "preview_fps": 15,
+      "capture_fps": 15,
+      "jpeg_quality": 100,
+      "enabled": true,
+      "installation_height_mm": null,
+      "horizontal_distance_to_origin_mm": null,
+      "arm_height_mm": null,
+      "metering_region": {
+        "x": 0.43125,
+        "y": 0.405208,
+        "width": 0.140276,
+        "height": 0.173958
+      },
+      "metering_vertical_start_ratio": 0.0
+    },
+    "side": {
+      "device_name": "CHLOROCULUS EYE-SIDE",
+      "device_index": 2,
+      "width": 1280,
+      "height": 960,
+      "preview_fps": 15,
+      "capture_fps": 15,
+      "jpeg_quality": 100,
+      "enabled": true,
+      "installation_height_mm": null,
+      "horizontal_distance_to_origin_mm": null,
+      "arm_height_mm": null,
+      "metering_region": {
+        "x": 0.44375,
+        "y": 0.694792,
+        "width": 0.095262,
+        "height": 0.234375
+      },
+      "metering_vertical_start_ratio": 0.5
+    },
+    "rotating": {
+      "device_name": "CHLOROCULUS EYE-ARM",
       "device_index": 0,
       "width": 1280,
       "height": 960,
@@ -76,32 +128,13 @@
       "enabled": true,
       "installation_height_mm": null,
       "horizontal_distance_to_origin_mm": null,
-      "metering_vertical_start_ratio": 0.0
-    },
-    "side": {
-      "device_name": "CHLOROCULUS EYE-SIDE",
-      "device_index": null,
-      "width": 1280,
-      "height": 960,
-      "preview_fps": 15,
-      "capture_fps": 15,
-      "jpeg_quality": 100,
-      "enabled": false,
-      "installation_height_mm": null,
-      "horizontal_distance_to_origin_mm": null,
-      "metering_vertical_start_ratio": 0.5
-    },
-    "rotating": {
-      "device_name": "CHLOROCULUS EYE-ARM",
-      "device_index": null,
-      "width": 1280,
-      "height": 960,
-      "preview_fps": 15,
-      "capture_fps": 15,
-      "jpeg_quality": 100,
-      "enabled": false,
       "arm_height_mm": null,
-      "horizontal_distance_to_origin_mm": null,
+      "metering_region": {
+        "x": 0.398055,
+        "y": 0.609375,
+        "width": 0.159757,
+        "height": 0.263542
+      },
       "metering_vertical_start_ratio": 0.5
     }
   }
