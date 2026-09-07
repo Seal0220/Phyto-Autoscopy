@@ -395,12 +395,10 @@ export default function CameraGuideOverlay({
             y={region.y * sourceHeight}
             width={region.width * sourceWidth}
             height={region.height * sourceHeight}
-            rx={Math.max(2, Math.min(sourceWidth, sourceHeight) * 0.005)}
             fill="none"
             stroke="#34d399"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
-            className="drop-shadow-[0_0_4px_rgba(52,211,153,0.95)]"
           />
         ))}
         {exposureVisible && exposureEditable
