@@ -6,12 +6,33 @@ export default function AnalysisSetupProgress({
   locked = false,
   onStepChange,
 }) {
+  const current = ANALYSIS_SETUP_STEPS.find((step) => step.id === currentStep);
+
   return (
     <nav
-      className="min-w-0 overflow-x-auto"
+      className="min-w-0"
       aria-label="新增分析步驟"
     >
-      <ol className="grid min-w-144 grid-cols-4 gap-2">
+      <div className="grid gap-2 min-[720px]:hidden">
+        <div className="flex items-center justify-between gap-3 text-xs font-black">
+          <span className="text-emerald-200">第 {currentStep} / {ANALYSIS_SETUP_STEPS.length} 步</span>
+          <span className="text-neutral-200">{current?.label}</span>
+        </div>
+        <div
+          className="h-1.5 overflow-hidden rounded-full bg-black/25"
+          role="progressbar"
+          aria-label="建立分析步驟"
+          aria-valuemin={1}
+          aria-valuemax={ANALYSIS_SETUP_STEPS.length}
+          aria-valuenow={currentStep}
+        >
+          <div
+            className="h-full rounded-full bg-emerald-300 transition-[width] duration-200 motion-reduce:transition-none"
+            style={{ width: `${currentStep / ANALYSIS_SETUP_STEPS.length * 100}%` }}
+          />
+        </div>
+      </div>
+      <ol className="hidden grid-cols-4 gap-2 min-[720px]:grid">
         {ANALYSIS_SETUP_STEPS.map((step) => {
           const current = step.id === currentStep;
           const reached = step.id <= highestStep;

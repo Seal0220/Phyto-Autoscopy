@@ -90,9 +90,14 @@ def _hypothesis_from_seed(
         rejection_threshold_px=rejection_threshold_px,
     )
     point = seed_result.point
-    observations: list[tuple[str, TipCandidate2D]] = []
-    observation_views: list[TipCandidateView] = []
-    for view in views:
+    observations: list[tuple[str, TipCandidate2D]] = [
+        (view.view_id, candidate)
+        for view, candidate in zip(selected_views, seed_candidates)
+    ]
+    observation_views: list[TipCandidateView] = list(selected_views)
+    for index, view in enumerate(views):
+        if index in seed_indices:
+            continue
         pixel = _project(view.projection_matrix, point)
         if pixel is None:
             continue
@@ -134,6 +139,8 @@ def _hypothesis_from_seed(
     )
     mean_error = float(np.mean(errors[used]))
     maximum_error = float(np.max(errors[used]))
+    if maximum_error > rejection_threshold_px:
+        return None
     observation_confidence = float(np.mean([
         candidate.confidence * candidate.visibility_confidence
         for (_, candidate), keep in zip(observations, used)
@@ -169,10 +176,17 @@ def triangulate_tip_hypotheses(
     maximum_candidates_per_view: int = 6,
     maximum_hypotheses: int = 24,
 ) -> tuple[TriangulatedTipHypothesis, ...]:
-    usable = [item for item in views if item.candidates]
+    camera_order = {"top": 0, "side": 1, "rotating": 2}
+    usable = sorted(
+        (item for item in views if item.candidates),
+        key=lambda item: (camera_order.get(item.camera_id, 3), item.view_id),
+    )
     if len(usable) < 2:
         return ()
     hypotheses: list[TriangulatedTipHypothesis] = []
+    # All camera pairs can seed a hypothesis. This keeps rotating observations
+    # active when one fixed-view tip is occluded instead of using them only as
+    # a local verification pass after fixed stereo.
     for first_index, second_index in combinations(range(len(usable)), 2):
         first = usable[first_index]
         second = usable[second_index]
@@ -196,22 +210,27 @@ def triangulate_tip_hypotheses(
                 continue
             if hypothesis is None:
                 continue
-            if any(
-                np.linalg.norm(
-                    hypothesis.point_world_mm - existing.point_world_mm
-                ) < 2.0
-                for existing in hypotheses
-            ):
-                continue
             hypotheses.append(hypothesis)
     hypotheses.sort(
         key=lambda item: (
+            -sum(item.used_observations),
             -item.confidence,
             item.mean_error_px,
-            -len(item.observations),
         )
     )
-    return tuple(hypotheses[:maximum_hypotheses])
+    distinct: list[TriangulatedTipHypothesis] = []
+    for hypothesis in hypotheses:
+        if any(
+            np.linalg.norm(
+                hypothesis.point_world_mm - existing.point_world_mm
+            ) < 2.0
+            for existing in distinct
+        ):
+            continue
+        distinct.append(hypothesis)
+        if len(distinct) >= maximum_hypotheses:
+            break
+    return tuple(distinct)
 
 
 __all__ = [

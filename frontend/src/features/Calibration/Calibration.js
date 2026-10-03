@@ -13,7 +13,6 @@ import {
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import CalibrationBoardSettings from "./components/CalibrationBoardSettings";
-import CalibrationArucoReference from "./components/CalibrationArucoReference";
 import CalibrationIntrinsics from "./components/CalibrationIntrinsics";
 import useUnifiedCalibration from "./hooks/useUnifiedCalibration";
 import { calibrationLockState } from "./lib/calibrationUtils";
@@ -168,7 +167,7 @@ export default function Calibration() {
 
   return (
     <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
-        <div className="grid min-w-0 gap-4 min-[981px]:grid-cols-2">
+        <div className="grid min-w-0 gap-4">
           <Panel aria-label="校正板">
             <PanelHeader title="校正板" />
 
@@ -194,13 +193,6 @@ export default function Calibration() {
             </div>
           </Panel>
 
-          <Panel aria-label="ArUco 基準">
-            <PanelHeader title="ArUco 基準" />
-
-            <CalibrationArucoReference
-              onNotify={showNotification}
-            />
-          </Panel>
         </div>
 
         <Panel aria-label="內部參數">

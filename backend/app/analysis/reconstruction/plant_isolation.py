@@ -175,7 +175,7 @@ def classify_plant_points(
                 if radial_limit is not None
                 else "unavailable"
             ),
-            "coordinate_space": "aruco_world_mm",
+            "coordinate_space": "metric_world_mm",
             "classification_evidence": "spatial+multiview_mask",
         },
     )
@@ -297,7 +297,7 @@ def isolate_plant_point_cloud(
             "final_plant_point_count": int(len(filtered)),
             "final_background_point_count": int(background_point_count),
             "retained_ratio": float(len(filtered) / max(len(points), 1)),
-            "coordinate_space": "aruco_world_mm",
+            "coordinate_space": "metric_world_mm",
             "isolation_evidence": "spatial+multiview_mask+connectivity",
         },
     )

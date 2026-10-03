@@ -1,8 +1,0 @@
-{
-  "calibration": {
-    "quality": {
-      "store_error_per_image": true,
-      "store_point_coverage": true
-    }
-  }
-}

@@ -1,4 +1,5 @@
 import InformationGrid from "@/components/data/InformationGrid";
+import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import {
   formatBooleanState,
   formatNumberWithUnit,
@@ -7,7 +8,6 @@ import {
 } from "@/lib/formatUtils";
 
 import { analysisRecordSummaryItems } from "../lib/analysisUtils";
-import InnerPanel from "@/components/panels/InnerPanel";
 
 export default function AnalysisCaptureConfiguration({
   configuration = {},
@@ -78,24 +78,34 @@ export default function AnalysisCaptureConfiguration({
         tone: "neutral",
       },
     ];
-  const items = [
-    ...analysisRecordSummaryItems(record),
-    ...configurationItems,
-  ];
-
   return (
-    <InnerPanel >
+    <div className="grid min-w-0 gap-3">
+      <SubsectionHeader
+        title="紀錄摘要"
+        titleMode={1}
+      />
       <InformationGrid
-        className="border-none p-0! m-0!"
-        items={items.map((item) => ({
+        items={analysisRecordSummaryItems(record).map((item) => ({
           ...item,
           truncate: true,
         }))}
-        rows={4}
-        border="both"
+        rows={2}
+        stackAtSmall
+      />
+      <SubsectionHeader
+        title="原始擷取設定"
+        description="來自此紀錄，分析時不會修改。"
+        titleMode={1}
+      />
+      <InformationGrid
+        items={configurationItems.map((item) => ({
+          ...item,
+          truncate: true,
+        }))}
+        rows={2}
         minimumColumnWidth
         scroll
       />
-    </InnerPanel>
+    </div>
   );
 }

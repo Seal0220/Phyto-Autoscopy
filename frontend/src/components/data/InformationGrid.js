@@ -90,7 +90,7 @@ export default function InformationGrid({
     <div
       className={`
         min-w-0
-        ${BORDER_CLASSES[border] || BORDER_CLASSES.top}
+        ${BORDER_CLASSES[border] ?? BORDER_CLASSES.top}
         ${scroll ? "overflow-x-auto overscroll-x-contain" : ""}
         ${className || ""}
       `}

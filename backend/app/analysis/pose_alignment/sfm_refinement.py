@@ -462,7 +462,7 @@ def fill_rotating_results(
             )
             source = "motor_prior"
             warnings.append(
-                "環繞影像特徵不足，使用同次分析的相鄰 ArUco 姿態與馬達角度補齊。"
+                "環繞影像特徵不足，使用同次分析的相鄰有效姿態與馬達角度補齊。"
             )
         camera_to_world = np.linalg.inv(predicted)
         result[index] = pose.model_copy(

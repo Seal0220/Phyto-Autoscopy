@@ -1,9 +1,10 @@
 import InformationGrid from "@/components/data/InformationGrid";
 import { StatusPill } from "@/components/panels/Panel";
 
-import { ANALYSIS_CAMERA_LABELS } from "../analysisConfig";
+import { ANALYSIS_CAMERA_LABELS } from "@/features/Analysis/analysisConfig";
 
 const POSE_SOURCE_LABELS = {
+  rig_stereo: "雙鏡頭姿態",
   aruco: "ArUco",
   feature_refined: "特徵精修",
   motor_prior: "馬達先驗",
@@ -37,6 +38,7 @@ function mean(values) {
 
 function AnalysisPoseRow({
   pose,
+  markerless,
 }) {
   const warnings = Array.isArray(pose.quality_warnings)
     ? pose.quality_warnings
@@ -65,24 +67,23 @@ function AnalysisPoseRow({
 
       <InformationGrid
         items={[
-          {
-            label: "可見標籤",
-            value: `${Array.isArray(pose.detected_marker_ids)
-              ? pose.detected_marker_ids.length
-              : 0
-            } 個`,
-          },
-          {
-            label: "偵測角點",
-            value: `${count(pose.detected_corner_count)} 個`,
-          },
-          {
-            label: "ArUco 誤差",
-            value: decimalLabel(
-              pose.aruco_reprojection_error_px,
-              "px",
-            ),
-          },
+          ...(!markerless ? [
+            {
+              label: "可見標籤",
+              value: `${Array.isArray(pose.detected_marker_ids)
+                ? pose.detected_marker_ids.length
+                : 0
+              } 個`,
+            },
+            {
+              label: "偵測角點",
+              value: `${count(pose.detected_corner_count)} 個`,
+            },
+            {
+              label: "ArUco 誤差",
+              value: decimalLabel(pose.aruco_reprojection_error_px, "px"),
+            },
+          ] : []),
           {
             label: "精修誤差",
             value: decimalLabel(
@@ -123,7 +124,7 @@ function AnalysisPoseRow({
   );
 }
 
-export default function AnalysisPoseQuality({
+export default function AnalysisRunPoseQuality({
   poses = [],
   quality,
 }) {
@@ -145,6 +146,8 @@ export default function AnalysisPoseQuality({
   const fixedCameraConsistency = Object.entries(
     quality?.fixed_camera_consistency || {},
   );
+  const markerless = quality?.world_scale?.scale_source
+    === "measured_stereo_baseline";
   const bundleAdjustment = (
     Array.isArray(quality?.rounds)
       ? quality.rounds
@@ -186,6 +189,9 @@ export default function AnalysisPoseQuality({
   const refinedPoseCount = poses.filter(
     (pose) => pose.pose_source === "feature_refined",
   ).length;
+  const stereoPoseCount = poses.filter(
+    (pose) => pose.pose_source === "rig_stereo",
+  ).length;
 
   return (
     <section
@@ -197,7 +203,7 @@ export default function AnalysisPoseQuality({
           相機姿態品質
         </h4>
         <StatusPill tone={status.tone}>
-          ArUco 對齊：{status.label}
+          {markerless ? "無標記姿態" : "ArUco 對齊"}：{status.label}
         </StatusPill>
       </div>
 
@@ -208,25 +214,38 @@ export default function AnalysisPoseQuality({
             value: `${validPoses.length} / ${poses.length}`,
             tone: invalidPoses.length > 0 ? "warning" : "success",
           },
-          {
-            label: "平均 ArUco 誤差",
-            value: decimalLabel(
-              mean(poses.map(
-                (pose) => pose.aruco_reprojection_error_px,
-              )),
-              "px",
-            ),
-          },
-          {
-            label: "ArUco 直接姿態",
-            value: `${arucoPoseCount} 張`,
-          },
+          ...(markerless ? [
+            {
+              label: "實測基線",
+              value: decimalLabel(quality.world_scale.baseline_mm, "mm", 1),
+            },
+            {
+              label: "雙鏡頭內點",
+              value: `${count(quality.world_scale.stereo_inliers)} 點`,
+            },
+            {
+              label: "雙鏡頭姿態",
+              value: `${stereoPoseCount} 張`,
+            },
+          ] : [
+            {
+              label: "平均 ArUco 誤差",
+              value: decimalLabel(
+                mean(poses.map((pose) => pose.aruco_reprojection_error_px)),
+                "px",
+              ),
+            },
+            {
+              label: "ArUco 直接姿態",
+              value: `${arucoPoseCount} 張`,
+            },
+          ]),
           {
             label: "特徵精修姿態",
             value: `${refinedPoseCount} 張`,
           },
         ]}
-        columns={4}
+        columns={markerless ? 5 : 4}
         scroll
       />
 
@@ -383,6 +402,7 @@ export default function AnalysisPoseQuality({
               <AnalysisPoseRow
                 key={pose.view_id}
                 pose={pose}
+                markerless={markerless}
               />
             ))}
           </ul>

@@ -1,15 +1,13 @@
-import {
-  FiCheckCircle,
-  FiFolder,
-  FiRefreshCw,
-} from "react-icons/fi";
+import { FiRefreshCw } from "react-icons/fi";
 
+import Button from "@/components/buttons/Button";
 import InformationGrid from "@/components/data/InformationGrid";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import { TextInput } from "@/components/inputs/Input";
 import { ToggleRow } from "@/components/inputs/Toggle";
-import InnerPanel from "@/components/panels/InnerPanel";
+import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import { StatusPill } from "@/components/panels/Panel";
+import { formatNumberWithUnit } from "@/lib/formatUtils";
 
 import AnalysisCaptureConfiguration from "./AnalysisCaptureConfiguration";
 import AnalysisModeSelector from "./AnalysisModeSelector";
@@ -40,15 +38,19 @@ export default function AnalysisSetupSourcesStep({
   record,
   setup,
   scanning,
+  scanError,
+  onRescan,
   onModeSelectionChange,
   onCameraSourceChange,
 }) {
   const preview = setup.sourcePreview;
-  const previewDescription = [
-    `共 ${preview?.round_count || 0} 輪；`,
-    `${preview?.ready_round_count || 0} 輪可分析，`,
-    `${preview?.incomplete_round_count || 0} 輪不完整。`,
-  ].join(" ");
+  const previewDescription = scanning
+    ? "正在確認影像、配對與各輪可用狀態。"
+    : scanError
+      ? "掃描未完成，請重新掃描。"
+      : preview
+        ? `${preview.ready_round_count || 0} / ${preview.round_count || 0} 輪可分析。`
+        : "選擇擷取模式後會自動掃描。";
 
   return (
     <>
@@ -81,8 +83,8 @@ export default function AnalysisSetupSourcesStep({
         />
       ) : null}
 
-      <InnerPanel
-        mode="dark"
+      <section
+        className="grid gap-3 border-t border-white/15 pt-4"
         aria-labelledby="analysis-camera-selection-title"
       >
         <SubsectionHeader
@@ -116,149 +118,137 @@ export default function AnalysisSetupSourcesStep({
             );
           })}
         </div>
-      </InnerPanel>
+      </section>
 
-      <hr />
+      <hr className="border-white/15" />
       <section
         className="grid gap-4"
         aria-labelledby="analysis-round-scan-title"
       >
         <SubsectionHeader
           titleId="analysis-round-scan-title"
-          title="Round 掃描"
+          title="影像掃描"
           description={previewDescription}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            {scanning ? (
-              <StatusPill tone="warning">
-                <FiRefreshCw
-                  className="size-3.5 animate-spin"
-                  aria-hidden="true"
-                />
-                自動掃描中
-              </StatusPill>
-            ) : preview?.ready ? (
-              <StatusPill tone="success">
-                <FiCheckCircle
-                  className="size-3.5"
-                  aria-hidden="true"
-                />
-                Round 資料有效
-              </StatusPill>
-            ) : (
-              <StatusPill tone="neutral">
-                <FiFolder
-                  className="size-3.5"
-                  aria-hidden="true"
-                />
-                尚未確認
-              </StatusPill>
-            )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <StatusPill tone={scanError ? "offline" : scanning
+              ? "warning"
+              : preview?.ready
+                ? "success"
+                : preview
+                  ? "offline"
+                  : "neutral"
+            }>
+              {scanError
+                ? "掃描失敗"
+                : scanning
+                  ? "掃描中"
+                  : preview?.ready
+                    ? "資料有效"
+                    : preview
+                      ? "需處理"
+                      : "尚未掃描"
+              }
+            </StatusPill>
+            <Button
+              disabled={scanning || !setup.recordPath || setup.selectedModeIds.length === 0}
+              onClick={() => void onRescan()}
+            >
+              <FiRefreshCw
+                className={`size-4 shrink-0 ${scanning ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {scanning ? "掃描中…" : "重新掃描"}
+            </Button>
           </div>
         </SubsectionHeader>
-
-        <dl className="grid gap-3 sm:grid-cols-3">
-          {CAMERAS.map((camera) => (
-            <InnerPanel
-              key={camera.id}
-            >
-              <dt className="text-xs font-black text-neutral-200">
-                {camera.label}
-              </dt>
-              <dd className="mt-1 m-0 text-sm font-black text-neutral-100">
-                {preview?.camera_frame_counts?.[camera.id] || 0} 張 · {resolutionLabel(preview?.camera_resolutions?.[camera.id])} px
-              </dd>
-            </InnerPanel>
-          ))}
-        </dl>
 
         <InformationGrid
           items={[
             {
-              label: "Round 數量",
-              value: `${preview?.round_count || 0} 輪`,
+              label: "輪次數量",
+              value: formatNumberWithUnit(preview?.round_count, "輪"),
             },
             {
-              label: "有效 Round",
-              value: `${preview?.ready_round_count || 0} 輪`,
-              tone: preview?.ready ? "success" : "warning",
+              label: "有效輪次",
+              value: formatNumberWithUnit(preview?.ready_round_count, "輪"),
+              tone: !preview ? "neutral" : preview.ready ? "success" : "warning",
             },
             {
-              label: "不完整 Round",
-              value: `${preview?.incomplete_round_count || 0} 輪`,
-              tone: preview?.incomplete_round_count > 0
+              label: "不完整輪次",
+              value: formatNumberWithUnit(preview?.incomplete_round_count, "輪"),
+              tone: !preview ? "neutral" : preview.incomplete_round_count > 0
                 ? "warning"
                 : "success",
             },
             {
               label: "總影像數",
-              value: `${preview?.total_view_count || 0} 張`,
+              value: formatNumberWithUnit(preview?.total_view_count, "張"),
             },
           ]}
-          columns={4}
+          rows={2}
+          stackAtSmall
+        />
+
+        <InformationGrid
+          items={CAMERAS.map((camera) => ({
+            label: camera.label,
+            value: setup.cameraSources[camera.id]?.enabled
+              ? preview
+                ? `${preview.camera_frame_counts?.[camera.id] || 0} 張 · ${resolutionLabel(preview.camera_resolutions?.[camera.id])} px`
+                : "尚無資料"
+              : "未啟用",
+            tone: preview && setup.cameraSources[camera.id]?.enabled ? "success" : "neutral",
+          }))}
+          border="none"
+          rows={1}
           scroll
         />
 
         {preview?.round_readiness?.length > 0 ? (
-          <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
-            {preview.round_readiness.map((round) => (
-              <InnerPanel
-                className="gap-3 p-3"
-                key={round.round_key}
-                mode="dark"
-              >
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="min-w-0 truncate text-sm font-black text-white">
-                    {round.mode_id} / {round.round_id}
-                    {round.snapshot_id
-                      ? ` / ${round.snapshot_id}`
-                      : ""
-                    }
-                  </span>
-                  <StatusPill
-                    tone={round.errors.length > 0 ? "offline" : "success"}
-                  >
-                    {round.errors.length > 0 ? "不完整" : "可分析"}
-                  </StatusPill>
+          <DisclosurePanel
+            title={`各輪掃描明細 · ${preview.round_readiness.length} 輪`}
+          >
+            <div className="grid max-h-72 gap-3 overflow-y-auto">
+              {preview.round_readiness.map((round) => (
+                <div
+                  className="grid min-w-0 gap-2 border-b border-white/10 pb-3 last:border-b-0 last:pb-0"
+                  key={round.round_key}
+                >
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-xs font-black text-neutral-200">
+                      {round.mode_id} / {round.round_id}
+                      {round.snapshot_id ? ` / ${round.snapshot_id}` : ""}
+                    </span>
+                    <StatusPill tone={round.errors?.length ? "offline" : "success"}>
+                      {round.errors?.length ? "不完整" : "可分析"}
+                    </StatusPill>
+                  </div>
+                  <InformationGrid
+                    items={[
+                      { label: "影像", value: `${round.view_count} 張` },
+                      { label: "俯視", value: `${round.top_view_count} 張` },
+                      { label: "側視", value: `${round.side_view_count} 張` },
+                      { label: "旋臂", value: `${round.rotating_view_count} 張` },
+                      {
+                        label: "角度覆蓋",
+                        value: round.angular_coverage_deg === null
+                          ? "不適用"
+                          : `${round.angular_coverage_deg}°`,
+                      },
+                      {
+                        label: "捕捉時間",
+                        value: formatNumberWithUnit(round.duration_seconds, "秒"),
+                      },
+                    ]}
+                    border="none"
+                    rows={2}
+                    scroll
+                  />
                 </div>
-                <InformationGrid
-                  items={[
-                    {
-                      label: "影像",
-                      value: `${round.view_count} 張`,
-                    },
-                    {
-                      label: "俯視",
-                      value: `${round.top_view_count} 張`,
-                    },
-                    {
-                      label: "側視",
-                      value: `${round.side_view_count} 張`,
-                    },
-                    {
-                      label: "旋臂",
-                      value: `${round.rotating_view_count} 張`,
-                    },
-                    {
-                      label: "角度覆蓋",
-                      value: round.angular_coverage_deg === null
-                        ? "不適用"
-                        : `${round.angular_coverage_deg}°`,
-                    },
-                    {
-                      label: "捕捉時間",
-                      value: round.duration_seconds === null
-                        ? "尚無資料"
-                        : `${round.duration_seconds.toFixed(2)} 秒`,
-                    },
-                  ]}
-                  border="none"
-                  columns={3}
-                  scroll
-                />
-              </InnerPanel>
-            ))}
-          </div>
+              ))}
+            </div>
+          </DisclosurePanel>
         ) : null}
       </section>
     </>

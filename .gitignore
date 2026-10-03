@@ -6,6 +6,15 @@ __pycache__/
 venv/
 .env
 backend/data/
+backend/config/*.json
+/data/*
+!/data/captures/
+!/data/calibration/
+!/data/analysis/
+!/data/database/
+!/data/logs/
+!/data/snapshots/
+!/data/temp/
 data/captures/*
 data/calibration/*
 data/analysis/*

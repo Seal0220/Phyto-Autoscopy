@@ -5,6 +5,11 @@ import numpy as np
 from app.analysis.reconstruction.multiview import (
     robust_multiview_triangulate,
 )
+from app.analysis.tip.candidate_detector import TipCandidate2D
+from app.analysis.tip.candidate_matcher import (
+    TipCandidateView,
+    triangulate_tip_hypotheses,
+)
 
 
 def _projection(center_x: float, center_y: float = 0.0) -> np.ndarray:
@@ -80,4 +85,60 @@ def test_invalid_rotating_observation_is_rejected_without_losing_baseline() -> N
 
     assert result.used_observations == (True, True, False)
     assert np.allclose(result.point, baseline.point, atol=1e-9)
+
+
+def test_moderately_wrong_rotating_view_cannot_shift_stereo_seed() -> None:
+    expected = np.asarray([20.0, -15.0, 750.0])
+    projections = (
+        _projection(0.0),
+        _projection(100.0),
+        _projection(20.0, 90.0),
+    )
+    observations = [_project(projection, expected) for projection in projections]
+    result = robust_multiview_triangulate(
+        projections,
+        (
+            observations[0],
+            observations[1],
+            (observations[2][0] + 10.0, observations[2][1]),
+        ),
+        rejection_threshold_px=8.0,
+    )
+
+    assert result.used_observations == (True, True, False)
+    assert np.allclose(result.point, expected, atol=1e-9)
+
+
+def test_tip_pairing_can_use_rotating_when_top_tip_is_occluded() -> None:
+    expected = np.asarray([20.0, -15.0, 750.0])
+    sources = (
+        ("rotating", _projection(20.0, 90.0), (20.0, 90.0)),
+        ("side", _projection(100.0), (100.0, 0.0)),
+    )
+    views = []
+    for camera_id, projection, center in sources:
+        x, y = _project(projection, expected)
+        views.append(TipCandidateView(
+            view_id=camera_id,
+            camera_id=camera_id,
+            projection_matrix=projection,
+            camera_center_world_mm=np.asarray([*center, 0.0]),
+            candidates=(TipCandidate2D(
+                candidate_id=camera_id,
+                x_px=x,
+                y_px=y,
+                confidence=1.0,
+                visibility_confidence=1.0,
+                source="synthetic",
+            ),),
+        ))
+
+    hypotheses = triangulate_tip_hypotheses(
+        views,
+        rejection_threshold_px=8.0,
+    )
+
+    assert hypotheses
+    assert np.allclose(hypotheses[0].point_world_mm, expected, atol=1e-9)
+    assert hypotheses[0].used_observations == (True, True)
 

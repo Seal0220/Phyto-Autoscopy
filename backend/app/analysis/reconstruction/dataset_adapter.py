@@ -347,7 +347,11 @@ def prepare_round_dataset(
         "round_key": round_key,
         "coordinate_space": "undistorted",
         "world_coordinate_unit": "millimetre",
-        "world_coordinate_source": "aruco_snapshot_and_refined_camera_poses",
+        "world_coordinate_source": (
+            "measured_stereo_baseline_and_feature_poses"
+            if any(view.pose_source == "rig_stereo" for view in prepared_views)
+            else "aruco_snapshot_and_refined_camera_poses"
+        ),
         "source_images_are_read_only": True,
         "plant_mask_in_training_loss": use_plant_mask_in_loss,
         "plant_mask_quality": plant_mask_quality,

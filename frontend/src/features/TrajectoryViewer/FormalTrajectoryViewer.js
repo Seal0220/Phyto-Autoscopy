@@ -13,6 +13,7 @@ import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
 import InformationGrid from "@/components/data/InformationGrid";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
+import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import InnerPanel from "@/components/panels/InnerPanel";
 import {
   Panel,
@@ -107,6 +108,12 @@ export default function FormalTrajectoryViewer({
     (item) => item.status === "completed",
   ).length;
   const modes = Object.entries(quality?.modes || {});
+  const scaleSource = run?.pose_quality?.world_scale?.scale_source;
+  const coordinateLabel = scaleSource === "measured_stereo_baseline"
+    ? "實測雙鏡頭世界座標（mm）"
+    : scaleSource === "aruco"
+      ? "ArUco 世界座標（mm）"
+      : "世界座標（mm）";
 
   return (
     <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
@@ -182,7 +189,7 @@ export default function FormalTrajectoryViewer({
             <>
               <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-5">
                 <StatusCard
-                  title="分析 Round"
+                  title="分析輪次"
                   content={rounds.length}
                   note="輪"
                 />
@@ -199,7 +206,7 @@ export default function FormalTrajectoryViewer({
                 <StatusCard
                   title="插值軌跡點"
                   content={quality.interpolated_point_count || 0}
-                  note="只補單一缺失 Round"
+                  note="只補單一缺失輪次"
                 />
                 <StatusCard
                   title="缺失區段"
@@ -207,68 +214,6 @@ export default function FormalTrajectoryViewer({
                   note="未自動插值"
                 />
               </div>
-
-              <InnerPanel>
-                <SubsectionHeader
-                  title="分析摘要"
-                  description={ANALYSIS_METHODS[run.method_name]?.description}
-                />
-                <InformationGrid
-                  items={[
-                    {
-                      label: "分析方法",
-                      value: ANALYSIS_METHODS[run.method_name]?.label || "舊版分析方法",
-                    },
-                    {
-                      label: "捕捉紀錄",
-                      value: run.record_id || "尚無資料",
-                      truncate: true,
-                    },
-                    {
-                      label: "建立時間",
-                      value: formatDateTime(run.created_at),
-                    },
-                    {
-                      label: "模型後端",
-                      value: RECONSTRUCTION_BACKEND_LABELS[
-                        run.reconstruction_backend
-                      ] || "不建立模型",
-                    },
-                    {
-                      label: "模型後端版本",
-                      value: run.reconstruction_backend_version
-                        || "尚無資料",
-                    },
-                    {
-                      label: "平均重投影誤差",
-                      value: displayNumber(
-                        run.average_reprojection_error_px,
-                        " px",
-                        3,
-                      ),
-                    },
-                    {
-                      label: "模式數量",
-                      value: `${quality.mode_count || modes.length} 種`,
-                    },
-                    {
-                      label: "軌跡點數",
-                      value: `${quality.point_count || trajectory.length} 點`,
-                    },
-                    {
-                      label: "人工修正",
-                      value: `${corrections.length} 筆`,
-                    },
-                    {
-                      label: "座標空間",
-                      value: "ArUco 世界座標（mm）",
-                    },
-                  ]}
-                  rows={2}
-                  minimumColumnWidth
-                  scroll
-                />
-              </InnerPanel>
 
               <FormalTrajectoryViewer3D trajectory={trajectory} />
 
@@ -278,6 +223,66 @@ export default function FormalTrajectoryViewer({
                 analysisId={analysisId}
                 models={models}
               />
+
+              <DisclosurePanel
+                title="分析設定與品質資料"
+                description={ANALYSIS_METHODS[run.method_name]?.description}
+              >
+                  <InformationGrid
+                    items={[
+                      {
+                        label: "分析方法",
+                        value: ANALYSIS_METHODS[run.method_name]?.label || "舊版分析方法",
+                      },
+                      {
+                        label: "捕捉紀錄",
+                        value: run.record_id || "尚無資料",
+                        truncate: true,
+                      },
+                      {
+                        label: "建立時間",
+                        value: formatDateTime(run.created_at),
+                      },
+                      {
+                        label: "模型後端",
+                        value: RECONSTRUCTION_BACKEND_LABELS[
+                          run.reconstruction_backend
+                        ] || "不建立模型",
+                      },
+                      {
+                        label: "模型後端版本",
+                        value: run.reconstruction_backend_version || "尚無資料",
+                      },
+                      {
+                        label: "平均重投影誤差",
+                        value: displayNumber(
+                          run.average_reprojection_error_px,
+                          " px",
+                          3,
+                        ),
+                      },
+                      {
+                        label: "模式數量",
+                        value: `${quality.mode_count || modes.length} 種`,
+                      },
+                      {
+                        label: "軌跡點數",
+                        value: `${quality.point_count || trajectory.length} 點`,
+                      },
+                      {
+                        label: "人工修正",
+                        value: `${corrections.length} 筆`,
+                      },
+                      {
+                        label: "座標空間",
+                        value: coordinateLabel,
+                      },
+                    ]}
+                    rows={2}
+                    minimumColumnWidth
+                    scroll
+                  />
+              </DisclosurePanel>
 
               <InnerPanel>
                 <SubsectionHeader
@@ -367,22 +372,11 @@ export default function FormalTrajectoryViewer({
                 </div>
               </InnerPanel>
 
-              <InnerPanel>
-                <SubsectionHeader
-                  title="Round 結果"
-                  description="列出每輪模型、尖端標記、來源、信心與重投影品質。"
-                />
-                <div className="max-h-[34rem] overflow-auto rounded-xl border border-white/15">
-                  <div className="grid min-w-[72rem] grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.9fr_1.2fr_0.8fr_1fr] gap-3 border-b border-white/15 bg-white/7 px-3 py-2 text-xs font-black text-neutral-300">
-                    <span>模式</span>
-                    <span>Round</span>
-                    <span>模型</span>
-                    <span>尖端標記</span>
-                    <span>信心</span>
-                    <span>三維位置</span>
-                    <span>誤差</span>
-                    <span>來源</span>
-                  </div>
+              <DisclosurePanel
+                title={`逐輪品質明細（${rounds.length} 輪）`}
+                description="模型狀態、尖端信心與三維座標。"
+              >
+                <div className="grid max-h-[38rem] gap-2 overflow-y-auto min-[760px]:grid-cols-2">
                   {rounds.map((item) => {
                     const model = modelsByRound.get(item.round_key);
                     const landmark = resolved.get(item.round_key);
@@ -393,41 +387,63 @@ export default function FormalTrajectoryViewer({
                       tone: "neutral",
                     };
                     return (
-                      <div
-                        className="grid min-w-[72rem] grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.9fr_1.2fr_0.8fr_1fr] items-center gap-3 border-b border-white/10 px-3 py-2 text-xs font-semibold text-neutral-300 last:border-b-0"
+                      <article
+                        className="grid min-w-0 gap-3 rounded-xl border border-white/15 bg-black/15 p-3"
                         key={item.round_key}
                       >
-                        <span className="truncate font-black text-white">
-                          {item.mode_id}
-                        </span>
-                        <span>{item.round_id}</span>
-                        <StatusPill tone={modelStatus.tone}>
-                          {modelStatus.label}
-                        </StatusPill>
-                        <StatusPill tone={landmark?.valid ? "success" : "offline"}>
-                          {landmark?.valid ? "有效" : "無效"}
-                        </StatusPill>
-                        <span>{displayNumber(landmark?.confidence * 100, "%", 1)}</span>
-                        <span className="truncate">
-                          {landmark?.valid
-                            ? `${displayNumber(landmark.x_mm, "", 2)}, ${displayNumber(landmark.y_mm, "", 2)}, ${displayNumber(landmark.z_mm, " mm", 2)}`
-                            : "尚無資料"
-                          }
-                        </span>
-                        <span>{displayNumber(landmark?.mean_reprojection_error_px, " px", 3)}</span>
-                        <span className="truncate">
-                          {
-                            TRAJECTORY_DETECTION_LABELS[
-                              landmark?.detection_type
-                            ]
-                            || "尚無資料"
-                          }
-                        </span>
-                      </div>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="mr-auto min-w-0 truncate text-sm font-black text-white">
+                            {item.mode_id}・{item.round_id}
+                          </span>
+                          <StatusPill tone={modelStatus.tone}>
+                            {modelStatus.label}
+                          </StatusPill>
+                          <StatusPill tone={landmark?.valid ? "success" : "offline"}>
+                            尖端{landmark?.valid ? "有效" : "無效"}
+                          </StatusPill>
+                        </div>
+                        <InformationGrid
+                          items={[
+                            {
+                              label: "標記信心",
+                              value: displayNumber(
+                                landmark?.confidence != null
+                                  ? landmark.confidence * 100
+                                  : null,
+                                "%",
+                                1,
+                              ),
+                            },
+                            {
+                              label: "重投影誤差",
+                              value: displayNumber(
+                                landmark?.mean_reprojection_error_px,
+                                " px",
+                                3,
+                              ),
+                            },
+                            {
+                              label: "標記來源",
+                              value: TRAJECTORY_DETECTION_LABELS[
+                                landmark?.detection_type
+                              ] || "尚無資料",
+                            },
+                            {
+                              label: "三維位置",
+                              value: landmark?.valid
+                                ? `${displayNumber(landmark.x_mm, "", 2)}, ${displayNumber(landmark.y_mm, "", 2)}, ${displayNumber(landmark.z_mm, " mm", 2)}`
+                                : "尚無資料",
+                            },
+                          ]}
+                          rows={2}
+                          minimumColumnWidth
+                          scroll
+                        />
+                      </article>
                     );
                   })}
                 </div>
-              </InnerPanel>
+              </DisclosurePanel>
             </>
           ) : null}
         </div>

@@ -87,6 +87,26 @@ def _project_point(
     )
 
 
+def _used_reprojection_errors(
+    point: np.ndarray,
+    observations: Sequence[tuple[str, Any]],
+    used_observations: Sequence[bool],
+    projections: Mapping[str, np.ndarray],
+) -> tuple[float, ...]:
+    errors = []
+    for (view_id, candidate), used in zip(observations, used_observations):
+        if not used:
+            continue
+        projection = projections.get(view_id)
+        pixel = _project_point(projection, point) if projection is not None else None
+        errors.append(
+            float(np.hypot(pixel[0] - candidate.x_px, pixel[1] - candidate.y_px))
+            if pixel is not None
+            else float("inf")
+        )
+    return tuple(errors)
+
+
 def _write_reprojection_overlay(
     image_path: Path,
     output_path: Path,
@@ -703,6 +723,39 @@ def analyze_round_tip(
         else 0.7
     )
     point = optimized.position_world_mm
+    reprojection_errors = _used_reprojection_errors(
+        point,
+        optimized.hypothesis.observations,
+        optimized.hypothesis.used_observations,
+        projections,
+    )
+    reprojection_exceeds_limit = (
+        not reprojection_errors
+        or not np.isfinite(reprojection_errors).all()
+        or max(reprojection_errors) > maximum_reprojection_error_px
+    )
+    refinement_rejected = reprojection_exceeds_limit and not np.array_equal(
+        point, optimized.hypothesis.point_world_mm
+    )
+    if refinement_rejected:
+        point = optimized.hypothesis.point_world_mm.copy()
+        reprojection_errors = _used_reprojection_errors(
+            point,
+            optimized.hypothesis.observations,
+            optimized.hypothesis.used_observations,
+            projections,
+        )
+        warnings.append("骨架微調超過重投影門檻，已保留雙鏡頭／多視角三角定位結果。")
+    actual_mean_error = (
+        float(np.mean(reprojection_errors))
+        if reprojection_errors and np.isfinite(reprojection_errors).all()
+        else None
+    )
+    actual_maximum_error = (
+        float(max(reprojection_errors))
+        if reprojection_errors and np.isfinite(reprojection_errors).all()
+        else None
+    )
     distance_to_model, local_model_support = (
         point_cloud_support(plant_point_cloud_path, point)
         if plant_point_cloud_path is not None
@@ -713,8 +766,14 @@ def analyze_round_tip(
         if distance_to_model is not None
         else 0.7
     )
+    reprojection_score = (
+        float(np.exp(-actual_mean_error / max(maximum_reprojection_error_px, 1.0)))
+        if actual_mean_error is not None
+        else 0.0
+    )
     confidence = float(np.clip(
-        0.78 * optimized.confidence
+        0.68 * optimized.confidence
+        + 0.10 * reprojection_score
         + 0.12 * pose_score
         + 0.10 * model_score,
         0,
@@ -723,8 +782,8 @@ def analyze_round_tip(
     valid = (
         confidence >= minimum_confidence
         and supporting_count >= minimum_supporting_views
-        and optimized.hypothesis.maximum_error_px
-        <= maximum_reprojection_error_px
+        and actual_maximum_error is not None
+        and actual_maximum_error <= maximum_reprojection_error_px
     )
     reprojection_payloads = []
     if save_reprojection_overlays:
@@ -780,11 +839,17 @@ def analyze_round_tip(
         z_mm=float(point[2]),
         confidence=confidence,
         valid=valid,
-        source=optimized.source,
+        source=(
+            optimized.source
+            if not refinement_rejected
+            else "multiview_joint"
+            if supporting_count > 2
+            else "fixed_triangulation"
+        ),
         supporting_view_ids=selected_view_ids,
         visible_view_count=supporting_count,
-        mean_reprojection_error_px=optimized.hypothesis.mean_error_px,
-        maximum_reprojection_error_px=optimized.hypothesis.maximum_error_px,
+        mean_reprojection_error_px=actual_mean_error,
+        maximum_reprojection_error_px=actual_maximum_error,
         distance_to_model_mm=distance_to_model,
         distance_to_skeleton_mm=optimized.distance_to_skeleton_mm,
         temporal_distance_mm=optimized.temporal_distance_mm,
@@ -798,9 +863,14 @@ def analyze_round_tip(
     quality = {
         **optimized.quality,
         "hypothesis_count": len(hypotheses),
-        "mean_reprojection_error_px": optimized.hypothesis.mean_error_px,
-        "maximum_reprojection_error_px": optimized.hypothesis.maximum_error_px,
+        "mean_reprojection_error_px": actual_mean_error,
+        "maximum_reprojection_error_px": actual_maximum_error,
+        "triangulation_mean_reprojection_error_px": (
+            optimized.hypothesis.mean_error_px
+        ),
+        "skeleton_refinement_rejected": refinement_rejected,
         "confidence": confidence,
+        "final_reprojection_score": reprojection_score,
         "pose_quality_score": pose_score,
         "model_surface_score": model_score,
         "local_model_supporting_point_count": local_model_support,

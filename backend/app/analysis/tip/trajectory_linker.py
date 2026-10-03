@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import re
-from typing import Any, Sequence
+from typing import Any, Collection, Sequence
 
 import numpy as np
 
@@ -28,7 +28,12 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
     normalized = value.strip().replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(normalized)
+        parsed = datetime.fromisoformat(normalized)
+        return (
+            parsed
+            if parsed.tzinfo is not None
+            else parsed.replace(tzinfo=timezone.utc)
+        )
     except ValueError:
         return None
 
@@ -38,13 +43,25 @@ def _round_number(value: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def _round_order(item: AnalysisRound) -> tuple[float, int, str]:
+def _round_order(item: AnalysisRound) -> tuple[float, int, str, str]:
     timestamp = _parse_timestamp(item.started_at)
     return (
         timestamp.timestamp() if timestamp is not None else float("inf"),
         _round_number(item.round_id),
         item.round_id,
+        item.round_key,
     )
+
+
+def order_analysis_rounds(
+    rounds: Sequence[AnalysisRound],
+) -> tuple[AnalysisRound, ...]:
+    """Use the same capture-time order for temporal selection and trajectories."""
+
+    return tuple(sorted(
+        rounds,
+        key=lambda item: (item.mode_id, *_round_order(item)),
+    ))
 
 
 def _position(landmark: TipLandmark | None) -> np.ndarray | None:
@@ -104,66 +121,81 @@ def _single_gap_interpolations(
     rounds: Sequence[AnalysisRound],
     landmarks: Sequence[TipLandmark | None],
     positions: Sequence[np.ndarray | None],
+    blocked_round_keys: Collection[str],
 ) -> dict[int, tuple[np.ndarray, float]]:
+    timestamps = [
+        _parse_timestamp(_round_timestamp(round_item, landmark))
+        for round_item, landmark in zip(rounds, landmarks)
+    ]
+    intervals = []
+    measured_speeds = []
+    for index in range(1, len(rounds)):
+        left, right = timestamps[index - 1 : index + 1]
+        if left is None or right is None:
+            continue
+        seconds = (right - left).total_seconds()
+        if seconds <= 0:
+            continue
+        intervals.append(seconds)
+        if positions[index - 1] is not None and positions[index] is not None:
+            measured_speeds.append(float(
+                np.linalg.norm(positions[index] - positions[index - 1])
+                / seconds
+            ))
+    # No independent measured motion means there is no evidence that a gap is
+    # safe to interpolate. Keep the original invalid sample in that case.
+    if not measured_speeds:
+        return {}
+    typical_interval = float(np.median(intervals))
+    speed_center = float(np.median(measured_speeds))
+    speed_mad = float(np.median(np.abs(
+        np.asarray(measured_speeds) - speed_center
+    )))
+    reasonable_speed = max(
+        3.0 * speed_center,
+        speed_center + 3.0 * 1.4826 * speed_mad,
+    )
     interpolated = {}
     for index in range(1, len(rounds) - 1):
         if positions[index] is not None:
+            continue
+        if rounds[index].round_key in blocked_round_keys:
             continue
         previous = positions[index - 1]
         following = positions[index + 1]
         if previous is None or following is None:
             continue
-
-        previous_time = _parse_timestamp(
-            _round_timestamp(
-                rounds[index - 1],
-                landmarks[index - 1],
-            )
-        )
-        current_time = _parse_timestamp(
-            _round_timestamp(
-                rounds[index],
-                landmarks[index],
-            )
-        )
-        following_time = _parse_timestamp(
-            _round_timestamp(
-                rounds[index + 1],
-                landmarks[index + 1],
-            )
-        )
-        ratio = 0.5
+        before = landmarks[index - 1]
+        after = landmarks[index + 1]
         if (
-            previous_time is not None
-            and current_time is not None
-            and following_time is not None
+            before is None or after is None
+            or not before.valid or not after.valid
+            or min(before.confidence, after.confidence) < 0.7
         ):
-            try:
-                total_seconds = (
-                    following_time - previous_time
-                ).total_seconds()
-                current_seconds = (
-                    current_time - previous_time
-                ).total_seconds()
-            except TypeError:
-                total_seconds = 0.0
-                current_seconds = 0.0
-            if total_seconds > 0 and 0 < current_seconds < total_seconds:
-                ratio = current_seconds / total_seconds
-
-        neighboring_confidences = [
-            item.confidence
-            for item in (
-                landmarks[index - 1],
-                landmarks[index + 1],
-            )
-            if item is not None and item.valid
+            continue
+        previous_time, current_time, following_time = timestamps[
+            index - 1 : index + 2
         ]
-        confidence = (
-            min(neighboring_confidences) * 0.5
-            if neighboring_confidences
-            else 0.0
-        )
+        if any(
+            value is None
+            for value in (previous_time, current_time, following_time)
+        ):
+            continue
+        first_interval = (current_time - previous_time).total_seconds()
+        second_interval = (following_time - current_time).total_seconds()
+        if (
+            first_interval <= 0 or second_interval <= 0
+            or max(first_interval, second_interval) > 3.0 * typical_interval
+        ):
+            continue
+        total_seconds = first_interval + second_interval
+        if (
+            np.linalg.norm(following - previous) / total_seconds
+            > reasonable_speed
+        ):
+            continue
+        ratio = first_interval / total_seconds
+        confidence = min(before.confidence, after.confidence) * 0.5
         interpolated[index] = (
             previous + (following - previous) * ratio,
             float(np.clip(confidence, 0.0, 1.0)),
@@ -233,6 +265,8 @@ def _nutation_metrics(
 def link_tip_trajectory(
     rounds: Sequence[AnalysisRound],
     landmarks: Sequence[TipLandmark],
+    *,
+    blocked_interpolation_round_keys: Collection[str] = (),
 ) -> TipTrajectoryResult:
     """Link markers by mode and fill only one-Round bounded gaps."""
 
@@ -247,7 +281,7 @@ def link_tip_trajectory(
     points: list[TipTrajectoryPoint] = []
     mode_quality: dict[str, dict[str, Any]] = {}
     for mode_id, mode_rounds in sorted(rounds_by_mode.items()):
-        ordered = sorted(mode_rounds, key=_round_order)
+        ordered = order_analysis_rounds(mode_rounds)
         ordered_landmarks = [
             landmark_by_round.get(item.round_key)
             for item in ordered
@@ -260,6 +294,7 @@ def link_tip_trajectory(
             ordered,
             ordered_landmarks,
             resolved_positions,
+            blocked_interpolation_round_keys,
         )
         for index, (position, _) in interpolations.items():
             resolved_positions[index] = position
@@ -522,4 +557,4 @@ def link_tip_trajectory(
     )
 
 
-__all__ = ["TipTrajectoryResult", "link_tip_trajectory"]
+__all__ = ["TipTrajectoryResult", "link_tip_trajectory", "order_analysis_rounds"]

@@ -352,9 +352,12 @@ class GraphdecoBackend:
             cancel_check=check_cancel,
         )
         quality = str(parameters.get("quality_preset") or "standard")
-        maximum_steps = _ITERATIONS.get(quality)
-        if maximum_steps is None:
+        preset_steps = _ITERATIONS.get(quality)
+        if preset_steps is None:
             raise ValueError("模型品質只能使用預覽、標準或高品質。")
+        maximum_steps = int(parameters.get("training_iterations", preset_steps))
+        if not 500 <= maximum_steps <= 100000:
+            raise ValueError("模型訓練步數必須介於 500 與 100000。")
         output_dir.mkdir(parents=True, exist_ok=True)
         log_path = output_dir / "graphdeco.log"
         python_executable = (
@@ -436,7 +439,7 @@ class GraphdecoBackend:
         metrics = {
             "quality_preset": quality,
             "training_iterations": maximum_steps,
-            "coordinate_space": "aruco_world_mm",
+            "coordinate_space": "metric_world_mm",
             "fixed_camera_poses_constant": True,
             "camera_intrinsics_constant": True,
             "reference_backend": True,

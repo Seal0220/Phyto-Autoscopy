@@ -85,15 +85,15 @@ function analysisMetadata(
     ],
     outputItems: [
       {
-        label: "Analysis Round",
+        label: "分析輪次",
         value: `${run.round_count || rounds.length} 輪`,
       },
       {
-        label: "完成 Round",
+        label: "完成輪次",
         value: `${run.completed_round_count || 0} 輪`,
       },
       {
-        label: "異常 Round",
+        label: "異常輪次",
         value: `${run.failed_round_count || 0} 輪`,
       },
       {
@@ -176,7 +176,7 @@ export default function AnalysisRunMetadata({
 
       <InnerPanel>
         <SubsectionHeader
-          title="Round 與輸出"
+          title="輪次與輸出"
           description="原始捕捉紀錄保持唯讀，衍生資料只寫入分析輸出目錄。"
         />
         <InformationGrid

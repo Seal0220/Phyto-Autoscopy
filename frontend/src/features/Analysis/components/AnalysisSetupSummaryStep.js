@@ -1,13 +1,13 @@
 import InformationGrid from "@/components/data/InformationGrid";
 import StatusCard from "@/components/cards/StatusCard";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
+import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import InnerPanel from "@/components/panels/InnerPanel";
 import { StatusPill } from "@/components/panels/Panel";
 
 import {
   ANALYSIS_CAMERA_LABELS,
   ANALYSIS_METHODS,
-  ARUCO_SAMPLE_STATUS_META,
   RECONSTRUCTION_BACKEND_LABELS,
   RECONSTRUCTION_QUALITY_LABELS,
 } from "../analysisConfig";
@@ -38,13 +38,7 @@ export default function AnalysisSetupSummaryStep({
   const buildsRoundModels = setup.method === "rotating";
   const preview = setup.sourcePreview || {};
   const intrinsics = preview.intrinsics_readiness || {};
-  const aruco = preview.aruco_readiness || {};
-  const arucoSampleStatus = ARUCO_SAMPLE_STATUS_META[
-    aruco.sample_status
-  ] || {
-    label: "尚未抽樣",
-    tone: "neutral",
-  };
+  const pose = preview.pose_readiness || {};
   const backend = preview.backend_readiness || {};
   const selectedModes = setup.availableModes.filter(
     (mode) => setup.selectedModeIds.includes(mode.id),
@@ -62,8 +56,8 @@ export default function AnalysisSetupSummaryStep({
         titleId="analysis-summary-step-title"
         title="確認並建立"
         description={buildsRoundModels
-          ? "建立前確認 Round、相機內參、ArUco 基準、模型後端與預期輸出。"
-          : "建立前確認 Round、相機內參、ArUco 基準與尖端標記輸出。"
+          ? "建立前確認 Round、相機內參、實測雙鏡頭基線、模型後端與預期輸出。"
+          : "建立前確認 Round、相機內參、實測雙鏡頭基線與尖端標記輸出。"
         }
       >
         {status ? (
@@ -99,14 +93,14 @@ export default function AnalysisSetupSummaryStep({
 
       <InnerPanel>
         <SubsectionHeader
-          title="Record 與模式"
-          description="所有通過驗證的 Round 都會納入，不使用全域影格範圍。"
+          title="紀錄與模式"
+          description="所有通過驗證的輪次都會納入分析。"
           titleMode={1}
         />
         <InformationGrid
           items={[
             {
-              label: "Record ID",
+              label: "紀錄 ID",
               value: source?.record_id || setup.recordId || "尚無資料",
               truncate: true,
             },
@@ -115,16 +109,16 @@ export default function AnalysisSetupSummaryStep({
               value: `${selectedModes.length} 種`,
             },
             {
-              label: "Round 數量",
+              label: "輪次數量",
               value: `${preview.round_count || 0} 輪`,
             },
             {
-              label: "有效 Round",
+              label: "有效輪次",
               value: `${preview.ready_round_count || 0} 輪`,
               tone: preview.ready ? "success" : "warning",
             },
             {
-              label: "不完整 Round",
+              label: "不完整輪次",
               value: `${preview.incomplete_round_count || 0} 輪`,
               tone: preview.incomplete_round_count > 0
                 ? "warning"
@@ -203,49 +197,48 @@ export default function AnalysisSetupSummaryStep({
       >
         <InnerPanel>
           <SubsectionHeader
-            title="ArUco 基準"
-            description="每張去畸變影像都以四角點估算公制世界座標姿態。"
+            title="無標記世界基準"
+            description="俯視鏡頭正下方的平台點為世界原點；影像特徵決定相對姿態，實測距離固定毫米尺度。"
             titleMode={1}
           />
           <InformationGrid
             items={[
               {
-                label: "狀態",
-                value: aruco.ready ? "可用" : "未就緒",
-                tone: aruco.ready ? "success" : "error",
+                label: "內參狀態",
+                value: pose.intrinsics_ready ? "有效" : "未就緒",
+                tone: pose.intrinsics_ready ? "success" : "error",
               },
               {
-                label: "佈局版本",
-                value: aruco.layout_version || "尚無資料",
+                label: "尺度來源",
+                value: "實測雙鏡頭基線",
               },
               {
-                label: "Dictionary",
-                value: aruco.dictionary || "尚無資料",
+                label: "基線",
+                value: displayNumber(setup.parameters.baselineMm, " mm"),
               },
               {
-                label: "Marker 數量",
-                value: displayNumber(aruco.marker_count, " 個"),
+                label: "俯視鏡頭高度",
+                value: displayNumber(setup.parameters.topHeightMm, " mm"),
               },
               {
-                label: "Marker 尺寸",
-                value: displayNumber(aruco.marker_size_mm, " mm"),
+                label: "雙鏡頭最少內點",
+                value: displayNumber(setup.parameters.minimumStereoInliers, " 點"),
               },
               {
-                label: "抽樣偵測",
-                value: arucoSampleStatus.label,
-                tone: arucoSampleStatus.tone,
+                label: "極線誤差上限",
+                value: displayNumber(setup.parameters.maximumEpipolarErrorPx, " px"),
               },
               {
-                label: "有效抽樣姿態",
-                value: aruco.sampled_image_count
-                  ? `${aruco.resolved_sample_count || 0} / ${
-                    aruco.sampled_image_count
-                  } 張`
-                  : "尚無資料",
+                label: "雙鏡頭重投影上限",
+                value: displayNumber(setup.parameters.maximumStereoReprojectionErrorPx, " px"),
+              },
+              {
+                label: "姿態估算",
+                value: "執行分析時進行",
               },
               {
                 label: "世界單位",
-                value: aruco.unit || "mm",
+                value: "mm",
               },
             ]}
             rows={4}
@@ -264,14 +257,17 @@ export default function AnalysisSetupSummaryStep({
                 {
                   label: "後端",
                   value: RECONSTRUCTION_BACKEND_LABELS[
-                    backend.backend
-                    || setup.parameters.reconstructionBackend
+                    setup.parameters.reconstructionBackend
                   ] || "尚無資料",
                 },
                 {
                   label: "狀態",
-                  value: backend.available ? "可用" : "不可用",
-                  tone: backend.available ? "success" : "error",
+                  value: backend.backend === setup.parameters.reconstructionBackend
+                    ? (backend.available ? "可用" : "不可用")
+                    : "建立時檢查",
+                  tone: backend.backend === setup.parameters.reconstructionBackend
+                    ? (backend.available ? "success" : "error")
+                    : "neutral",
                 },
                 {
                   label: "GPU",
@@ -291,6 +287,16 @@ export default function AnalysisSetupSummaryStep({
                     setup.parameters.qualityPreset
                   ] || "尚無資料",
                 },
+                {
+                  label: "訓練步數",
+                  value: displayNumber(setup.parameters.trainingIterations, " 步"),
+                },
+                ...(setup.parameters.reconstructionBackend === "gsplat_3dgs"
+                  ? [{
+                    label: "影像縮小倍率",
+                    value: `${setup.parameters.imageFactor} 倍`,
+                  }]
+                  : []),
               ]}
               rows={3}
             />
@@ -298,12 +304,10 @@ export default function AnalysisSetupSummaryStep({
         ) : null}
       </div>
 
-      <InnerPanel>
-        <SubsectionHeader
-          title="方法與輸出"
-          description="原始 Record 保持唯讀，所有衍生資料寫入獨立分析目錄。"
-          titleMode={1}
-        />
+      <DisclosurePanel
+        title="方法與輸出"
+        description="原始 Record 保持唯讀，所有衍生資料寫入獨立分析目錄。"
+      >
         <InformationGrid
           items={[
             {
@@ -403,7 +407,7 @@ export default function AnalysisSetupSummaryStep({
         <p className="m-0 text-xs font-semibold leading-5 text-neutral-400">
           輸出位置：{createdRun?.output_path || "建立後由後端產生"}
         </p>
-      </InnerPanel>
+      </DisclosurePanel>
     </section>
   );
 }

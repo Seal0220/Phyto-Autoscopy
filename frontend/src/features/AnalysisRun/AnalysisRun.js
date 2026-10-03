@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  FiRefreshCw,
-} from "react-icons/fi";
+import { FiRefreshCw } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
+import RetryMessage from "@/components/feedback/RetryMessage";
+import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import {
   Panel,
   PanelHeader,
@@ -18,6 +18,7 @@ import useNotificationsContext from "@/features/Notifications/hooks/useNotificat
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
 import AnalysisRunMetadata from "./components/AnalysisRunMetadata";
+import AnalysisRunPoseQuality from "./components/AnalysisRunPoseQuality";
 import AnalysisRunRoundOverview from "./components/AnalysisRunRoundOverview";
 import useAnalysisRun from "./hooks/useAnalysisRun";
 import {
@@ -119,18 +120,20 @@ export default function AnalysisRun({
             title="分析紀錄"
             action={(
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button
-                  disabled={loading}
-                  onClick={() => void load({
-                    confirmMutation: mutationOutcomeUnknown,
-                  })}
-                >
-                  <FiRefreshCw
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  {loading ? "讀取中…" : "重新讀取"}
-                </Button>
+                {!loadError ? (
+                  <Button
+                    disabled={loading}
+                    onClick={() => void load({
+                      confirmMutation: mutationOutcomeUnknown,
+                    })}
+                  >
+                    <FiRefreshCw
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    {loading ? "讀取中…" : "重新讀取"}
+                  </Button>
+                ) : null}
                 <Button
                   disabled={Boolean(pendingAction)}
                   onClick={() => router.push("/analysis")}
@@ -153,6 +156,16 @@ export default function AnalysisRun({
               >
                 讀取分析紀錄中…
               </div>
+            ) : null}
+
+            {loadError ? (
+              <RetryMessage
+                message={loadError}
+                onRetry={() => void load({
+                  confirmMutation: mutationOutcomeUnknown,
+                })}
+                retrying={loading}
+              />
             ) : null}
 
             {effectiveRun ? (
@@ -211,13 +224,6 @@ export default function AnalysisRun({
                   </div>
                 ) : null}
 
-                <AnalysisRunMetadata
-                  formalData={formalData}
-                  run={effectiveRun}
-                />
-
-                <AnalysisRunRoundOverview formalData={formalData} />
-
                 <AnalysisRunActions
                   exportPending={exportPending}
                   locked={locked}
@@ -240,6 +246,22 @@ export default function AnalysisRun({
                     }
                   }}
                 />
+
+                <AnalysisRunRoundOverview formalData={formalData} />
+
+                <AnalysisRunMetadata
+                  formalData={formalData}
+                  run={effectiveRun}
+                />
+
+                {effectiveRun.camera_pose_results?.length > 0 ? (
+                  <DisclosurePanel title="相機姿態與品質">
+                    <AnalysisRunPoseQuality
+                      poses={effectiveRun.camera_pose_results}
+                      quality={effectiveRun.pose_quality}
+                    />
+                  </DisclosurePanel>
+                ) : null}
               </>
             ) : null}
           </div>

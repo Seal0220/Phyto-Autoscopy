@@ -23,8 +23,14 @@ def _selection_score(
     quality: ViewImageQuality | None,
 ) -> float:
     score = quality.selection_score if quality is not None else 0.0
-    if pose is not None and pose.aruco_reprojection_error_px is not None:
-        score -= float(pose.aruco_reprojection_error_px) * 0.15
+    if pose is not None:
+        error = (
+            pose.refinement_reprojection_error_px
+            if pose.refinement_reprojection_error_px is not None
+            else pose.aruco_reprojection_error_px
+        )
+        if error is not None:
+            score -= float(error) * 0.15
     return score
 
 
@@ -114,7 +120,9 @@ def select_round_reconstruction_views(
                         pose.pose_source if pose is not None else "invalid"
                     ),
                     "pose_reprojection_error_px": (
-                        pose.aruco_reprojection_error_px
+                        pose.refinement_reprojection_error_px
+                        if pose.refinement_reprojection_error_px is not None
+                        else pose.aruco_reprojection_error_px
                         if pose is not None
                         else None
                     ),

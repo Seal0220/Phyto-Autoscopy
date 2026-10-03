@@ -14,6 +14,7 @@ import { PiHouseFill } from "react-icons/pi";
 
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
@@ -46,6 +47,8 @@ export default function AnalysisNew({
     mutationError,
     mutationRequiresRefresh,
     sourceScanning,
+    sourceScanError,
+    retrySourceScan,
     loadOptions,
     selectRecord,
     updateSetup,
@@ -66,6 +69,11 @@ export default function AnalysisNew({
   );
   const hasOptions = sources.length > 0;
   const mutationLocked = Boolean(mutationPending) || mutationRequiresRefresh;
+  const canAdvance = currentStep === 1
+    ? Boolean(setup.recordId)
+    : currentStep === 2
+      ? Boolean(setup.sourcePreview?.ready) && !sourceScanning
+      : true;
 
   useEffect(() => {
     if (loadError) showNotification(loadError, "error");
@@ -87,6 +95,10 @@ export default function AnalysisNew({
     showNotification,
     stepError,
   ]);
+
+  useEffect(() => {
+    if (sourceScanError) showNotification(sourceScanError, "error");
+  }, [sourceScanError, showNotification]);
 
   useEffect(() => {
     const errors = Array.isArray(setup.sourcePreview?.errors)
@@ -123,6 +135,8 @@ export default function AnalysisNew({
           record={selectedSource}
           setup={setup}
           scanning={sourceScanning}
+          scanError={sourceScanError}
+          onRescan={retrySourceScan}
           onCameraSourceChange={updateCameraSource}
           onModeSelectionChange={updateModeSelection}
         />
@@ -232,18 +246,6 @@ export default function AnalysisNew({
             title="新增分析"
             action={(
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {loadError ? (
-                  <Button
-                    disabled={loading}
-                    onClick={() => void loadOptions()}
-                  >
-                    <FiRefreshCw
-                      className="size-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                    {loading ? "重新讀取中…" : "重新讀取"}
-                  </Button>
-                ) : null}
                 <Button onClick={() => router.push("/analysis")}>
                   <PiHouseFill
                     className="size-4 shrink-0"
@@ -265,12 +267,20 @@ export default function AnalysisNew({
               </div>
             ) : null}
 
+            {loadError ? (
+              <RetryMessage
+                message={loadError}
+                onRetry={() => void loadOptions()}
+                retrying={loading}
+              />
+            ) : null}
+
             {(!loadError || hasOptions) && (!loading || hasOptions) ? (
               <>
                 <AnalysisSetupProgress
                   currentStep={currentStep}
                   highestStep={highestStep}
-                  locked={Boolean(createdRun)}
+                  locked={Boolean(createdRun) || mutationLocked}
                   onStepChange={goToStep}
                 />
 
@@ -308,6 +318,7 @@ export default function AnalysisNew({
                         <Button
                           className="ml-auto"
                           variant="primary"
+                          disabled={!canAdvance || mutationLocked}
                           onClick={nextStep}
                         >
                           <FiArrowRight

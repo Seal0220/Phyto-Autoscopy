@@ -69,7 +69,7 @@ export default function FormalTrajectoryViewer3D({
     [
       {
         id: "origin",
-        label: "ArUco 世界原點",
+        label: "世界原點",
         point: [0, 0, 0],
         color: "#ffffff",
       },
@@ -86,8 +86,8 @@ export default function FormalTrajectoryViewer3D({
   return (
     <InnerPanel>
       <SubsectionHeader
-        title="跨 Round 尖端標記軌跡"
-        description="每個捕捉模式使用獨立系列；無效 Round 形成缺口，不會跨模式或跨缺口連線。"
+        title="跨輪尖端標記軌跡"
+        description="每個捕捉模式使用獨立系列；無效輪次形成缺口，不會跨模式或跨缺口連線。"
       >
         <Button
           className="min-h-9 px-3 text-xs"
@@ -111,7 +111,7 @@ export default function FormalTrajectoryViewer3D({
               className="size-full"
               viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
               role="img"
-              aria-label="跨 Round 三維尖端標記軌跡"
+              aria-label="跨輪三維尖端標記軌跡"
             >
               {segments.map((segment) => (
                 <polyline
