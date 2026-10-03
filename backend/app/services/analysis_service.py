@@ -58,6 +58,7 @@ from app.analysis.run_metadata import (
     utc_now_iso,
 )
 from app.analysis.record_validator import (
+    ACTIVE_RECORD_STATUSES,
     BLOCKING_VALIDATION_ISSUE_CODES,
     CaptureRecordValidation,
     CaptureRecordValidator,
@@ -360,8 +361,8 @@ class AnalysisService:
     def _artifacts(self, run: AnalysisRun) -> AnalysisArtifacts:
         return AnalysisArtifacts.create(self._output_dir(run))
 
-    def _record_payload(self, record_id: str) -> dict[str, Any]:
-        record = self._require_record(record_id)
+    def _record_payload(self, record_id: str, record=None) -> dict[str, Any]:
+        record = record if record is not None else self._require_record(record_id)
         record_path = Path(record.record_path)
         metadata_path = record_path / "config.json"
         if not metadata_path.exists():
@@ -420,7 +421,7 @@ class AnalysisService:
         record_id: str,
         payload: Mapping[str, Any] | None = None,
     ) -> list[AnalysisSourceMode]:
-        record_payload = payload or self._record_payload(record_id)
+        record_payload = payload if payload is not None else self._record_payload(record_id)
         schedule = (
             record_payload.get("schedule")
             or record_payload.get("experiment")
@@ -621,38 +622,30 @@ class AnalysisService:
 
     def list_sources(self) -> list[AnalysisSourceSummary]:
         results = []
+        camera_counts = self.capture_repository.successful_camera_counts()
         for record in self.record_repository.list():
-            record_payload = self._record_payload(record.record_id)
+            record_payload = self._record_payload(record.record_id, record=record)
             available_modes = self._record_modes(
                 record.record_id,
                 record_payload,
             )
             capture_configuration = self._capture_configuration(record_payload)
             total_image_count = self._capture_image_count(record_payload)
-            try:
-                validation = self._validation_for_record(
-                    record.record_id,
-                )
-                full_validation = self._validation_for_record(
-                    record.record_id,
-                    method="rotating",
-                )
-                reasons = list(validation.not_ready_reasons)
-                ready = validation.ready
-                top_count = validation.top_frame_count
-                side_count = validation.side_frame_count
-                rotating_count = full_validation.rotating_frame_count
-                camera_resolutions = dict(full_validation.camera_resolutions)
-                camera_directories = dict(full_validation.camera_directories)
-            except Exception as error:
-                logger.exception("Failed to inspect analysis source %s", record.record_id)
-                reasons = [f"無法檢查紀錄：{error}"]
-                ready = False
-                top_count = 0
-                side_count = 0
-                rotating_count = 0
-                camera_resolutions = {}
-                camera_directories = {}
+            counts = camera_counts.get(record.record_id, {})
+            top_count = counts.get("top", 0)
+            side_count = counts.get("side", 0)
+            rotating_count = counts.get("rotating", 0)
+            if not total_image_count:
+                total_image_count = top_count + side_count + rotating_count
+            reasons = []
+            if record.status in ACTIVE_RECORD_STATUSES:
+                reasons.append("紀錄仍在擷取中。")
+            if not Path(record.record_path).is_dir():
+                reasons.append("找不到紀錄目錄。")
+            if not top_count:
+                reasons.append("缺少俯視角影像。")
+            if not side_count:
+                reasons.append("缺少側視角影像。")
             results.append(
                 AnalysisSourceSummary(
                     record_id=record.record_id,
@@ -664,13 +657,13 @@ class AnalysisService:
                     side_frame_count=side_count,
                     rotating_frame_count=rotating_count,
                     total_image_count=total_image_count,
-                    camera_resolutions=camera_resolutions,
-                    camera_directories=camera_directories,
+                    camera_resolutions={},
+                    camera_directories={},
                     capture_configuration=capture_configuration,
-                    ready=ready,
-                    not_ready_reasons=list(dict.fromkeys(reasons)),
+                    ready=not reasons,
+                    not_ready_reasons=reasons,
                     available_modes=available_modes,
-                    analysis_runs=self.repository.list(record.record_id),
+                    analysis_runs=[],
                 )
             )
         return results

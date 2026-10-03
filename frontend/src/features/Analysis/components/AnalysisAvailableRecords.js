@@ -25,7 +25,7 @@ export default function AnalysisAvailableRecords({
       <SubsectionHeader
         titleId="analysis-record-selection-title"
         title="選擇紀錄"
-        description="選一筆捕捉紀錄；下一步可選擇模式及分析視角。"
+        description="選一筆捕捉紀錄；選取後會掃描影像，再選擇模式及分析視角。"
       />
 
       <div
@@ -51,7 +51,7 @@ export default function AnalysisAvailableRecords({
                   </h3>
 
                   <StatusPill tone="success">
-                    {selected ? "已選擇" : "可分析"}
+                    {selected ? "已選擇" : "可選擇"}
                   </StatusPill>
                 </div>
 

@@ -285,6 +285,19 @@ def initialize_schema(database: Database) -> None:
             )
             connection.execute(
                 """
+                CREATE INDEX IF NOT EXISTS idx_captures_record_time
+                ON captures(record_id, timestamp, id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_captures_success_record_camera
+                ON captures(record_id, camera_id)
+                WHERE status='success'
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS settings_snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT NOT NULL,

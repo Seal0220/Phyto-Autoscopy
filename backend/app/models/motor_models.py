@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class MotorStatus(BaseModel):
     name: str
     controller: str
+    enabled: bool
     connected: bool
     engaged: bool
     moving: bool
@@ -21,6 +22,10 @@ class MotorStatus(BaseModel):
 
 class MoveRequest(BaseModel):
     angle_deg: float = Field(ge=-3600, le=3600)
+
+
+class MotorEnabledUpdate(BaseModel):
+    enabled: bool
 
 
 class MotorSettingsUpdate(BaseModel):

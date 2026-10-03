@@ -251,6 +251,7 @@ def default_camera_configs() -> dict[str, CameraConfig]:
 class MotorSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    enabled: bool = True
     name: str = "CHLOROCULUS_ARM_MOTOR"
     controller: str = "phidget_stepper_bipolar_hc"
     full_step_angle_deg: float = 0.9

@@ -17,6 +17,7 @@ export default function SystemStatus({
   const scheduleTone = scheduleStatusTone(scheduleState);
   const isConnected = connection === "connected";
   const motorConnected = Boolean(motor?.connected);
+  const motorEnabled = motor?.enabled !== false;
   const diskUnavailable = Boolean(system.disk?.error);
 
   return (
@@ -63,8 +64,8 @@ export default function SystemStatus({
           <div className="flex items-center justify-between gap-3 border-b border-white/15 py-2.5">
             <dt className="text-sm text-neutral-400">馬達連接</dt>
             <dd>
-              <StatusPill tone={motorConnected ? "success" : "offline"}>
-                {motorConnected ? "已連接" : "未連接"}
+              <StatusPill tone={!motorEnabled ? "neutral" : motorConnected ? "success" : "offline"}>
+                {!motorEnabled ? "已停用" : motorConnected ? "已連接" : "未連接"}
               </StatusPill>
             </dd>
           </div>

@@ -13,14 +13,17 @@ class MockMotorController:
     def __init__(self, settings: MotorSettings) -> None:
         self.settings = settings
         self.safety = MotorSafety(settings)
-        self.state = MotorRuntimeState(connected=True, command_position_deg=0.0)
+        self.state = MotorRuntimeState(command_position_deg=0.0)
         self._lock = Lock()
 
     def connect(self) -> None:
+        if not self.settings.enabled:
+            raise MotorError("馬達已停用，請先開啟啟用馬達。")
         self.state.connected = True
 
     def start(self) -> None:
-        self.connect()
+        if self.settings.enabled:
+            self.connect()
 
     def close(self) -> None:
         self.state.connected = False
@@ -31,6 +34,7 @@ class MockMotorController:
         return MotorStatus(
             name=self.settings.name,
             controller=self.settings.controller,
+            enabled=self.settings.enabled,
             connected=self.state.connected,
             engaged=self.state.engaged,
             moving=self.state.moving,
@@ -46,6 +50,8 @@ class MockMotorController:
 
     def engage(self) -> MotorStatus:
         with self._lock:
+            if not self.settings.enabled:
+                raise MotorError("馬達已停用，請先開啟啟用馬達。")
             self.state.connected = True
             self.state.engaged = True
             self.state.emergency_stopped = False
@@ -60,6 +66,8 @@ class MockMotorController:
 
     def set_origin(self) -> MotorStatus:
         with self._lock:
+            if not self.settings.enabled:
+                raise MotorError("馬達已停用，請先開啟啟用馬達。")
             if self.state.moving:
                 raise MotorError("馬達移動中，無法設定原點。")
             self.state.command_position_deg = 0.0
@@ -67,6 +75,8 @@ class MockMotorController:
 
     def move_to_angle(self, angle_deg: float) -> MotorStatus:
         with self._lock:
+            if not self.settings.enabled:
+                raise MotorError("馬達已停用，請先開啟啟用馬達。")
             self.safety.validate_angle(angle_deg)
             if self.state.emergency_stopped:
                 raise MotorError("馬達已緊急停止，請先重新啟用馬達。")

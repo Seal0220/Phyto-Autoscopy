@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from app.api.settings_routes import update_settings_group
+from app.core.config import get_config_dir, read_json_file
 from app.core.state import AppContext, get_context
 from app.hardware.motor.motor_safety import MotorSafety
-from app.models.motor_models import MotorSettingsUpdate, MotorStatus, MoveRequest
+from app.models.motor_models import MotorEnabledUpdate, MotorSettingsUpdate, MotorStatus, MoveRequest
+from app.models.settings_models import SettingsGroupUpdate
 from app.services.schedule_lock import ensure_manual_changes_allowed
 
 router = APIRouter(prefix="/api/motor", tags=["motor"])
@@ -13,6 +16,23 @@ router = APIRouter(prefix="/api/motor", tags=["motor"])
 @router.get("/status", response_model=MotorStatus)
 def motor_status(context: AppContext = Depends(get_context)) -> MotorStatus:
     return context.motor_controller.status()
+
+
+@router.post("/enabled", response_model=MotorStatus)
+def set_motor_enabled(
+    update: MotorEnabledUpdate,
+    context: AppContext = Depends(get_context),
+) -> MotorStatus:
+    with context._settings_lock:
+        payload = read_json_file(get_config_dir() / "motor.json")
+        motor_payload = dict(payload.get("motor") or {})
+        motor_payload["enabled"] = update.enabled
+        update_settings_group(
+            "motor",
+            SettingsGroupUpdate(payload={**payload, "motor": motor_payload}),
+            context,
+        )
+        return context.motor_controller.status()
 
 
 @router.post("/engage", response_model=MotorStatus)
