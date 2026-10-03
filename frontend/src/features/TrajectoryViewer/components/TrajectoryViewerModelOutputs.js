@@ -76,7 +76,7 @@ export default function TrajectoryViewerModelOutputs({
     <InnerPanel>
       <SubsectionHeader
         title="每輪模型輸出"
-        description="完整場景、植物與背景輸出會依建立分析時的輸出設定分別保存。"
+        description="每個可建模的旋臂 Round 各自建立 3DGS，不合併不同輪次；完整場景、植物與背景依輸出設定保存。"
       />
 
       {models.length ? (

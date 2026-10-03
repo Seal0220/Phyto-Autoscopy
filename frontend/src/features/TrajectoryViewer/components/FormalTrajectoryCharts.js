@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import InnerPanel from "@/components/panels/InnerPanel";
 
@@ -273,24 +277,40 @@ function MetricChart({
 export default function FormalTrajectoryCharts({
   trajectory,
 }) {
+  const [selectedMetricKey, setSelectedMetricKey] = useState(METRICS[0].key);
+  const selectedMetric = METRICS.find(
+    (metric) => metric.key === selectedMetricKey,
+  ) || METRICS[0];
   const colorByMode = formalTrajectoryModeColors(trajectory);
 
   return (
     <InnerPanel>
       <SubsectionHeader
         title="跨輪運動圖表"
-        description="各模式維持獨立系列；無效或缺失輪次會中斷線段，人工修正點以白色顯示。"
+        description="切換指標查看同一張圖；各模式維持獨立系列，缺失輪次會中斷線段。"
       />
-      <div className="grid min-w-0 gap-3 min-[980px]:grid-cols-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="軌跡圖表指標">
         {METRICS.map((metric) => (
-          <MetricChart
-            colorByMode={colorByMode}
+          <button
+            type="button"
             key={metric.key}
-            metric={metric}
-            trajectory={trajectory}
-          />
+            aria-pressed={selectedMetric.key === metric.key}
+            onClick={() => setSelectedMetricKey(metric.key)}
+            className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${
+              selectedMetric.key === metric.key
+                ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-100"
+                : "border-white/15 bg-black/15 text-neutral-300 hover:border-emerald-300/40 hover:text-white"
+            }`}
+          >
+            {metric.label}
+          </button>
         ))}
       </div>
+      <MetricChart
+        colorByMode={colorByMode}
+        metric={selectedMetric}
+        trajectory={trajectory}
+      />
       <div className="flex flex-wrap gap-3 text-xs font-semibold text-neutral-400">
         {Object.entries(colorByMode).map(([modeId, color]) => (
           <span key={modeId}>
