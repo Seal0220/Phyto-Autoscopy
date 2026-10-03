@@ -42,8 +42,6 @@ data/analysis/     每個 Analysis Run 的 Round、姿態、模型、尖端標�
 
 分析建立流程只使用已保存的捕捉紀錄：選擇 Record、擷取模式與相機視角後，自動掃描正式的 Mode／Round／Snapshot 階層。正式方法識別碼只使用：
 
-大量影像的來源掃描在後端背景執行，建立頁會顯示進度並可取消；預覽只回傳有限筆 Round 明細，避免數千張影像使單次 HTTP 回應逾時。掃描期間請勿搬移或更改該筆擷取紀錄。
-
 - `fixed`：使用俯視與側視影像建立雙鏡頭三維尖端標記與跨輪軌跡，不建立環繞三維植物模型。
 - `rotating`：保留同一 Round 的全部有效旋臂視角，與俯視、側視影像共同建立每輪三維植物模型、尖端標記及跨輪軌跡。
 
@@ -56,27 +54,6 @@ data/analysis/     每個 Analysis Run 的 Round、姿態、模型、尖端標�
 論文沒有提供、或必須依實際裝置與資料決定的參數，在 `backend/config/analysis.json` 中保持 `null`。建立分析前必須由使用者明確輸入；校正棋盤尺寸與世界座標轉換也必須使用實際量測值，不能把論文數字當成未經確認的實體規格。
 
 分析輸出是可檢查的測量結果，不直接宣稱植物具有或不具有意識，也不加入深度學習、Kalman Filter、Optical Flow 或其他不屬於本階段方法的追蹤器。
-
-### 無損影像與 GPU 掃描
-
-新拍的擷取影像與單張快照使用無損 LZW TIFF；即時預覽仍是 JPEG 串流。來源掃描可選用 NVIDIA nvImageCodec／nvTIFF 在 GPU 解碼 TIFF；沒有支援的 GPU 或未安裝套件時會回退 CPU。舊 PNG 在未轉換前仍能用 CPU 讀取。掃描結果會列出實際使用 GPU、CPU 解碼的張數，不能僅憑已安裝 CUDA 就認定掃描已使用 GPU。[NVIDIA nvImageCodec](https://github.com/NVIDIA/nvImageCodec)、[nvTIFF 格式支援](https://docs.nvidia.com/cuda/nvtiff/)。
-
-GPU 套件不是 `--setup` 的基本依賴；依該電腦的 CUDA 主版本選擇安裝其中一組：
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install "nvidia-nvimgcodec-cu12[nvtiff]"
-# 或 CUDA 13：
-.\.venv\Scripts\python.exe -m pip install "nvidia-nvimgcodec-cu13[nvtiff]"
-```
-
-既有的 PNG 擷取紀錄可使用一次性遷移工具。先停止前後端並備份 `data/`，再於專案根目錄查看計畫；確認磁碟空間足夠後才執行轉換：
-
-```powershell
-.\.venv\Scripts\python.exe backend\scripts\migrate_capture_png_to_tiff.py
-.\.venv\Scripts\python.exe backend\scripts\migrate_capture_png_to_tiff.py --apply
-```
-
-工具逐張以像素比對驗證 TIFF，保留原 PNG 以維持既有 Analysis Run 的舊路徑，並將擷取索引、SQLite 與影像命名配置更新為 TIFF。原檔及原始 SQLite／索引備份保存在 `data/migration-backups/`；轉換失敗時請勿手動刪除備份或 PNG。其他電腦的資料可在該電腦執行相同命令；非預設資料目錄可傳入 `--data-root`。遷移不會在啟動服務時自動執行。
 
 ## 啟動方式
 
