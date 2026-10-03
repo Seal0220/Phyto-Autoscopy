@@ -12,6 +12,16 @@ from typing import Any
 from app.analysis.export.json_export import write_json_atomic
 
 
+def _probe_error_message(error: BaseException) -> str:
+    detail = str(error).strip() or type(error).__name__
+    if "ninja is required" in detail.lower():
+        return (
+            "gsplat 的 CUDA 擴充套件缺少 Ninja。請使用後端的 .venv Python "
+            "執行 -m pip install ninja，重新啟動後端後再驗證分析。"
+        )
+    return f"gsplat 的 CUDA 擴充套件載入失敗：{detail}"
+
+
 def _probe_payload() -> dict[str, Any]:
     import torch
     from gsplat.rendering import rasterization
@@ -78,10 +88,7 @@ def run_probe(result_path: Path) -> int:
             {
                 "available": False,
                 "cuda_extension_loadable": False,
-                "errors": [
-                    "gsplat 的 CUDA 擴充套件載入失敗："
-                    + (str(error).strip() or type(error).__name__)
-                ],
+                "errors": [_probe_error_message(error)],
             },
         )
         return 1
