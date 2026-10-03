@@ -12,7 +12,6 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import AppSettings
-from app.core.constants import CAPTURE_IMAGE_SUFFIXES
 from app.core.exceptions import RecordError
 from app.models.record_models import RecordDetail, RecordSummary
 from app.repositories.record_repository import RecordRepository
@@ -172,6 +171,13 @@ class RecordService:
             if str(row.get("file_path") or "").strip()
         }
         rounds = []
+        indexed_round_counts = Counter(
+            part
+            for row in rows
+            if str(row.get("status") or "").strip().lower() == "success"
+            for part in Path(str(row.get("file_path") or "")).parts
+            if part.startswith("round.")
+        )
         for round_path in sorted((scope_path / "rounds").glob("round.*")):
             if not round_path.is_dir():
                 continue
@@ -184,18 +190,7 @@ class RecordService:
                 {
                     "name": round_path.name,
                     "snapshot_count": len(snapshots),
-                    "capture_count": sum(
-                        sum(
-                            1
-                            for image_path in snapshot.iterdir()
-                            if (
-                                image_path.is_file()
-                                and image_path.suffix.lower()
-                                in CAPTURE_IMAGE_SUFFIXES
-                            )
-                        )
-                        for snapshot in snapshots
-                    ),
+                    "capture_count": indexed_round_counts[round_path.name],
                 }
             )
         return {

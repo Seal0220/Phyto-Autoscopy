@@ -9,7 +9,7 @@ async function handler(request) {
     "/api/analysis",
     {
       timeoutMs: request.method === "POST"
-        ? 120_000
+        ? 900_000
         : 60_000,
     },
   );

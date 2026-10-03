@@ -15,9 +15,10 @@ async function requestAnalysisJson(
     method = "GET",
     signal,
     timeoutMs = 20_000,
+    readOnly = false,
   } = {},
 ) {
-  const isMutation = method !== "GET";
+  const isMutation = method !== "GET" && !readOnly;
 
   try {
     return await withRequestTimeout(
@@ -100,20 +101,44 @@ export function createAnalysisRun(
     body: payload,
     method: "POST",
     signal,
-    timeoutMs: 30_000,
+    timeoutMs: 900_000,
   });
 }
 
-export function previewAnalysisSources(
+export function startAnalysisSourceScan(
   payload,
   signal,
 ) {
-  return requestAnalysisJson("/api/analysis/sources/preview", {
+  return requestAnalysisJson("/api/analysis/sources/scans", {
     body: payload,
     method: "POST",
+    readOnly: true,
     signal,
-    timeoutMs: 60_000,
+    timeoutMs: 20_000,
   });
+}
+
+export function getAnalysisSourceScan(
+  scanId,
+  signal,
+) {
+  return requestAnalysisJson(
+    `/api/analysis/sources/scans/${encodeURIComponent(scanId)}`,
+    {
+      signal,
+      timeoutMs: 20_000,
+    },
+  );
+}
+
+export function cancelAnalysisSourceScan(scanId) {
+  return requestAnalysisJson(
+    `/api/analysis/sources/scans/${encodeURIComponent(scanId)}`,
+    {
+      method: "DELETE",
+      timeoutMs: 10_000,
+    },
+  );
 }
 
 export function validateAnalysisRun(
@@ -126,7 +151,7 @@ export function validateAnalysisRun(
       body: {},
       method: "POST",
       signal,
-      timeoutMs: 60_000,
+      timeoutMs: 900_000,
     },
   );
 }

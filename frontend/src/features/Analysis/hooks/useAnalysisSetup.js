@@ -20,9 +20,11 @@ import {
 } from "../analysisConfig";
 import {
   analysisMutationErrorMessage,
+  cancelAnalysisSourceScan,
   createAnalysisRun,
+  getAnalysisSourceScan,
   loadAnalysisSetupOptions,
-  previewAnalysisSources,
+  startAnalysisSourceScan,
   startAnalysisRun,
   validateAnalysisRun,
 } from "../lib/analysisApiUtils";
@@ -57,6 +59,37 @@ function sourceConfigurationsMatch(
     );
 }
 
+function waitForScanPoll(signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, 1000);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function cancelActiveSourceScan(
+  controllerRef,
+  scanIdRef,
+  reason,
+) {
+  abortRequest(controllerRef.current, reason);
+  controllerRef.current = null;
+  if (scanIdRef.current) {
+    void cancelAnalysisSourceScan(scanIdRef.current).catch(() => undefined);
+    scanIdRef.current = null;
+  }
+}
+
 export default function useAnalysisSetup({
   initialRecordId = "",
 }) {
@@ -70,6 +103,7 @@ export default function useAnalysisSetup({
   const [loadError, setLoadError] = useState("");
   const [stepError, setStepError] = useState("");
   const [sourceScanning, setSourceScanning] = useState(false);
+  const [sourceScanProgress, setSourceScanProgress] = useState(null);
   const [sourceScanError, setSourceScanError] = useState("");
   const [createdRun, setCreatedRun] = useState(null);
   const [mutationPending, setMutationPending] = useState("");
@@ -81,6 +115,7 @@ export default function useAnalysisSetup({
   const loadControllerRef = useRef(null);
   const mutationControllerRef = useRef(null);
   const sourceScanControllerRef = useRef(null);
+  const sourceScanIdRef = useRef(null);
   const sourceScanTimerRef = useRef(null);
   const setupRef = useRef(setup);
 
@@ -94,10 +129,9 @@ export default function useAnalysisSetup({
       window.clearTimeout(sourceScanTimerRef.current);
       abortRequest(loadControllerRef.current);
       abortRequest(mutationControllerRef.current);
-      abortRequest(sourceScanControllerRef.current);
+      cancelActiveSourceScan(sourceScanControllerRef, sourceScanIdRef);
       loadControllerRef.current = null;
       mutationControllerRef.current = null;
-      sourceScanControllerRef.current = null;
       sourceScanTimerRef.current = null;
     };
   }, []);
@@ -107,13 +141,15 @@ export default function useAnalysisSetup({
   }, [setup]);
 
   const performSourceScan = useCallback(async (sourceSetup) => {
-    abortRequest(
-      sourceScanControllerRef.current,
+    cancelActiveSourceScan(
+      sourceScanControllerRef,
+      sourceScanIdRef,
       "已由新的捕捉配置掃描取代。",
     );
     const controller = new AbortController();
     sourceScanControllerRef.current = controller;
     setSourceScanning(true);
+    setSourceScanProgress(null);
     setSourceScanError("");
     setStepError("");
     setHighestStep((previous) => Math.min(previous, 2));
@@ -124,8 +160,10 @@ export default function useAnalysisSetup({
       return next;
     });
 
+    let scanId = null;
+    let scanCompleted = false;
     try {
-      const preview = await previewAnalysisSources(
+      let scan = await startAnalysisSourceScan(
         {
           record_id: sourceSetup.recordId || null,
           mode_ids: sourceSetup.selectedModeIds,
@@ -134,6 +172,38 @@ export default function useAnalysisSetup({
         },
         controller.signal,
       );
+      if (!scan?.scan_id) throw new Error("掃描工作未建立，請重新掃描。");
+      scanId = scan.scan_id;
+      if (sourceScanControllerRef.current !== controller || controller.signal.aborted) {
+        return false;
+      }
+      sourceScanIdRef.current = scanId;
+      let pollFailures = 0;
+      while (["queued", "scanning"].includes(scan.status)) {
+        if (!mountedRef.current || controller.signal.aborted) return false;
+        setSourceScanProgress({
+          processed: scan.processed_frames || 0,
+          total: scan.total_frames || 0,
+          status: scan.status,
+        });
+        await waitForScanPoll(controller.signal);
+        try {
+          scan = await getAnalysisSourceScan(scan.scan_id, controller.signal);
+          pollFailures = 0;
+        } catch (error) {
+          if (controller.signal.aborted || error?.name === "AbortError") throw error;
+          pollFailures += 1;
+          if (pollFailures >= 3) throw error;
+        }
+      }
+      if (scan.status === "failed") {
+        throw new Error(scan.error || "掃描捕捉配置失敗，請重新掃描。");
+      }
+      if (scan.status !== "completed" || !scan.preview) {
+        throw new Error("掃描未完成，請重新掃描。");
+      }
+      const preview = scan.preview;
+      scanCompleted = true;
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setSetup((previous) => {
@@ -157,9 +227,18 @@ export default function useAnalysisSetup({
       }
       return false;
     } finally {
+      if (scanId && !scanCompleted) {
+        void cancelAnalysisSourceScan(scanId).catch(() => undefined);
+      }
       if (sourceScanControllerRef.current === controller) {
+        if (sourceScanIdRef.current) {
+          sourceScanIdRef.current = null;
+        }
         sourceScanControllerRef.current = null;
-        if (mountedRef.current) setSourceScanning(false);
+        if (mountedRef.current) {
+          setSourceScanning(false);
+          setSourceScanProgress(null);
+        }
       }
     }
   }, []);
@@ -239,16 +318,16 @@ export default function useAnalysisSetup({
     setSourceScanError("");
 
     if (!source) {
-      abortRequest(sourceScanControllerRef.current);
-      sourceScanControllerRef.current = null;
+      cancelActiveSourceScan(sourceScanControllerRef, sourceScanIdRef);
       setSourceScanning(false);
+      setSourceScanProgress(null);
       return false;
     }
 
     if (nextSetup.selectedModeIds.length === 0) {
-      abortRequest(sourceScanControllerRef.current);
-      sourceScanControllerRef.current = null;
+      cancelActiveSourceScan(sourceScanControllerRef, sourceScanIdRef);
       setSourceScanning(false);
+      setSourceScanProgress(null);
       return false;
     }
 
@@ -299,12 +378,13 @@ export default function useAnalysisSetup({
     setStepError("");
 
     if (!next.recordPath || next.selectedModeIds.length === 0) {
-      abortRequest(
-        sourceScanControllerRef.current,
+      cancelActiveSourceScan(
+        sourceScanControllerRef,
+        sourceScanIdRef,
         "已由新的分析視角選擇取代。",
       );
-      sourceScanControllerRef.current = null;
       setSourceScanning(false);
+      setSourceScanProgress(null);
       return false;
     }
 
@@ -327,12 +407,13 @@ export default function useAnalysisSetup({
     setSourceScanError("");
     window.clearTimeout(sourceScanTimerRef.current);
     sourceScanTimerRef.current = null;
-    abortRequest(
-      sourceScanControllerRef.current,
+    cancelActiveSourceScan(
+      sourceScanControllerRef,
+      sourceScanIdRef,
       "已由新的擷取模式選擇取代。",
     );
-    sourceScanControllerRef.current = null;
     setSourceScanning(false);
+    setSourceScanProgress(null);
     if (selectedModeIds.length === 0) {
       setStepError("請至少選擇一個擷取模式。");
       return false;
@@ -347,6 +428,18 @@ export default function useAnalysisSetup({
     const current = setupRef.current;
     if (!current.recordPath || current.selectedModeIds.length === 0) return false;
     return performSourceScan(current);
+  }
+
+  function cancelSourceScan() {
+    if (!sourceScanControllerRef.current) return;
+    cancelActiveSourceScan(
+      sourceScanControllerRef,
+      sourceScanIdRef,
+      "已取消影像掃描。",
+    );
+    setSourceScanning(false);
+    setSourceScanProgress(null);
+    setSourceScanError("");
   }
 
   function updateParameter(key, value) {
@@ -560,8 +653,10 @@ export default function useAnalysisSetup({
     mutationError,
     mutationRequiresRefresh,
     sourceScanning,
+    sourceScanProgress,
     sourceScanError,
     retrySourceScan,
+    cancelSourceScan,
     loadOptions,
     selectRecord,
     updateSetup,

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 CAMERA_ROLES = ("top", "side", "rotating")
 
-CAPTURE_IMAGE_EXTENSION = ".png"
+CAPTURE_IMAGE_EXTENSION = ".tiff"
 CAPTURE_IMAGE_SUFFIXES = frozenset({
     CAPTURE_IMAGE_EXTENSION,
+    ".tif",
+    ".png",
     ".jpg",
     ".jpeg",
 })

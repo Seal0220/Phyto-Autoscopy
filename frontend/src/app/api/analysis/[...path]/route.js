@@ -12,7 +12,13 @@ function analysisProxyTimeout(
 ) {
   if (
     method === "POST"
-    && ["validate", "retry"].includes(path.at(-1))
+    && path.at(-1) === "validate"
+  ) {
+    return 900_000;
+  }
+  if (
+    method === "POST"
+    && ["retry"].includes(path.at(-1))
   ) {
     return 120_000;
   }

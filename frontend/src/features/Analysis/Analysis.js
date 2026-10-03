@@ -130,7 +130,9 @@ export default function Analysis() {
               <div className="grid gap-3 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4">
                 <StatusCard
                   title="可選擇紀錄"
-                  content={initialLoading ? "—" : sources.filter((source) => source.ready).length}
+                  content={loading && sources.length === 0
+                    ? "—"
+                    : sources.filter((source) => source.ready).length}
                   note="筆"
                 />
                 <StatusCard

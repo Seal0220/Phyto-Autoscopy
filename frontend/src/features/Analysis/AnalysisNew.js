@@ -47,8 +47,10 @@ export default function AnalysisNew({
     mutationError,
     mutationRequiresRefresh,
     sourceScanning,
+    sourceScanProgress,
     sourceScanError,
     retrySourceScan,
+    cancelSourceScan,
     loadOptions,
     selectRecord,
     updateSetup,
@@ -135,8 +137,10 @@ export default function AnalysisNew({
           record={selectedSource}
           setup={setup}
           scanning={sourceScanning}
+          scanProgress={sourceScanProgress}
           scanError={sourceScanError}
           onRescan={retrySourceScan}
+          onCancelScan={cancelSourceScan}
           onCameraSourceChange={updateCameraSource}
           onModeSelectionChange={updateModeSelection}
         />

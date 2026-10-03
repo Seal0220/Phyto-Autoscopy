@@ -170,10 +170,21 @@ class AnalysisSourcePreview(BaseModel):
     incomplete_round_count: int = 0
     total_view_count: int = 0
     round_readiness: list[AnalysisRoundReadiness] = Field(default_factory=list)
+    omitted_round_count: int = 0
+    image_probe_backends: dict[str, int] = Field(default_factory=dict)
     intrinsics_readiness: dict[str, dict[str, Any]] = Field(default_factory=dict)
     aruco_readiness: dict[str, Any] = Field(default_factory=dict)
     pose_readiness: dict[str, Any] = Field(default_factory=dict)
     backend_readiness: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnalysisSourceScanStatus(BaseModel):
+    scan_id: str
+    status: Literal["queued", "scanning", "completed", "failed", "cancelled"]
+    processed_frames: int = 0
+    total_frames: int = 0
+    preview: AnalysisSourcePreview | None = None
+    error: str | None = None
 
 
 class AnalysisReconstructRequest(BaseModel):
