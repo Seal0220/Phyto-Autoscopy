@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from app.analysis.image_probe import probe_image_cpu
+
 
 CANONICAL_CAMERA_IDS = frozenset({"top", "side", "rotating"})
 ACTIVE_RECORD_STATUSES = frozenset({"manual", "running", "paused", "stopping"})
@@ -181,25 +183,6 @@ def extract_capture_group(file_path: str | Path, camera_id: object) -> str | Non
     return "/".join(part for part in group_parts if part) or None
 
 
-def _default_image_probe(path: Path) -> tuple[int, int] | None:
-    try:
-        import cv2  # type: ignore
-        import numpy as np
-
-        encoded = np.fromfile(path, dtype=np.uint8)
-        if encoded.size == 0:
-            return None
-        image = cv2.imdecode(encoded, cv2.IMREAD_UNCHANGED)
-        if image is None or image.ndim < 2:
-            return None
-        height, width = image.shape[:2]
-        if width <= 0 or height <= 0:
-            return None
-        return int(width), int(height)
-    except (ImportError, OSError, ValueError):
-        return None
-
-
 def _get_value(source: object, name: str, default: object = None) -> object:
     if isinstance(source, Mapping):
         return source.get(name, default)
@@ -300,7 +283,7 @@ def _deduplicate_messages(issues: Iterable[RecordValidationIssue]) -> tuple[str,
 
 class CaptureRecordValidator:
     def __init__(self, image_probe: ImageProbe | None = None) -> None:
-        self.image_probe = image_probe or _default_image_probe
+        self.image_probe = image_probe or probe_image_cpu
 
     def validate(
         self,
@@ -309,6 +292,8 @@ class CaptureRecordValidator:
         *,
         required_camera_ids: Iterable[str] = ("top", "side"),
         selected_mode_folders: Iterable[str] | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> CaptureRecordValidation:
         required_cameras = frozenset(required_camera_ids)
         mode_folders = frozenset(
@@ -381,7 +366,15 @@ class CaptureRecordValidator:
 
         frames: list[CaptureFrame] = []
         source_frame_count = 0
+        total_sources = len(capture_sources)
         for source_index, capture in enumerate(capture_sources, start=1):
+            if cancel_requested is not None and cancel_requested():
+                raise InterruptedError("影像掃描已取消。")
+            if progress_callback is not None and (
+                source_index == 1
+                or source_index % 32 == 0
+            ):
+                progress_callback(source_index - 1, total_sources)
             camera_id = str(_get_value(capture, "camera_id", "")).strip().lower()
             if camera_id not in CANONICAL_CAMERA_IDS or camera_id not in required_cameras:
                 continue
@@ -570,6 +563,11 @@ class CaptureRecordValidator:
                     original_camera_id=original_camera_id,
                 )
             )
+
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError("影像掃描已取消。")
+        if progress_callback is not None:
+            progress_callback(total_sources, total_sources)
 
         camera_resolutions: dict[str, tuple[int, int]] = {}
         for camera_id in sorted(CANONICAL_CAMERA_IDS):

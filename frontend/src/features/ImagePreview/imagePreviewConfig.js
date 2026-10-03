@@ -108,7 +108,7 @@ export const IMAGE_PREVIEW_FIELD_META = {
     max: 100,
     step: 1,
     suffix: "%",
-    description: "只控制即時預覽串流的 JPEG 壓縮品質，不影響無損 PNG 拍照檔。",
+    description: "只控制即時預覽串流的 JPEG 壓縮品質，不影響無損 TIFF 拍照檔。",
   },
   installation_height_mm: {
     label: "安裝高度",

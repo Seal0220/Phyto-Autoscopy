@@ -12,6 +12,7 @@ from app.models.analysis_models import (
     AnalysisRun,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
+    AnalysisSourceScanStatus,
     AnalysisSourceSummary,
     AnalysisView,
     RoundModelResult,
@@ -40,6 +41,30 @@ def preview_analysis_sources(
     context: AppContext = Depends(get_context),
 ) -> AnalysisSourcePreview:
     return context.analysis_service.preview_sources(request)
+
+
+@router.post("/sources/scans", response_model=AnalysisSourceScanStatus)
+def start_analysis_source_scan(
+    request: AnalysisSourcePreviewRequest,
+    context: AppContext = Depends(get_context),
+) -> AnalysisSourceScanStatus:
+    return context.analysis_service.start_source_scan(request)
+
+
+@router.get("/sources/scans/{scan_id}", response_model=AnalysisSourceScanStatus)
+def get_analysis_source_scan(
+    scan_id: str,
+    context: AppContext = Depends(get_context),
+) -> AnalysisSourceScanStatus:
+    return context.analysis_service.get_source_scan(scan_id)
+
+
+@router.delete("/sources/scans/{scan_id}", response_model=AnalysisSourceScanStatus)
+def cancel_analysis_source_scan(
+    scan_id: str,
+    context: AppContext = Depends(get_context),
+) -> AnalysisSourceScanStatus:
+    return context.analysis_service.cancel_source_scan(scan_id)
 
 
 @router.get("", response_model=list[AnalysisRun])

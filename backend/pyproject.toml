@@ -26,6 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest", "httpx"]
+scan-gpu-cu12 = ["nvidia-nvimgcodec-cu12[nvtiff]"]
+scan-gpu-cu13 = ["nvidia-nvimgcodec-cu13[nvtiff]"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

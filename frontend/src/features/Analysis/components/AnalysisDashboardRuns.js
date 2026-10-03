@@ -240,7 +240,9 @@ export default function AnalysisDashboardRuns({
         >
           {loading && runs.length === 0
             ? "讀取分析紀錄中…"
-            : runs.length ? "此分類尚無分析紀錄。" : "尚無分析紀錄，請先新增分析。"
+            : runs.length
+              ? "此分類尚無分析紀錄。"
+              : "尚無已建立的分析；已捕捉的資料請點「新增分析」選擇紀錄。"
           }
         </p>
       )}

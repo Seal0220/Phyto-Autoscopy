@@ -25,6 +25,7 @@ from app.analysis.intrinsics import (
     build_intrinsics_snapshot,
     undistort_analysis_views,
 )
+from app.analysis.image_probe import AnalysisImageProbe
 from app.analysis.rounds import (
     RoundGroupingResult,
     evaluate_round_quality,
@@ -57,11 +58,13 @@ from app.analysis.run_metadata import (
     runtime_versions,
     utc_now_iso,
 )
+from app.analysis.source_scan import SourceScanManager
 from app.analysis.record_validator import (
     ACTIVE_RECORD_STATUSES,
     BLOCKING_VALIDATION_ISSUE_CODES,
     CaptureRecordValidation,
     CaptureRecordValidator,
+    ImageProbe,
 )
 from app.analysis.tip.pipeline import analyze_round_tip
 from app.analysis.tip.trajectory_linker import (
@@ -89,6 +92,7 @@ from app.models.analysis_models import (
     AnalysisSourceMode,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
+    AnalysisSourceScanStatus,
     MarkerlessPoseSettings,
     RoundModelResult,
     TipCorrection,
@@ -239,6 +243,7 @@ class AnalysisService:
             self._run_job,
             maximum_workers=maximum_workers,
         )
+        self._source_scans = SourceScanManager(self._scan_sources)
 
     def _require_run(self, analysis_id: str) -> AnalysisRun:
         run = self.repository.get(analysis_id)
@@ -416,6 +421,55 @@ class AnalysisService:
                 continue
         return total
 
+    @staticmethod
+    def _capture_camera_counts(
+        payload: Mapping[str, Any],
+    ) -> dict[str, int] | None:
+        def counts_from_summary(summary: Mapping[str, Any]) -> dict[str, int] | None:
+            if summary.get("error"):
+                return None
+            status_counts = summary.get("status_counts")
+            if isinstance(status_counts, Mapping):
+                try:
+                    if any(
+                        int(count) > 0
+                        for status, count in status_counts.items()
+                        if status != "success"
+                    ):
+                        return None
+                except (TypeError, ValueError):
+                    return None
+            raw_counts = summary.get("camera_counts")
+            if not isinstance(raw_counts, Mapping):
+                return None
+            counts = {}
+            for camera_id in ("top", "side", "rotating"):
+                try:
+                    counts[camera_id] = max(0, int(raw_counts.get(camera_id, 0)))
+                except (TypeError, ValueError):
+                    counts[camera_id] = 0
+            return counts
+
+        summary = payload.get("capture_summary")
+        if isinstance(summary, Mapping):
+            counts = counts_from_summary(summary)
+            if counts is not None:
+                return counts
+
+        mode_summaries = payload.get("mode_summaries")
+        if not isinstance(mode_summaries, list) or not mode_summaries:
+            return None
+        totals = {camera_id: 0 for camera_id in ("top", "side", "rotating")}
+        for mode_summary in mode_summaries:
+            if not isinstance(mode_summary, Mapping):
+                return None
+            counts = counts_from_summary(mode_summary)
+            if counts is None:
+                return None
+            for camera_id in totals:
+                totals[camera_id] += counts[camera_id]
+        return totals
+
     def _record_modes(
         self,
         record_id: str,
@@ -505,10 +559,18 @@ class AnalysisService:
         *,
         method: str = "fixed",
         mode_ids: Iterable[str] = (),
+        progress_callback: Callable[[int, int], None] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+        image_probe: ImageProbe | None = None,
     ) -> CaptureRecordValidation:
         record = self._require_record(record_id)
         captures = self.capture_repository.list_by_record(record_id)
-        return self._validator.validate(
+        validator = (
+            CaptureRecordValidator(image_probe=image_probe)
+            if image_probe is not None
+            else self._validator
+        )
+        return validator.validate(
             record,
             captures,
             required_camera_ids=(
@@ -520,6 +582,8 @@ class AnalysisService:
                 record_id,
                 mode_ids,
             ),
+            progress_callback=progress_callback,
+            cancel_requested=cancel_requested,
         )
 
     def _round_grouping(
@@ -622,7 +686,6 @@ class AnalysisService:
 
     def list_sources(self) -> list[AnalysisSourceSummary]:
         results = []
-        camera_counts = self.capture_repository.successful_camera_counts()
         for record in self.record_repository.list():
             record_payload = self._record_payload(record.record_id, record=record)
             available_modes = self._record_modes(
@@ -631,7 +694,11 @@ class AnalysisService:
             )
             capture_configuration = self._capture_configuration(record_payload)
             total_image_count = self._capture_image_count(record_payload)
-            counts = camera_counts.get(record.record_id, {})
+            counts = self._capture_camera_counts(record_payload)
+            if counts is None:
+                counts = self.capture_repository.successful_camera_counts(
+                    record.record_id,
+                )
             top_count = counts.get("top", 0)
             side_count = counts.get("side", 0)
             rotating_count = counts.get("rotating", 0)
@@ -671,12 +738,21 @@ class AnalysisService:
     def preview_sources(
         self,
         request: AnalysisSourcePreviewRequest,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+        image_probe: ImageProbe | None = None,
     ) -> AnalysisSourcePreview:
         validation = self._validation_for_record(
             request.record_id,
             method=request.method,
             mode_ids=request.mode_ids,
+            progress_callback=progress_callback,
+            cancel_requested=cancel_requested,
+            image_probe=image_probe,
         )
+        if cancel_requested is not None and cancel_requested():
+            raise InterruptedError("影像掃描已取消。")
         enabled_camera_ids = tuple(
             camera_id
             for camera_id, source in request.camera_sources.items()
@@ -696,7 +772,10 @@ class AnalysisService:
             for issue in validation.issues
             if issue.code not in BLOCKING_VALIDATION_ISSUE_CODES
         ]
-        errors = list(dict.fromkeys([*validation_errors, *grouping.errors]))
+        all_errors = list(dict.fromkeys([*validation_errors, *grouping.errors]))
+        errors = all_errors[:10]
+        if len(all_errors) > len(errors):
+            errors.append(f"另有 {len(all_errors) - len(errors)} 項錯誤未逐項顯示。")
         ready_rounds = grouping.ready_round_count
         intrinsics_readiness: dict[str, dict[str, Any]] = {}
         try:
@@ -739,6 +818,25 @@ class AnalysisService:
         backend_readiness = self._reconstruction_backends.check(
             self.settings.reconstruction.backend
         )
+        detail_limit = 100
+        incomplete_details = [
+            item for item in grouping.readiness if item.status == "incomplete"
+        ]
+        round_readiness = incomplete_details[:detail_limit]
+        if len(round_readiness) < detail_limit:
+            for item in grouping.readiness:
+                if len(round_readiness) >= detail_limit:
+                    break
+                if item.status != "incomplete":
+                    round_readiness.append(item)
+        omitted_round_count = max(0, len(grouping.readiness) - len(round_readiness))
+        warnings = list(dict.fromkeys([
+            *validation_warnings,
+            *grouping.warnings,
+        ]))
+        if len(warnings) > 5:
+            omitted_warning_count = len(warnings) - 5
+            warnings = [*warnings[:5], f"另有 {omitted_warning_count} 項警告未逐項顯示。"]
         return AnalysisSourcePreview(
             ready=not errors and ready_rounds > 0,
             camera_frame_counts={
@@ -749,19 +847,45 @@ class AnalysisService:
             camera_resolutions=dict(validation.camera_resolutions),
             camera_directories=dict(validation.camera_directories),
             errors=errors,
-            warnings=list(dict.fromkeys([
-                *validation_warnings,
-                *grouping.warnings,
-            ])),
+            warnings=warnings,
             round_count=len(grouping.rounds),
             ready_round_count=ready_rounds,
             incomplete_round_count=grouping.incomplete_round_count,
             total_view_count=len(grouping.views),
-            round_readiness=list(grouping.readiness),
+            round_readiness=round_readiness,
+            omitted_round_count=omitted_round_count,
             intrinsics_readiness=intrinsics_readiness,
             pose_readiness=pose_readiness,
             backend_readiness=backend_readiness,
         )
+
+    def _scan_sources(
+        self,
+        request: AnalysisSourcePreviewRequest,
+        progress_callback: Callable[[int, int], None],
+        cancel_requested: Callable[[], bool],
+    ) -> AnalysisSourcePreview:
+        image_probe = AnalysisImageProbe()
+        preview = self.preview_sources(
+            request,
+            progress_callback=progress_callback,
+            cancel_requested=cancel_requested,
+            image_probe=image_probe,
+        )
+        preview.image_probe_backends = image_probe.backend_counts
+        return preview
+
+    def start_source_scan(
+        self,
+        request: AnalysisSourcePreviewRequest,
+    ) -> AnalysisSourceScanStatus:
+        return self._source_scans.start(request)
+
+    def get_source_scan(self, scan_id: str) -> AnalysisSourceScanStatus:
+        return self._source_scans.get(scan_id)
+
+    def cancel_source_scan(self, scan_id: str) -> AnalysisSourceScanStatus:
+        return self._source_scans.cancel(scan_id)
 
     def list_runs(self, record_id: str | None = None) -> list[AnalysisRun]:
         return self.repository.list(record_id)
@@ -1874,6 +1998,7 @@ class AnalysisService:
             )
 
     def close(self) -> None:
+        self._source_scans.close()
         self._runner.close()
 
     def _resolved_tip_landmarks(

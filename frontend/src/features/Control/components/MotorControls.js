@@ -93,17 +93,20 @@ export default function MotorControls({
         </StatusPill>
       </SubsectionHeader>
 
-      <ToggleRow
-        checked={motorEnabled}
-        label="啟用馬達"
-        description="關閉後釋放馬達並停止偵測控制板；重新開啟後會自動嘗試連接。"
-        disabled={toggleDisabled}
-        onClick={() => void onRunAction(
-          "motor.set_enabled",
-          { enabled: !motorEnabled },
-          motorEnabled ? "馬達已停用。" : "馬達已啟用，正在偵測控制板。",
-        )}
-      />
+      <div className="px-1">
+        <ToggleRow
+          checked={motorEnabled}
+          label="啟用馬達"
+          description="關閉後釋放馬達並停止偵測控制板；重新開啟後會自動嘗試連接。"
+          className="w-48 min-w-48 max-w-48"
+          disabled={toggleDisabled}
+          onClick={() => void onRunAction(
+            "motor.set_enabled",
+            { enabled: !motorEnabled },
+            motorEnabled ? "馬達已停用。" : "馬達已啟用，正在偵測控制板。",
+          )}
+        />
+      </div>
 
       <fieldset
         className={`min-w-0 border-0 p-0 ${baseDisabled ? "grayscale opacity-60" : ""}`}

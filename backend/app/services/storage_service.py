@@ -246,10 +246,15 @@ class StorageService:
 
         folder = record_dir / camera_id
         folder.mkdir(parents=True, exist_ok=True)
-        next_index = sum(
-            1
-            for path in folder.iterdir()
-            if path.is_file() and path.suffix.lower() in CAPTURE_IMAGE_SUFFIXES
+        next_index = max(
+            (
+                int(path.stem)
+                for path in folder.iterdir()
+                if path.is_file()
+                and path.suffix.lower() in CAPTURE_IMAGE_SUFFIXES
+                and path.stem.isdigit()
+            ),
+            default=0,
         ) + 1
         return folder / f"{next_index:06d}{CAPTURE_IMAGE_EXTENSION}"
 

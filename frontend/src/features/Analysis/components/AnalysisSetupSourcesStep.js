@@ -1,4 +1,4 @@
-import { FiRefreshCw } from "react-icons/fi";
+import { FiRefreshCw, FiX } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 import InformationGrid from "@/components/data/InformationGrid";
@@ -38,14 +38,20 @@ export default function AnalysisSetupSourcesStep({
   record,
   setup,
   scanning,
+  scanProgress,
   scanError,
   onRescan,
+  onCancelScan,
   onModeSelectionChange,
   onCameraSourceChange,
 }) {
   const preview = setup.sourcePreview;
   const previewDescription = scanning
-    ? "正在確認影像、配對與各輪可用狀態。"
+    ? scanProgress?.total > 0
+      ? scanProgress.processed >= scanProgress.total
+        ? "影像檢查完成，正在整理各輪配對結果。"
+        : `已檢查 ${scanProgress.processed} / ${scanProgress.total} 筆影像索引。`
+      : "正在讀取影像索引並準備掃描。"
     : scanError
       ? "掃描未完成，請重新掃描。"
       : preview
@@ -151,14 +157,21 @@ export default function AnalysisSetupSourcesStep({
               }
             </StatusPill>
             <Button
-              disabled={scanning || !setup.recordPath || setup.selectedModeIds.length === 0}
-              onClick={() => void onRescan()}
+              disabled={!scanning && (!setup.recordPath || setup.selectedModeIds.length === 0)}
+              onClick={() => void (scanning ? onCancelScan() : onRescan())}
             >
-              <FiRefreshCw
-                className={`size-4 shrink-0 ${scanning ? "animate-spin" : ""}`}
-                aria-hidden="true"
-              />
-              {scanning ? "掃描中…" : "重新掃描"}
+              {scanning ? (
+                <FiX
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+              ) : (
+                <FiRefreshCw
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+              )}
+              {scanning ? "取消掃描" : "重新掃描"}
             </Button>
           </div>
         </SubsectionHeader>
@@ -185,6 +198,14 @@ export default function AnalysisSetupSourcesStep({
               label: "總影像數",
               value: formatNumberWithUnit(preview?.total_view_count, "張"),
             },
+            {
+              label: "GPU 解碼",
+              value: formatNumberWithUnit(preview?.image_probe_backends?.gpu, "張"),
+            },
+            {
+              label: "CPU 解碼",
+              value: formatNumberWithUnit(preview?.image_probe_backends?.cpu, "張"),
+            },
           ]}
           rows={2}
           stackAtSmall
@@ -207,9 +228,14 @@ export default function AnalysisSetupSourcesStep({
 
         {preview?.round_readiness?.length > 0 ? (
           <DisclosurePanel
-            title={`各輪掃描明細 · ${preview.round_readiness.length} 輪`}
+            title={`各輪掃描明細 · 顯示 ${preview.round_readiness.length} / ${preview.round_count} 輪`}
           >
             <div className="grid max-h-72 gap-3 overflow-y-auto">
+              {preview.omitted_round_count > 0 ? (
+                <p className="text-xs font-semibold text-neutral-400">
+                  明細優先顯示不完整輪次，最多 {preview.round_readiness.length} 輪；上方統計包含全部輪次。
+                </p>
+              ) : null}
               {preview.round_readiness.map((round) => (
                 <div
                   className="grid min-w-0 gap-2 border-b border-white/10 pb-3 last:border-b-0 last:pb-0"

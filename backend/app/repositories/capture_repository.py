@@ -44,17 +44,16 @@ class CaptureRepository:
         )
         return [StoredCapture(**dict(row)) for row in rows]
 
-    def successful_camera_counts(self) -> dict[str, dict[str, int]]:
-        """Read list-page counts in one query without loading capture rows or images."""
+    def successful_camera_counts(self, record_id: str) -> dict[str, int]:
+        """Count one Record's images when no persisted summary is available."""
         rows = self.database.fetchall(
             """
-            SELECT record_id, camera_id, COUNT(*) AS image_count
+            SELECT camera_id, COUNT(*) AS image_count
             FROM captures
-            WHERE status='success' AND camera_id IN ('top', 'side', 'rotating')
-            GROUP BY record_id, camera_id
-            """
+            WHERE record_id=? AND status='success'
+                AND camera_id IN ('top', 'side', 'rotating')
+            GROUP BY camera_id
+            """,
+            (record_id,),
         )
-        counts: dict[str, dict[str, int]] = {}
-        for row in rows:
-            counts.setdefault(row["record_id"], {})[row["camera_id"]] = row["image_count"]
-        return counts
+        return {row["camera_id"]: row["image_count"] for row in rows}
