@@ -11,6 +11,8 @@ from threading import Lock
 from time import monotonic
 from typing import Mapping
 
+from starlette.requests import Request
+
 
 class SecurityError(Exception):
     status_code = 400
@@ -217,7 +219,7 @@ def rate_limit_websocket(principal: Principal, scope: str) -> None:
     rate_limiter.check(f"ws:{principal.actor}:{scope}", limit=limit)
 
 
-def get_request_principal(request: object) -> Principal:
+def get_request_principal(request: Request) -> Principal:
     state = getattr(request, "state", None)
     principal = getattr(state, "principal", None)
     if not isinstance(principal, Principal):
