@@ -260,17 +260,35 @@ def estimate_fixed_stereo_pose(
             best = candidate
     if best is None:
         raise ValueError("俯視角與側視角缺少足夠的共同靜態特徵，無法建立無標記雙鏡頭姿態；請改善共同視野或重新拍攝。")
+    side_center = np.linalg.inv(best["poses"]["side"])[:3, 3]
+    estimated_side_height_mm = float(side_center[2])
+    estimated_side_horizontal_distance_mm = float(np.linalg.norm(side_center[:2]))
+    quality = {
+        "stereo_inliers": best["inliers"],
+        "stereo_reprojection_rmse_px": best["reprojection_rmse_px"],
+        "stereo_parallax_deg": best["parallax_deg"],
+        "side_elevation_deg": best["side_elevation_deg"],
+        "baseline_mm": float(settings["baseline_mm"]),
+        "top_height_mm": float(settings["top_height_mm"]),
+        "estimated_side_height_mm": estimated_side_height_mm,
+        "estimated_side_horizontal_distance_mm": estimated_side_horizontal_distance_mm,
+        "scale_source": "measured_stereo_baseline",
+    }
+    if settings.get("side_height_mm") is not None:
+        measured_height = float(settings["side_height_mm"])
+        quality["side_height_mm"] = measured_height
+        quality["side_height_error_mm"] = abs(
+            estimated_side_height_mm - measured_height
+        )
+    if settings.get("side_horizontal_distance_mm") is not None:
+        measured_distance = float(settings["side_horizontal_distance_mm"])
+        quality["side_horizontal_distance_mm"] = measured_distance
+        quality["side_horizontal_distance_error_mm"] = abs(
+            estimated_side_horizontal_distance_mm - measured_distance
+        )
     return (
         {key: matrix.tolist() for key, matrix in best["poses"].items()},
-        {
-            "stereo_inliers": best["inliers"],
-            "stereo_reprojection_rmse_px": best["reprojection_rmse_px"],
-            "stereo_parallax_deg": best["parallax_deg"],
-            "side_elevation_deg": best["side_elevation_deg"],
-            "baseline_mm": float(settings["baseline_mm"]),
-            "top_height_mm": float(settings["top_height_mm"]),
-            "scale_source": "measured_stereo_baseline",
-        },
+        quality,
     )
 
 

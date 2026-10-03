@@ -221,6 +221,17 @@ export default function AnalysisSetupSummaryStep({
                 value: displayNumber(setup.parameters.topHeightMm, " mm"),
               },
               {
+                label: "側鏡頭距桌面高度",
+                value: displayNumber(setup.parameters.sideHeightMm, " mm"),
+              },
+              {
+                label: "側鏡頭至中心水平距離",
+                value: displayNumber(
+                  setup.parameters.sideHorizontalDistanceMm,
+                  " mm",
+                ),
+              },
+              {
                 label: "雙鏡頭最少內點",
                 value: displayNumber(setup.parameters.minimumStereoInliers, " 點"),
               },

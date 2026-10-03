@@ -66,6 +66,8 @@ class MarkerlessPoseSettings(BaseModel):
 
     baseline_mm: float = Field(gt=0, le=100000)
     top_height_mm: float = Field(gt=0, le=100000)
+    side_height_mm: float | None = Field(default=None, ge=0, le=10000)
+    side_horizontal_distance_mm: float | None = Field(default=None, ge=0, le=10000)
     feature_count: int = Field(default=4000, ge=500, le=20000)
     minimum_stereo_inliers: int = Field(default=24, ge=8, le=1000)
     minimum_rotating_inliers: int = Field(default=12, ge=6, le=1000)

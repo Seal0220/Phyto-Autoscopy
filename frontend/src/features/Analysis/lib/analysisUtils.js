@@ -414,6 +414,16 @@ function parseRequiredNumber(
   return parsed;
 }
 
+function parseOptionalNumber(
+  value,
+  label,
+  limits,
+) {
+  return String(value ?? "").trim() === ""
+    ? null
+    : parseRequiredNumber(value, label, limits);
+}
+
 export function validateAnalysisSetupStep(
   setup,
   step,
@@ -504,6 +514,16 @@ export function validateAnalysisSetupStep(
     ]) {
       parseRequiredNumber(setup.parameters[key], label, limits);
     }
+    parseOptionalNumber(
+      setup.parameters.sideHeightMm,
+      "側鏡頭距桌面高度",
+      { minimum: 0, maximum: 10000 },
+    );
+    parseOptionalNumber(
+      setup.parameters.sideHorizontalDistanceMm,
+      "側鏡頭至中心水平距離",
+      { minimum: 0, maximum: 10000 },
+    );
     if (
       setup.method === "rotating"
       && !["preview", "standard", "high"].includes(
@@ -587,6 +607,16 @@ export function buildAnalysisCreatePayload(setup) {
       pose_strategy: {
         baseline_mm: Number(parameters.baselineMm),
         top_height_mm: Number(parameters.topHeightMm),
+        side_height_mm: parseOptionalNumber(
+          parameters.sideHeightMm,
+          "側鏡頭距桌面高度",
+          { minimum: 0, maximum: 10000 },
+        ),
+        side_horizontal_distance_mm: parseOptionalNumber(
+          parameters.sideHorizontalDistanceMm,
+          "側鏡頭至中心水平距離",
+          { minimum: 0, maximum: 10000 },
+        ),
         feature_count: Number(parameters.featureCount),
         minimum_stereo_inliers: Number(parameters.minimumStereoInliers),
         minimum_rotating_inliers: Number(parameters.minimumRotatingInliers),
