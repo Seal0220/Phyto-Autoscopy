@@ -527,8 +527,42 @@ def get_config_dir(config_dir: str | Path | None = None) -> Path:
     return path if path.is_absolute() else BACKEND_ROOT / path
 
 
+def ensure_local_config_files(root: Path) -> None:
+    """Create missing, machine-local settings without changing existing files."""
+    defaults = AppSettings().model_dump(mode="json")
+    for file_name, keys in (
+        ("default.json", ("project", "hardware", "paths")),
+        ("cameras.json", ("camera_control", "cameras")),
+        ("motor.json", ("motor",)),
+        ("schedule.json", ("schedule",)),
+        ("analysis.json", ("analysis",)),
+        ("reconstruction.json", ("reconstruction",)),
+        ("calibration.json", ("calibration",)),
+        ("pose_alignment.json", ("pose_alignment",)),
+        ("logging.json", ("logging",)),
+    ):
+        path = root / file_name
+        if path.exists():
+            continue
+        payload = {key: deepcopy(defaults[key]) for key in keys}
+        if file_name == "cameras.json":
+            for camera_id in ("side", "rotating"):
+                payload["cameras"][camera_id]["enabled"] = False
+                payload["cameras"][camera_id]["device_index"] = None
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            with path.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+        except FileExistsError:
+            continue
+        except (OSError, TypeError, ValueError) as exc:
+            raise ConfigError(f"無法建立預設設定檔：{path}") from exc
+
+
 def load_settings(config_dir: str | Path | None = None) -> AppSettings:
     root = get_config_dir(config_dir)
+    ensure_local_config_files(root)
     data = read_json_file(root / "default.json")
 
     for file_name in ("cameras.json", "motor.json"):

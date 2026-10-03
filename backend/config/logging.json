@@ -1,6 +1,0 @@
-{
-  "logging": {
-    "level": "INFO",
-    "file_name": "phyto_autoscopy.log"
-  }
-}

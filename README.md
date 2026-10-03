@@ -65,6 +65,8 @@ data/analysis/     每個 Analysis Run 的 Round、姿態、模型、尖端標�
 
 `--setup` 會在尚未建立時將 `.env.example` 複製為已被 Git 忽略的根目錄 `.env`，且不會覆寫既有的 `.env`。它也會建立根目錄 `.venv`、依照 `backend/requirements.txt` 安裝或同步後端 Python 相依套件，並透過 `npm install` 安裝或同步前端相依套件。設定完成後不會啟動任何服務。
 
+`backend/config/*.json` 是每台電腦獨立的設定，`data/` 保存執行產生的紀錄；兩者不納入 Git。首次啟動後端時會根據程式內的預設值補齊缺少的設定檔，既有設定不會被覆寫。換機或更新至此版本前，請先在該電腦備份 `backend/config/` 與 `data/`；若 Git 因舊版已追蹤的設定檔而拒絕更新，先保存該電腦的設定變更，再更新程式並放回設定檔。
+
 請替換 `.env` 中的三個私有預留值，接著以預設的正式模式啟動：
 
 ```bash
