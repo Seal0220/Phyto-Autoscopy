@@ -73,6 +73,9 @@ if not exist "%ROOT%.venv\Scripts\python.exe" (
   goto finish
 )
 set "PYTHON=%ROOT%.venv\Scripts\python.exe"
+set "VIRTUAL_ENV=%ROOT%.venv"
+set "PATH=%VIRTUAL_ENV%\Scripts;%PATH%"
+call :configure_native_toolchain
 
 if not exist "%FRONTEND_DIR%\node_modules" (
   echo Missing frontend dependencies. Run start.bat --setup first.
@@ -235,6 +238,38 @@ if not errorlevel 1 (
   echo Replace the placeholder value for %~1 in .env.
   exit /b 1
 )
+exit /b 0
+
+:configure_native_toolchain
+set "VCVARS_SCRIPT="
+set "CUDA_TOOLKIT_PATH="
+set "TOOLCHAIN_FILE=%TEMP%\phyto-toolchain-%RANDOM%-%RANDOM%.txt"
+"%PYTHON%" "%BACKEND_DIR%\scripts\resolve_windows_toolchain.py" > "%TOOLCHAIN_FILE%"
+if errorlevel 1 echo Warning: Could not automatically detect native build tools.
+if exist "%TOOLCHAIN_FILE%" (
+  for /F "usebackq tokens=1,* delims==" %%K in ("%TOOLCHAIN_FILE%") do set "%%K=%%L"
+  del /Q "%TOOLCHAIN_FILE%" >nul 2>&1
+)
+set "TOOLCHAIN_FILE="
+
+if defined VCVARS_SCRIPT (
+  echo Initializing Visual C++ build tools...
+  call "%VCVARS_SCRIPT%" >nul
+  if errorlevel 1 echo Warning: Visual C++ environment initialization failed.
+)
+where cl.exe >nul 2>&1
+if errorlevel 1 echo Warning: cl.exe was not found; gsplat CUDA compilation will be unavailable.
+
+if defined CUDA_TOOLKIT_PATH (
+  set "CUDA_HOME=%CUDA_TOOLKIT_PATH%"
+  set "CUDA_PATH=%CUDA_TOOLKIT_PATH%"
+  set "PATH=%CUDA_TOOLKIT_PATH%\bin;%PATH%"
+  echo CUDA Toolkit: %CUDA_TOOLKIT_PATH%
+) else (
+  echo Warning: No CUDA Toolkit matches the installed PyTorch CUDA major version.
+)
+where ninja.exe >nul 2>&1
+if errorlevel 1 echo Warning: ninja.exe was not found in the backend environment.
 exit /b 0
 
 :port_in_use

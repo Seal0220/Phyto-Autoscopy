@@ -65,7 +65,7 @@ data/analysis/     每個 Analysis Run 的 Round、姿態、模型、尖端標�
 
 `--setup` 會在尚未建立時將 `.env.example` 複製為已被 Git 忽略的根目錄 `.env`，且不會覆寫既有的 `.env`。它也會建立根目錄 `.venv`、依照 `backend/requirements.txt` 安裝或同步後端 Python 相依套件，並透過 `npm install` 安裝或同步前端相依套件。設定完成後不會啟動任何服務。
 
-若現有電腦在分析驗證時出現 `Ninja is required to load C++ extensions`，請在該電腦的專案根目錄執行 `.\.venv\Scripts\python.exe -m pip install ninja`，再手動重新啟動後端並重試分析。新的 `--setup` 也會安裝 Ninja。這只補足 CUDA 擴充套件的編譯工具；若後續提示找不到 CUDA Toolkit 或 MSVC，仍須依該電腦的 PyTorch/CUDA 版本安裝對應工具鏈。
+`--setup` 會安裝 Ninja，但 MSVC 與 CUDA Toolkit 仍須在該電腦另外安裝。一般啟動時，`start.bat` 會自動將專案 `.venv\Scripts` 加入環境、初始化已安裝的 x64 Visual C++ 工具，並選用與 PyTorch CUDA 主版本相同的 Toolkit；不必預先啟用 `.venv` 或 Visual Studio 開發者命令列。找不到工具時會顯示警告，分析的 CUDA 編譯功能可能無法使用，但不會阻止其他功能啟動。
 
 `backend/config/*.json` 是每台電腦獨立的設定，`data/` 保存執行產生的紀錄；兩者不納入 Git。首次啟動後端時會根據程式內的預設值補齊缺少的設定檔，既有設定不會被覆寫。換機或更新至此版本前，請先在該電腦備份 `backend/config/` 與 `data/`；若 Git 因舊版已追蹤的設定檔而拒絕更新，先保存該電腦的設定變更，再更新程式並放回設定檔。
 
