@@ -70,6 +70,7 @@ export default function useAnalysisSetup({
   const [loadError, setLoadError] = useState("");
   const [stepError, setStepError] = useState("");
   const [sourceScanning, setSourceScanning] = useState(false);
+  const [sourceScanError, setSourceScanError] = useState("");
   const [createdRun, setCreatedRun] = useState(null);
   const [mutationPending, setMutationPending] = useState("");
   const [mutationError, setMutationError] = useState("");
@@ -113,7 +114,15 @@ export default function useAnalysisSetup({
     const controller = new AbortController();
     sourceScanControllerRef.current = controller;
     setSourceScanning(true);
+    setSourceScanError("");
     setStepError("");
+    setHighestStep((previous) => Math.min(previous, 2));
+    setSetup((previous) => {
+      if (!sourceConfigurationsMatch(previous, sourceSetup)) return previous;
+      const next = { ...previous, sourcePreview: null };
+      setupRef.current = next;
+      return next;
+    });
 
     try {
       const preview = await previewAnalysisSources(
@@ -139,9 +148,9 @@ export default function useAnalysisSetup({
       });
       return Boolean(preview?.ready);
     } catch (error) {
-      if (error?.name === "AbortError") return false;
-      if (mountedRef.current) {
-        setStepError(messageFromError(
+      if (error?.name === "AbortError" || controller.signal.aborted) return false;
+      if (mountedRef.current && sourceScanControllerRef.current === controller) {
+        setSourceScanError(messageFromError(
           error,
           "掃描捕捉配置失敗。",
         ));
@@ -227,6 +236,7 @@ export default function useAnalysisSetup({
     setSetup(nextSetup);
     setHighestStep(1);
     setStepError("");
+    setSourceScanError("");
 
     if (!source) {
       abortRequest(sourceScanControllerRef.current);
@@ -254,6 +264,7 @@ export default function useAnalysisSetup({
       setupRef.current = next;
       return next;
     });
+    setHighestStep((previous) => Math.min(previous, 3));
     setStepError("");
   }
 
@@ -280,6 +291,8 @@ export default function useAnalysisSetup({
     };
     setupRef.current = next;
     setSetup(next);
+    setHighestStep((previous) => Math.min(previous, 2));
+    setSourceScanError("");
 
     window.clearTimeout(sourceScanTimerRef.current);
     sourceScanTimerRef.current = null;
@@ -310,6 +323,8 @@ export default function useAnalysisSetup({
     };
     setupRef.current = next;
     setSetup(next);
+    setHighestStep((previous) => Math.min(previous, 2));
+    setSourceScanError("");
     window.clearTimeout(sourceScanTimerRef.current);
     sourceScanTimerRef.current = null;
     abortRequest(
@@ -319,11 +334,19 @@ export default function useAnalysisSetup({
     sourceScanControllerRef.current = null;
     setSourceScanning(false);
     if (selectedModeIds.length === 0) {
-      setStepError("請至少選擇一個擷取模式。")
+      setStepError("請至少選擇一個擷取模式。");
       return false;
     }
     setStepError("");
     return performSourceScan(next);
+  }
+
+  function retrySourceScan() {
+    if (createdRun || mutationRef.current || mutationRequiresRefresh
+      || sourceScanControllerRef.current) return false;
+    const current = setupRef.current;
+    if (!current.recordPath || current.selectedModeIds.length === 0) return false;
+    return performSourceScan(current);
   }
 
   function updateParameter(key, value) {
@@ -340,11 +363,25 @@ export default function useAnalysisSetup({
         [key]: value,
       },
     }));
+    setHighestStep((previous) => Math.min(previous, 3));
     setStepError("");
   }
 
   function goToStep(step) {
-    if (createdRun || step < 1 || step > highestStep) return;
+    if (createdRun || mutationRef.current || mutationRequiresRefresh
+      || step < 1 || step > highestStep) return;
+    if (step > currentStep) {
+      for (let prerequisite = 1; prerequisite < step; prerequisite += 1) {
+        try {
+          validateAnalysisSetupStep(setupRef.current, prerequisite);
+        } catch (error) {
+          setCurrentStep(prerequisite);
+          setHighestStep((previous) => Math.min(previous, prerequisite));
+          setStepError(messageFromError(error, "請確認目前步驟的設定。"));
+          return;
+        }
+      }
+    }
     setCurrentStep(step);
     setStepError("");
   }
@@ -523,6 +560,8 @@ export default function useAnalysisSetup({
     mutationError,
     mutationRequiresRefresh,
     sourceScanning,
+    sourceScanError,
+    retrySourceScan,
     loadOptions,
     selectRecord,
     updateSetup,

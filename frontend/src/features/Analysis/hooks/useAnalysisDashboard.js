@@ -33,7 +33,7 @@ const ACTIVE_POLL_INTERVAL_MS = 5_000;
 export default function useAnalysisDashboard() {
   const [sources, setSources] = useState([]);
   const [runs, setRuns] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [exportingIds, setExportingIds] = useState(() => new Set());
   const [exportFailure, setExportFailure] = useState(null);

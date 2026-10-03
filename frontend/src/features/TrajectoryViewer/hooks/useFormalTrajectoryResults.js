@@ -53,9 +53,11 @@ export default function useFormalTrajectoryResults({
         analysisId,
         controller.signal,
       );
-      if (mountedRef.current) setData(payload);
+      if (mountedRef.current && !controller.signal.aborted
+        && loadControllerRef.current === controller) setData(payload);
     } catch (error) {
-      if (error?.name !== "AbortError" && mountedRef.current) {
+      if (error?.name !== "AbortError" && !controller.signal.aborted
+        && mountedRef.current && loadControllerRef.current === controller) {
         setLoadError(messageFromError(
           error,
           "讀取每輪模型與尖端標記軌跡失敗。",
@@ -64,8 +66,8 @@ export default function useFormalTrajectoryResults({
     } finally {
       if (loadControllerRef.current === controller) {
         loadControllerRef.current = null;
+        if (mountedRef.current) setLoading(false);
       }
-      if (mountedRef.current) setLoading(false);
     }
   }, [analysisId]);
 
@@ -90,6 +92,7 @@ export default function useFormalTrajectoryResults({
         analysisId,
         controller.signal,
       );
+      if (!mountedRef.current || controller.signal.aborted) return;
       if (!(blob instanceof Blob) || blob.size === 0) {
         throw new Error("分析匯出檔沒有內容。");
       }

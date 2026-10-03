@@ -54,6 +54,7 @@ export default function Analysis() {
     "partially_completed",
   ].includes(run.status)).length;
   const hasData = sources.length > 0 || runs.length > 0;
+  const initialLoading = loading && !hasData;
 
   useEffect(() => {
     if (loadError) showNotification(loadError, "error");
@@ -129,22 +130,22 @@ export default function Analysis() {
               <div className="grid gap-3 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4">
                 <StatusCard
                   title="可用捕捉紀錄"
-                  content={sources.filter((source) => source.ready).length}
+                  content={initialLoading ? "—" : sources.filter((source) => source.ready).length}
                   note="筆"
                 />
                 <StatusCard
                   title="進行中"
-                  content={activeRunCount}
+                  content={initialLoading ? "—" : activeRunCount}
                   note="個"
                 />
                 <StatusCard
                   title="待處理"
-                  content={attentionRunCount}
+                  content={initialLoading ? "—" : attentionRunCount}
                   note="個"
                 />
                 <StatusCard
                   title="已有結果"
-                  content={completedRunCount}
+                  content={initialLoading ? "—" : completedRunCount}
                   note="個"
                 />
               </div>
@@ -162,6 +163,7 @@ export default function Analysis() {
         {(!loadError || hasData) ? (
           <AnalysisDashboardRuns
             runs={runs}
+            loading={loading}
             exportingIds={exportingIds}
             onExport={(analysisId) => void exportRun(analysisId)}
             onOpen={(analysisId) => router.push(

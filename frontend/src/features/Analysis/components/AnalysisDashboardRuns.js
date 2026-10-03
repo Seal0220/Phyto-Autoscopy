@@ -76,6 +76,7 @@ function primaryAction(
 
 export default function AnalysisDashboardRuns({
   runs,
+  loading = false,
   exportingIds,
   onExport,
   onOpen,
@@ -110,7 +111,7 @@ export default function AnalysisDashboardRuns({
               onClick={() => setFilter(item.id)}
               type="button"
             >
-              {item.label} {count}
+              {item.label} {loading && runs.length === 0 ? "—" : count}
             </button>
           );
         })}
@@ -233,8 +234,14 @@ export default function AnalysisDashboardRuns({
           })}
         </ul>
       ) : (
-        <p className="m-0 px-5 py-10 text-center text-sm font-semibold text-neutral-400">
-          {runs.length ? "此分類尚無分析紀錄。" : "尚無分析紀錄，請先新增分析。"}
+        <p
+          className="m-0 px-5 py-10 text-center text-sm font-semibold text-neutral-400"
+          role="status"
+        >
+          {loading && runs.length === 0
+            ? "讀取分析紀錄中…"
+            : runs.length ? "此分類尚無分析紀錄。" : "尚無分析紀錄，請先新增分析。"
+          }
         </p>
       )}
     </Panel>

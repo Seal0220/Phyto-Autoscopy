@@ -171,13 +171,15 @@ export default function CameraStream({
     ) {
       return;
     }
-    setEditableMeteringRegion(meteringRegion);
-  }, [
-    meteringRegion?.height,
-    meteringRegion?.width,
-    meteringRegion?.x,
-    meteringRegion?.y,
-  ]);
+    setEditableMeteringRegion((current) => (
+      current === meteringRegion
+      || (current && meteringRegion && ["x", "y", "width", "height"].every(
+        (key) => current[key] === meteringRegion[key],
+      ))
+        ? current
+        : meteringRegion
+    ));
+  }, [meteringRegion]);
 
   useEffect(() => {
     const configuredWidth = Number(width);

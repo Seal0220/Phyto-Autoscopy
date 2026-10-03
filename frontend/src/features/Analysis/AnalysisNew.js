@@ -47,6 +47,8 @@ export default function AnalysisNew({
     mutationError,
     mutationRequiresRefresh,
     sourceScanning,
+    sourceScanError,
+    retrySourceScan,
     loadOptions,
     selectRecord,
     updateSetup,
@@ -95,6 +97,10 @@ export default function AnalysisNew({
   ]);
 
   useEffect(() => {
+    if (sourceScanError) showNotification(sourceScanError, "error");
+  }, [sourceScanError, showNotification]);
+
+  useEffect(() => {
     const errors = Array.isArray(setup.sourcePreview?.errors)
       ? setup.sourcePreview.errors
       : [];
@@ -129,6 +135,8 @@ export default function AnalysisNew({
           record={selectedSource}
           setup={setup}
           scanning={sourceScanning}
+          scanError={sourceScanError}
+          onRescan={retrySourceScan}
           onCameraSourceChange={updateCameraSource}
           onModeSelectionChange={updateModeSelection}
         />
@@ -272,7 +280,7 @@ export default function AnalysisNew({
                 <AnalysisSetupProgress
                   currentStep={currentStep}
                   highestStep={highestStep}
-                  locked={Boolean(createdRun)}
+                  locked={Boolean(createdRun) || mutationLocked}
                   onStepChange={goToStep}
                 />
 

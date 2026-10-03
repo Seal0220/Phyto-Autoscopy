@@ -94,7 +94,8 @@ export default function useFormalTipReview({
         analysisId,
         controller.signal,
       );
-      if (!mountedRef.current) return false;
+      if (!mountedRef.current || controller.signal.aborted
+        || loadControllerRef.current !== controller) return false;
       setData(payload);
       setSelectedRoundKey((previous) => {
         if (
@@ -111,7 +112,8 @@ export default function useFormalTipReview({
       });
       return true;
     } catch (error) {
-      if (error?.name !== "AbortError" && mountedRef.current) {
+      if (error?.name !== "AbortError" && !controller.signal.aborted
+        && mountedRef.current && loadControllerRef.current === controller) {
         setLoadError(messageFromError(
           error,
           "讀取三維尖端標記資料失敗。",
@@ -121,8 +123,8 @@ export default function useFormalTipReview({
     } finally {
       if (loadControllerRef.current === controller) {
         loadControllerRef.current = null;
+        if (mountedRef.current) setLoading(false);
       }
-      if (mountedRef.current) setLoading(false);
     }
   }, [analysisId]);
 
@@ -185,6 +187,7 @@ export default function useFormalTipReview({
   ]);
 
   const selectRound = useCallback((roundKey) => {
+    if (mutationControllerRef.current || loadControllerRef.current) return;
     setSelectedRoundKey(roundKey);
     setMutationError("");
   }, []);
@@ -222,7 +225,8 @@ export default function useFormalTipReview({
   }, []);
 
   const saveCorrection = useCallback(async () => {
-    if (!selectedRoundKey) return false;
+    if (!selectedRoundKey || mutationControllerRef.current
+      || loadControllerRef.current) return false;
     const reason = draft.reason.trim();
     if (!reason) {
       setMutationError("請填寫尖端標記修正原因。");
@@ -251,12 +255,10 @@ export default function useFormalTipReview({
         invalid: false,
       };
     } else if (draft.mode === "point") {
-      const point = [
-        Number(draft.point.x),
-        Number(draft.point.y),
-        Number(draft.point.z),
-      ];
-      if (!point.every(Number.isFinite)) {
+      const coordinates = [draft.point.x, draft.point.y, draft.point.z];
+      const point = coordinates.map(Number);
+      if (coordinates.some((value) => String(value ?? "").trim() === "")
+        || !point.every(Number.isFinite)) {
         setMutationError("三維尖端位置必須填入有效的 X、Y、Z 毫米座標。");
         return false;
       }
@@ -267,10 +269,6 @@ export default function useFormalTipReview({
       };
     }
 
-    abortRequest(
-      mutationControllerRef.current,
-      "已由新的尖端標記修正取代。",
-    );
     const controller = new AbortController();
     mutationControllerRef.current = controller;
     setPendingAction("save");
@@ -281,9 +279,8 @@ export default function useFormalTipReview({
         payload,
         controller.signal,
       );
-      if (!mountedRef.current) return false;
-      await load();
-      return true;
+      if (!mountedRef.current || controller.signal.aborted) return false;
+      return await load();
     } catch (error) {
       if (error?.name !== "AbortError" && mountedRef.current) {
         setMutationError(messageFromError(
@@ -295,8 +292,8 @@ export default function useFormalTipReview({
     } finally {
       if (mutationControllerRef.current === controller) {
         mutationControllerRef.current = null;
+        if (mountedRef.current) setPendingAction("");
       }
-      if (mountedRef.current) setPendingAction("");
     }
   }, [
     analysisId,
@@ -306,11 +303,8 @@ export default function useFormalTipReview({
   ]);
 
   const deleteCorrection = useCallback(async (correctionId) => {
+    if (mutationControllerRef.current || loadControllerRef.current) return false;
     const controller = new AbortController();
-    abortRequest(
-      mutationControllerRef.current,
-      "已由新的尖端標記操作取代。",
-    );
     mutationControllerRef.current = controller;
     setPendingAction(`delete-${correctionId}`);
     setMutationError("");
@@ -320,9 +314,8 @@ export default function useFormalTipReview({
         correctionId,
         controller.signal,
       );
-      if (!mountedRef.current) return false;
-      await load();
-      return true;
+      if (!mountedRef.current || controller.signal.aborted) return false;
+      return await load();
     } catch (error) {
       if (error?.name !== "AbortError" && mountedRef.current) {
         setMutationError(messageFromError(
@@ -334,8 +327,8 @@ export default function useFormalTipReview({
     } finally {
       if (mutationControllerRef.current === controller) {
         mutationControllerRef.current = null;
+        if (mountedRef.current) setPendingAction("");
       }
-      if (mountedRef.current) setPendingAction("");
     }
   }, [
     analysisId,
@@ -343,11 +336,8 @@ export default function useFormalTipReview({
   ]);
 
   const completeReview = useCallback(async () => {
+    if (mutationControllerRef.current || loadControllerRef.current) return null;
     const controller = new AbortController();
-    abortRequest(
-      mutationControllerRef.current,
-      "已由完成尖端標記確認取代。",
-    );
     mutationControllerRef.current = controller;
     setPendingAction("complete");
     setMutationError("");
@@ -356,7 +346,7 @@ export default function useFormalTipReview({
         analysisId,
         controller.signal,
       );
-      if (!mountedRef.current) return null;
+      if (!mountedRef.current || controller.signal.aborted) return null;
       setData((previous) => ({
         ...previous,
         run,
@@ -373,8 +363,8 @@ export default function useFormalTipReview({
     } finally {
       if (mutationControllerRef.current === controller) {
         mutationControllerRef.current = null;
+        if (mountedRef.current) setPendingAction("");
       }
-      if (mountedRef.current) setPendingAction("");
     }
   }, [analysisId]);
 

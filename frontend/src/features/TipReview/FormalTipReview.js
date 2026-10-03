@@ -114,7 +114,7 @@ export default function FormalTipReview({
     analysisId,
   });
   const runDisplay = analysisRunDisplay(run);
-  const locked = Boolean(pendingAction);
+  const locked = Boolean(pendingAction) || loading;
 
   useEffect(() => {
     const error = mutationError || loadError;
@@ -233,7 +233,7 @@ export default function FormalTipReview({
                 </StatusPill>
               ) : null}
               <Button
-                disabled={loading}
+                disabled={locked}
                 onClick={() => void load()}
               >
                 <FiRefreshCw
@@ -282,13 +282,14 @@ export default function FormalTipReview({
                     return (
                       <button
                         type="button"
-                        className={`grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-emerald-300 ${
+                        className={`grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-45 ${
                           selected
                             ? "border-emerald-200/70 bg-emerald-400/15"
                             : "border-white/15 bg-black/15 hover:border-white/25 hover:bg-white/7"
                         }`}
                         key={item.round_key}
                         aria-pressed={selected}
+                        disabled={locked}
                         onClick={() => selectRound(item.round_key)}
                       >
                         <span className="min-w-0">

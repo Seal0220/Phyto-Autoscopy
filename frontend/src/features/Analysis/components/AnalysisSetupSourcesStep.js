@@ -1,9 +1,13 @@
+import { FiRefreshCw } from "react-icons/fi";
+
+import Button from "@/components/buttons/Button";
 import InformationGrid from "@/components/data/InformationGrid";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import { TextInput } from "@/components/inputs/Input";
 import { ToggleRow } from "@/components/inputs/Toggle";
 import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import { StatusPill } from "@/components/panels/Panel";
+import { formatNumberWithUnit } from "@/lib/formatUtils";
 
 import AnalysisCaptureConfiguration from "./AnalysisCaptureConfiguration";
 import AnalysisModeSelector from "./AnalysisModeSelector";
@@ -34,15 +38,19 @@ export default function AnalysisSetupSourcesStep({
   record,
   setup,
   scanning,
+  scanError,
+  onRescan,
   onModeSelectionChange,
   onCameraSourceChange,
 }) {
   const preview = setup.sourcePreview;
   const previewDescription = scanning
     ? "正在確認影像、配對與各輪可用狀態。"
-    : preview
-      ? `${preview.ready_round_count || 0} / ${preview.round_count || 0} 輪可分析。`
-      : "選擇擷取模式後會自動掃描。";
+    : scanError
+      ? "掃描未完成，請重新掃描。"
+      : preview
+        ? `${preview.ready_round_count || 0} / ${preview.round_count || 0} 輪可分析。`
+        : "選擇擷取模式後會自動掃描。";
 
   return (
     <>
@@ -122,46 +130,60 @@ export default function AnalysisSetupSourcesStep({
           title="影像掃描"
           description={previewDescription}
         >
-          <StatusPill tone={scanning
-            ? "warning"
-            : preview?.ready
-              ? "success"
-              : preview
-                ? "offline"
-                : "neutral"
-          }>
-            {scanning
-              ? "掃描中"
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <StatusPill tone={scanError ? "offline" : scanning
+              ? "warning"
               : preview?.ready
-                ? "資料有效"
+                ? "success"
                 : preview
-                  ? "需處理"
-                  : "尚未掃描"
-            }
-          </StatusPill>
+                  ? "offline"
+                  : "neutral"
+            }>
+              {scanError
+                ? "掃描失敗"
+                : scanning
+                  ? "掃描中"
+                  : preview?.ready
+                    ? "資料有效"
+                    : preview
+                      ? "需處理"
+                      : "尚未掃描"
+              }
+            </StatusPill>
+            <Button
+              disabled={scanning || !setup.recordPath || setup.selectedModeIds.length === 0}
+              onClick={() => void onRescan()}
+            >
+              <FiRefreshCw
+                className={`size-4 shrink-0 ${scanning ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {scanning ? "掃描中…" : "重新掃描"}
+            </Button>
+          </div>
         </SubsectionHeader>
 
         <InformationGrid
           items={[
             {
               label: "輪次數量",
-              value: `${preview?.round_count || 0} 輪`,
+              value: formatNumberWithUnit(preview?.round_count, "輪"),
             },
             {
               label: "有效輪次",
-              value: `${preview?.ready_round_count || 0} 輪`,
-              tone: preview?.ready ? "success" : "warning",
+              value: formatNumberWithUnit(preview?.ready_round_count, "輪"),
+              tone: !preview ? "neutral" : preview.ready ? "success" : "warning",
             },
             {
               label: "不完整輪次",
-              value: `${preview?.incomplete_round_count || 0} 輪`,
-              tone: preview?.incomplete_round_count > 0
+              value: formatNumberWithUnit(preview?.incomplete_round_count, "輪"),
+              tone: !preview ? "neutral" : preview.incomplete_round_count > 0
                 ? "warning"
                 : "success",
             },
             {
               label: "總影像數",
-              value: `${preview?.total_view_count || 0} 張`,
+              value: formatNumberWithUnit(preview?.total_view_count, "張"),
             },
           ]}
           rows={2}
@@ -172,9 +194,11 @@ export default function AnalysisSetupSourcesStep({
           items={CAMERAS.map((camera) => ({
             label: camera.label,
             value: setup.cameraSources[camera.id]?.enabled
-              ? `${preview?.camera_frame_counts?.[camera.id] || 0} 張 · ${resolutionLabel(preview?.camera_resolutions?.[camera.id])} px`
+              ? preview
+                ? `${preview.camera_frame_counts?.[camera.id] || 0} 張 · ${resolutionLabel(preview.camera_resolutions?.[camera.id])} px`
+                : "尚無資料"
               : "未啟用",
-            tone: setup.cameraSources[camera.id]?.enabled ? "success" : "neutral",
+            tone: preview && setup.cameraSources[camera.id]?.enabled ? "success" : "neutral",
           }))}
           border="none"
           rows={1}
@@ -196,8 +220,8 @@ export default function AnalysisSetupSourcesStep({
                       {round.mode_id} / {round.round_id}
                       {round.snapshot_id ? ` / ${round.snapshot_id}` : ""}
                     </span>
-                    <StatusPill tone={round.errors.length ? "offline" : "success"}>
-                      {round.errors.length ? "不完整" : "可分析"}
+                    <StatusPill tone={round.errors?.length ? "offline" : "success"}>
+                      {round.errors?.length ? "不完整" : "可分析"}
                     </StatusPill>
                   </div>
                   <InformationGrid
@@ -214,9 +238,7 @@ export default function AnalysisSetupSourcesStep({
                       },
                       {
                         label: "捕捉時間",
-                        value: round.duration_seconds === null
-                          ? "尚無資料"
-                          : `${round.duration_seconds.toFixed(2)} 秒`,
+                        value: formatNumberWithUnit(round.duration_seconds, "秒"),
                       },
                     ]}
                     border="none"
