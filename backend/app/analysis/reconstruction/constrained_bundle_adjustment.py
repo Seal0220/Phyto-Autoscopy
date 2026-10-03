@@ -89,7 +89,7 @@ def refine_sparse_camera_poses(
         config.set_variable_rig_from_world_pose(image.frame_id)
         sigma_mm = (
             8.0
-            if view.pose_source in {"aruco", "feature_refined"}
+            if view.pose_source in {"aruco", "feature_refined", "rig_stereo"}
             else 25.0
         )
         pose_priors[image_id] = pycolmap.PosePrior(
@@ -122,7 +122,10 @@ def refine_sparse_camera_poses(
         candidate,
     )
     summary = adjuster.solve()
+    if int(candidate.num_points3D()) < 4:
+        raise RuntimeError("姿態精修使稀疏三維點不足，已保留原始相機姿態。")
     refined_camera_poses: list[dict[str, Any]] = []
+    accepted_matrices: dict[int, np.ndarray] = {}
     maximum_translation = 0.0
     maximum_rotation = 0.0
 
@@ -161,10 +164,10 @@ def refine_sparse_camera_poses(
             or rotation_change > maximum_rotation_change_deg
         ):
             raise RuntimeError(
-                f"旋臂姿態精修偏離 ArUco 先驗過大："
+                f"旋臂姿態精修偏離初始姿態過大："
                 f"{translation_change:.2f} mm、{rotation_change:.2f}°。"
             )
-        view.world_to_camera_matrix[:] = refined_matrix
+        accepted_matrices[image_id] = refined_matrix
         refined_camera_poses.append({
             "view_id": view.view_id,
             "camera_id": view.camera_id,
@@ -180,33 +183,47 @@ def refine_sparse_camera_poses(
             ),
         })
 
+    quality = {
+        "enabled": True,
+        "status": "completed",
+        "fixed_camera_poses_constant": True,
+        "camera_intrinsics_constant": True,
+        "world_scale_source": (
+            "measured_stereo_baseline"
+            if any(view.pose_source == "rig_stereo" for view in dataset.views)
+            else "fixed_aruco_camera_poses"
+        ),
+        "rotating_position_priors": len(pose_priors),
+        "maximum_translation_change_mm": maximum_translation,
+        "maximum_rotation_change_deg": maximum_rotation,
+        "initial_reprojection_error_px": float(
+            reconstruction.compute_mean_reprojection_error()
+        ),
+        "final_reprojection_error_px": float(
+            candidate.compute_mean_reprojection_error()
+        ),
+        "successful_steps": int(
+            _summary_value(summary, "num_successful_steps", 0) or 0
+        ),
+        "unsuccessful_steps": int(
+            _summary_value(summary, "num_unsuccessful_steps", 0) or 0
+        ),
+        "termination_type": str(
+            _summary_value(summary, "termination_type", "unknown")
+        ),
+    }
+    if not all(math.isfinite(quality[key]) for key in (
+        "initial_reprojection_error_px",
+        "final_reprojection_error_px",
+    )):
+        raise RuntimeError("姿態精修的重投影誤差無效，已保留原始相機姿態。")
+    # Commit only after every camera and metric has passed validation.
+    for image_id, refined_matrix in accepted_matrices.items():
+        view_by_image_id[image_id].world_to_camera_matrix[:] = refined_matrix
+
     return BundleAdjustmentResult(
         reconstruction=candidate,
-        quality={
-            "enabled": True,
-            "status": "completed",
-            "fixed_camera_poses_constant": True,
-            "camera_intrinsics_constant": True,
-            "world_scale_source": "fixed_aruco_camera_poses",
-            "rotating_position_priors": len(pose_priors),
-            "maximum_translation_change_mm": maximum_translation,
-            "maximum_rotation_change_deg": maximum_rotation,
-            "initial_reprojection_error_px": float(
-                reconstruction.compute_mean_reprojection_error()
-            ),
-            "final_reprojection_error_px": float(
-                candidate.compute_mean_reprojection_error()
-            ),
-            "successful_steps": int(
-                _summary_value(summary, "num_successful_steps", 0) or 0
-            ),
-            "unsuccessful_steps": int(
-                _summary_value(summary, "num_unsuccessful_steps", 0) or 0
-            ),
-            "termination_type": str(
-                _summary_value(summary, "termination_type", "unknown")
-            ),
-        },
+        quality=quality,
         refined_camera_poses=refined_camera_poses,
     )
 

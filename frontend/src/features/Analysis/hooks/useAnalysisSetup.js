@@ -14,7 +14,10 @@ import {
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
 
-import { ANALYSIS_SETUP_STEPS } from "../analysisConfig";
+import {
+  ANALYSIS_SETUP_STEPS,
+  RECONSTRUCTION_QUALITY_PRESETS,
+} from "../analysisConfig";
 import {
   analysisMutationErrorMessage,
   createAnalysisRun,
@@ -328,6 +331,12 @@ export default function useAnalysisSetup({
       ...previous,
       parameters: {
         ...previous.parameters,
+        ...(key === "qualityPreset"
+          ? RECONSTRUCTION_QUALITY_PRESETS[value] || {}
+          : {}),
+        ...(key === "reconstructionBackend" && value === "graphdeco_3dgs"
+          ? { saveModelPreviews: false }
+          : {}),
         [key]: value,
       },
     }));

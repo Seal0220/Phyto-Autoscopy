@@ -152,11 +152,11 @@ def initialize_sparse_geometry(
         )
     if triangulation_pose_difference > 1e-6:
         raise SparseInitializationError(
-            "PyCOLMAP 改變了固化的 ArUco 世界姿態，已拒絕該結果。"
+            "PyCOLMAP 改變了固化的世界姿態，已拒絕該結果。"
         )
 
-    point_count = int(reconstruction.num_points3D())
-    if point_count < 4:
+    initial_point_count = int(reconstruction.num_points3D())
+    if initial_point_count < 4:
         raise SparseInitializationError(
             "多視角特徵不足，無法建立可供模型初始化的稀疏點。"
         )
@@ -181,8 +181,13 @@ def initialize_sparse_geometry(
                 "enabled": True,
                 "status": "failed",
                 "reason": str(error),
-                "fallback": "使用 ArUco 固化姿態繼續建立模型。",
+                "fallback": "使用原始固化姿態繼續建立模型。",
             }
+    point_count = int(reconstruction.num_points3D())
+    if point_count < 4:
+        raise SparseInitializationError(
+            "姿態精修後稀疏三維點不足，無法建立 Gaussian 模型。"
+        )
     update_round_dataset_pose_metadata(
         dataset,
         bundle_adjustment_quality,
@@ -194,6 +199,7 @@ def initialize_sparse_geometry(
     reconstruction.export_PLY(sparse_point_cloud)
     quality = {
         "registered_image_count": int(reconstruction.num_reg_images()),
+        "initial_point_count": initial_point_count,
         "point_count": point_count,
         "mean_track_length": float(reconstruction.compute_mean_track_length()),
         "mean_observations_per_image": float(

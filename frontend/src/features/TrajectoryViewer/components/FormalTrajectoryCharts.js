@@ -161,7 +161,7 @@ function MetricChart({
           className="size-full"
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
           role="img"
-          aria-label={`${metric.label}跨 Round 變化圖`}
+          aria-label={`${metric.label}跨輪變化圖`}
         >
           {GRID_STEPS.map((ratio) => {
             const y = PADDING.top + ratio * plotHeight;
@@ -221,7 +221,7 @@ function MetricChart({
             fontWeight="700"
             textAnchor="middle"
           >
-            經過時間（秒；無時間時使用 Round 順序）
+            經過時間（秒；無時間時使用輪次順序）
           </text>
           {series.map((item, index) => {
             const color = colorByMode[item.modeId] || "#6ee7b7";
@@ -278,8 +278,8 @@ export default function FormalTrajectoryCharts({
   return (
     <InnerPanel>
       <SubsectionHeader
-        title="跨 Round 運動圖表"
-        description="各模式維持獨立系列；無效或缺失 Round 會中斷線段，人工修正點以白色顯示。"
+        title="跨輪運動圖表"
+        description="各模式維持獨立系列；無效或缺失輪次會中斷線段，人工修正點以白色顯示。"
       />
       <div className="grid min-w-0 gap-3 min-[980px]:grid-cols-2">
         {METRICS.map((metric) => (

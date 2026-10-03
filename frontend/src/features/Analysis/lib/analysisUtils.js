@@ -490,6 +490,20 @@ export function validateAnalysisSetupStep(
         positive: true,
       },
     );
+    for (const [key, label, limits] of [
+      ["baselineMm", "雙鏡頭實測基線", { positive: true, maximum: 100000 }],
+      ["topHeightMm", "俯視鏡頭至平台高度", { positive: true, maximum: 100000 }],
+      ["featureCount", "每張特徵上限", { integer: true, minimum: 500, maximum: 20000 }],
+      ["minimumStereoInliers", "雙鏡頭最少內點", { integer: true, minimum: 8, maximum: 1000 }],
+      ["maximumEpipolarErrorPx", "極線誤差上限", { positive: true, maximum: 20 }],
+      ["minimumParallaxDeg", "最小視差角", { positive: true, maximum: 30 }],
+      ["maximumSideElevationDeg", "側視偏水平上限", { minimum: 0, maximum: 90 }],
+      ["maximumStereoReprojectionErrorPx", "雙鏡頭重投影上限", { positive: true, maximum: 30 }],
+      ["minimumRotatingInliers", "旋臂最少內點", { integer: true, minimum: 6, maximum: 1000 }],
+      ["maximumPnpReprojectionErrorPx", "旋臂重投影上限", { positive: true, maximum: 30 }],
+    ]) {
+      parseRequiredNumber(setup.parameters[key], label, limits);
+    }
     if (
       setup.method === "rotating"
       && !["preview", "standard", "high"].includes(
@@ -497,6 +511,21 @@ export function validateAnalysisSetupStep(
       )
     ) {
       throw new Error("請選擇有效的模型品質。");
+    }
+    if (setup.method === "rotating") {
+      parseRequiredNumber(
+        setup.parameters.trainingIterations,
+        "模型訓練步數",
+        { integer: true, minimum: 500, maximum: 100000 },
+      );
+      parseRequiredNumber(
+        setup.parameters.imageFactor,
+        "訓練影像縮小倍率",
+        { integer: true, minimum: 1, maximum: 8 },
+      );
+      if (![1, 2, 4, 8].includes(Number(setup.parameters.imageFactor))) {
+        throw new Error("訓練影像縮小倍率只能是 1、2、4 或 8。");
+      }
     }
     return true;
   }
@@ -516,18 +545,6 @@ export function validateAnalysisSetupStep(
       );
     }
   }
-  if (!setup.sourcePreview?.aruco_readiness?.ready) {
-    throw new Error("ArUco 世界座標基準尚未就緒。");
-  }
-  if (
-    setup.method === "rotating"
-    && !setup.sourcePreview?.backend_readiness?.available
-  ) {
-    throw new Error(
-      setup.sourcePreview?.backend_readiness?.errors?.[0]
-      || "目前沒有可用的三維模型建立後端。",
-    );
-  }
   return true;
 }
 
@@ -544,6 +561,8 @@ export function buildAnalysisCreatePayload(setup) {
       reconstruction: {
         backend: parameters.reconstructionBackend,
         quality_preset: parameters.qualityPreset,
+        training_iterations: Number(parameters.trainingIterations),
+        image_factor: Number(parameters.imageFactor),
         save_checkpoint: Boolean(parameters.saveCheckpoints),
         export_gaussians: buildsRoundModels
           && Boolean(parameters.saveGaussianModel)
@@ -566,7 +585,22 @@ export function buildAnalysisCreatePayload(setup) {
           && Boolean(parameters.usePlantMaskInLoss),
       },
       pose_strategy: {
-        use_aruco_world_pose: true,
+        baseline_mm: Number(parameters.baselineMm),
+        top_height_mm: Number(parameters.topHeightMm),
+        feature_count: Number(parameters.featureCount),
+        minimum_stereo_inliers: Number(parameters.minimumStereoInliers),
+        minimum_rotating_inliers: Number(parameters.minimumRotatingInliers),
+        maximum_epipolar_error_px: Number(parameters.maximumEpipolarErrorPx),
+        minimum_parallax_deg: Number(parameters.minimumParallaxDeg),
+        maximum_side_elevation_deg: Number(parameters.maximumSideElevationDeg),
+        maximum_stereo_reprojection_error_px: Number(
+          parameters.maximumStereoReprojectionErrorPx,
+        ),
+        maximum_pnp_reprojection_error_px: Number(
+          parameters.maximumPnpReprojectionErrorPx,
+        ),
+        use_motor_interpolation: buildsRoundModels
+          && Boolean(parameters.useMotorInterpolation),
         use_bundle_adjustment: buildsRoundModels
           && Boolean(parameters.useBundleAdjustment),
       },

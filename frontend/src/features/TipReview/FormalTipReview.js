@@ -22,25 +22,21 @@ import {
   NumericInput,
   TextInput,
 } from "@/components/inputs/Input";
-import FullscreenImage from "@/components/media/FullscreenImage";
+import DisclosurePanel from "@/components/panels/DisclosurePanel";
 import InnerPanel from "@/components/panels/InnerPanel";
 import {
   Panel,
   PanelHeader,
   StatusPill,
 } from "@/components/panels/Panel";
-import {
-  ANALYSIS_MODEL_STATUS_META,
-  ANALYSIS_METHODS,
-  RECONSTRUCTION_BACKEND_LABELS,
-} from "@/features/Analysis/analysisConfig";
+import { ANALYSIS_METHODS } from "@/features/Analysis/analysisConfig";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import { formatDateTime } from "@/lib/formatUtils";
 
 import FormalTipReviewRoundImage from "./components/FormalTipReviewRoundImage";
+import FormalTipReviewModel from "./components/FormalTipReviewModel";
 import useFormalTipReview from "./hooks/useFormalTipReview";
-import { formalArtifactUrl } from "./lib/formalTipReviewApiUtils";
 
 const TIP_SOURCE_LABELS = {
   multiview_joint: "多視角聯合分析",
@@ -56,6 +52,9 @@ function displayNumber(
   suffix = "",
   digits = 2,
 ) {
+  if (value === null || value === undefined || value === "") {
+    return "尚無資料";
+  }
   const number = Number(value);
   return Number.isFinite(number)
     ? `${number.toFixed(digits)}${suffix}`
@@ -129,20 +128,13 @@ export default function FormalTipReview({
   const selectedStatus = selectedRound
     ? roundStatus(selectedRound, resolvedLandmark)
     : null;
-  const modelQuality = selectedModel?.model_quality || {};
-  const modelStatus = ANALYSIS_MODEL_STATUS_META[
-    selectedModel?.status
-  ] || {
-    label: "尚無模型",
-    tone: "neutral",
-  };
   const overviewItems = selectedRound ? [
     {
       label: "模式",
       value: selectedRound.mode_id,
     },
     {
-      label: "Round",
+      label: "輪次",
       value: selectedRound.round_id,
     },
     {
@@ -274,12 +266,12 @@ export default function FormalTipReview({
 
           {run ? (
             <div className="grid min-w-0 gap-4 min-[1080px]:grid-cols-[18rem_minmax(0,1fr)]">
-              <InnerPanel className="min-h-0 content-start">
+              <InnerPanel className="min-h-0 content-start min-[1080px]:sticky min-[1080px]:top-28 min-[1080px]:self-start">
                 <SubsectionHeader
-                  title="Round"
+                  title="選擇輪次"
                   description={`${rounds.length} 輪；逐輪檢查模型、重投影與尖端標記。`}
                 />
-                <div className="grid max-h-[42rem] gap-2 overflow-y-auto pr-1">
+                <div className="grid max-h-[36rem] gap-2 overflow-y-auto pr-1">
                   {rounds.map((item) => {
                     const landmark = landmarks.find(
                       (entry) => entry.round_key === item.round_key,
@@ -335,34 +327,36 @@ export default function FormalTipReview({
                       minimumColumnWidth
                       scroll
                     />
-                    <div className="grid gap-3 min-[780px]:grid-cols-2">
-                      <div className="grid min-w-0 content-start gap-2">
-                        <h4 className="m-0 text-xs font-black text-neutral-300">
-                          原始自動尖端標記
-                        </h4>
-                        <InformationGrid
-                          items={automaticCoordinateItems}
-                          rows={2}
-                          minimumColumnWidth
-                          scroll
-                        />
+                    <DisclosurePanel title="比較自動與目前採用的三維位置">
+                      <div className="grid gap-3 min-[780px]:grid-cols-2">
+                        <div className="grid min-w-0 content-start gap-2">
+                          <h4 className="m-0 text-xs font-black text-neutral-300">
+                            原始自動尖端標記
+                          </h4>
+                          <InformationGrid
+                            items={automaticCoordinateItems}
+                            rows={2}
+                            minimumColumnWidth
+                            scroll
+                          />
+                        </div>
+                        <div className="grid min-w-0 content-start gap-2">
+                          <h4 className="m-0 text-xs font-black text-neutral-300">
+                            目前採用尖端標記
+                          </h4>
+                          <InformationGrid
+                            items={resolvedCoordinateItems}
+                            rows={3}
+                            minimumColumnWidth
+                            scroll
+                          />
+                        </div>
                       </div>
-                      <div className="grid min-w-0 content-start gap-2">
-                        <h4 className="m-0 text-xs font-black text-neutral-300">
-                          目前採用尖端標記
-                        </h4>
-                        <InformationGrid
-                          items={resolvedCoordinateItems}
-                          rows={3}
-                          minimumColumnWidth
-                          scroll
-                        />
-                      </div>
-                    </div>
+                    </DisclosurePanel>
                     {resolvedLandmark?.failure_reason ? (
                       <p className="m-0 rounded-xl border border-amber-200/25 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
                         {resolvedLandmark.failure_reason === "manual_invalid"
-                          ? "操作人員已將此 Round 標記為尖端不可確認。"
+                          ? "操作人員已將此輪標記為尖端不可確認。"
                           : resolvedLandmark.failure_reason
                         }
                       </p>
@@ -371,114 +365,13 @@ export default function FormalTipReview({
 
                   <InnerPanel>
                     <SubsectionHeader
-                      title="每輪植物模型"
-                      description="模型預覽、完整場景與純植物輸出均屬於目前 Round。"
-                    >
-                      <StatusPill tone={modelStatus.tone}>
-                        {modelStatus.label}
-                      </StatusPill>
-                    </SubsectionHeader>
-                    {selectedModel?.preview_paths?.length ? (
-                      <div className="grid gap-3 min-[720px]:grid-cols-2 min-[1200px]:grid-cols-3">
-                        {selectedModel.preview_paths.map((path, index) => {
-                          const url = formalArtifactUrl(analysisId, path);
-                          return (
-                            <div
-                              className="relative overflow-hidden rounded-xl border border-white/15 bg-black"
-                              key={path}
-                            >
-                              {/* 分析產物由受保護的動態 API 提供。 */}
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                className="block aspect-video w-full object-contain"
-                                src={url}
-                                alt={`每輪植物模型預覽 ${index + 1}`}
-                              />
-                              <FullscreenImage
-                                src={url}
-                                alt={`每輪植物模型預覽 ${index + 1}`}
-                                label={`模型預覽 ${index + 1}`}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="m-0 rounded-xl border border-dashed border-white/15 bg-black/15 p-5 text-center text-sm font-semibold text-neutral-400">
-                        此 Round 尚無可顯示的模型預覽。
-                      </p>
-                    )}
-                    <InformationGrid
-                      items={[
-                        {
-                          label: "模型後端",
-                          value: RECONSTRUCTION_BACKEND_LABELS[
-                            selectedModel?.backend
-                          ] || "尚無資料",
-                        },
-                        {
-                          label: "Gaussian 數量",
-                          value: selectedModel?.gaussian_count ?? "尚無資料",
-                        },
-                        {
-                          label: "完整點數",
-                          value: selectedModel?.point_count ?? "尚無資料",
-                        },
-                        {
-                          label: "植物點數比例",
-                          value: displayNumber(
-                            modelQuality.plant_isolation?.retained_ratio != null
-                              ? modelQuality.plant_isolation.retained_ratio * 100
-                              : null,
-                            "%",
-                            1,
-                          ),
-                        },
-                        {
-                          label: "骨架節點",
-                          value: modelQuality.skeleton_node_count ?? "尚無資料",
-                        },
-                        {
-                          label: "骨架端點",
-                          value: modelQuality.skeleton_endpoint_count ?? "尚無資料",
-                        },
-                      ]}
-                      rows={2}
-                      minimumColumnWidth
-                      scroll
-                    />
-                  </InnerPanel>
-
-                  <InnerPanel>
-                    <SubsectionHeader
-                      title="各視角尖端標記"
-                      description="重投影圖會同時顯示候選、採用點與最終三維標記；視角修正模式下可直接點選。"
+                      title="檢查影像與選擇修正方式"
+                      description="選擇多視角指定後，直接點擊影像標記尖端；其他方式可在下方輸入。"
                     >
                       <StatusPill tone={selectedObservations.some((item) => item.selected) ? "success" : "warning"}>
                         {selectedObservations.filter((item) => item.selected).length} 個支持候選
                       </StatusPill>
                     </SubsectionHeader>
-                    <div className="grid min-w-0 gap-3 min-[780px]:grid-cols-2 min-[1280px]:grid-cols-3">
-                      {selectedViews.map((view, viewIndex) => (
-                        <FormalTipReviewRoundImage
-                          analysisId={analysisId}
-                          key={view.view_id}
-                          view={view}
-                          viewIndex={viewIndex}
-                          point={draft.observations[view.view_id] || null}
-                          disabled={locked || draft.mode !== "views"}
-                          onPointChange={updateObservation}
-                          onPointRemove={removeObservation}
-                        />
-                      ))}
-                    </div>
-                  </InnerPanel>
-
-                  <InnerPanel>
-                    <SubsectionHeader
-                      title="人工修正"
-                      description="修正會建立歷史版本；原始自動尖端標記不會被覆寫。"
-                    />
                     <div className="grid gap-2 min-[680px]:grid-cols-3">
                       {[
                         ["views", "多視角指定", FiMousePointer],
@@ -500,6 +393,27 @@ export default function FormalTipReview({
                         </Button>
                       ))}
                     </div>
+                    <div className="grid min-w-0 gap-3 min-[780px]:grid-cols-2 min-[1280px]:grid-cols-3">
+                      {selectedViews.map((view, viewIndex) => (
+                        <FormalTipReviewRoundImage
+                          analysisId={analysisId}
+                          key={view.view_id}
+                          view={view}
+                          viewIndex={viewIndex}
+                          point={draft.observations[view.view_id] || null}
+                          disabled={locked || draft.mode !== "views"}
+                          onPointChange={updateObservation}
+                          onPointRemove={removeObservation}
+                        />
+                      ))}
+                    </div>
+                  </InnerPanel>
+
+                  <InnerPanel>
+                    <SubsectionHeader
+                      title="儲存人工修正"
+                      description="修正會建立歷史版本；原始自動尖端標記不會被覆寫。"
+                    />
 
                     {draft.mode === "point" ? (
                       <div className="grid gap-3 min-[680px]:grid-cols-3">
@@ -527,7 +441,7 @@ export default function FormalTipReview({
 
                     {draft.mode === "invalid" ? (
                       <p className="m-0 rounded-xl border border-rose-300/25 bg-rose-500/10 p-3 text-sm font-semibold text-rose-200">
-                        儲存後此 Round 的解析結果會保留，但尖端標記將記為不可確認，軌跡不會強制填補此缺口。
+                        儲存後此輪的解析結果會保留，但尖端標記將記為不可確認，軌跡不會強制填補此缺口。
                       </p>
                     ) : null}
 
@@ -574,6 +488,11 @@ export default function FormalTipReview({
                     </ActionRow>
                   </InnerPanel>
 
+                  <FormalTipReviewModel
+                    analysisId={analysisId}
+                    model={selectedModel}
+                  />
+
                   <InnerPanel>
                     <SubsectionHeader
                       title="修正歷史"
@@ -613,7 +532,7 @@ export default function FormalTipReview({
                       </div>
                     ) : (
                       <p className="m-0 py-3 text-center text-sm font-semibold text-neutral-400">
-                        此 Round 尚無人工修正。
+                        此輪尚無人工修正。
                       </p>
                     )}
                   </InnerPanel>

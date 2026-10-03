@@ -41,7 +41,7 @@ def evaluate_fixed_camera_pose_consistency(
 ) -> tuple[list[CameraPoseResult], dict[str, dict]]:
     """Compare fixed-camera measurements with a Run-level reference.
 
-    Every valid ArUco measurement remains authoritative. The reference only
+    Every valid measured pose remains authoritative. The reference only
     detects possible mount movement and never overwrites an image pose.
     """
 
@@ -61,7 +61,7 @@ def evaluate_fixed_camera_pose_consistency(
         reference_poses = [
             pose
             for pose in camera_poses
-            if pose.pose_source in {"aruco", "feature_refined"}
+            if pose.pose_source in {"aruco", "feature_refined", "rig_stereo"}
         ]
         if not reference_poses:
             summary[camera_id] = {
@@ -116,7 +116,7 @@ def evaluate_fixed_camera_pose_consistency(
                 warning_view_ids.append(pose.view_id)
                 warnings.append(
                     "固定相機姿態偏離本次分析的穩健基準，"
-                    "可能發生支架位移；保留此影像自己的 ArUco 姿態。"
+                    "可能發生支架位移；保留此影像自己的量測姿態。"
                 )
             updates[pose.view_id] = pose.model_copy(
                 update={

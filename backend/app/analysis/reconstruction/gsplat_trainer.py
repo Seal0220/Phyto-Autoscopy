@@ -231,7 +231,7 @@ def _checkpoint(
             "splats": splats.state_dict(),
             "center_world_mm": center_world_mm.tolist(),
             "world_scale_mm": world_scale_mm,
-            "coordinate_space": "aruco_world_mm",
+            "coordinate_space": "metric_world_mm",
         },
         temporary,
     )
@@ -246,11 +246,11 @@ def train_gsplat_model(
     progress_callback: ProgressCallback | None = None,
     cancel_check: CancelCheck | None = None,
 ) -> GsplatTrainingResult:
-    """Train one Round with gsplat while keeping ArUco poses immutable.
+    """Train one Round with gsplat while keeping camera poses immutable.
 
     The optimizer structure follows gsplat's documented ``DefaultStrategy``
     public API. Camera poses are tensors without gradients, so training cannot
-    change the ArUco world frame or its millimetre scale.
+    change the established world frame or its millimetre scale.
     """
 
     try:
@@ -268,8 +268,10 @@ def train_gsplat_model(
     preset = _QUALITY_PRESETS.get(quality_name)
     if preset is None:
         raise GsplatTrainingError("模型品質只能使用預覽、標準或高品質。")
-    maximum_steps = int(preset["maximum_steps"])
-    image_factor = int(preset["image_factor"])
+    maximum_steps = int(parameters.get("training_iterations", preset["maximum_steps"]))
+    image_factor = int(parameters.get("image_factor", preset["image_factor"]))
+    if not 500 <= maximum_steps <= 100000 or image_factor not in {1, 2, 4, 8}:
+        raise GsplatTrainingError("模型訓練步數或影像縮小倍率無效。")
     output_dir.mkdir(parents=True, exist_ok=True)
     positions_world_mm, colors = _load_sparse_points(dataset)
     center_world_mm, world_scale_mm = _normalization(positions_world_mm)
@@ -495,7 +497,7 @@ def train_gsplat_model(
         ),
         "initial_sparse_point_count": point_count,
         "gaussian_count": int(splats["means"].shape[0]),
-        "coordinate_space": "aruco_world_mm",
+        "coordinate_space": "metric_world_mm",
         "camera_poses_fixed": True,
         "plant_mask_in_training_loss": bool(
             parameters.get("use_plant_mask", True)

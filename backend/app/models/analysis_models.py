@@ -58,6 +58,26 @@ NewAnalysisMethod = Literal[
 
 CameraIdentifier = Literal["top", "side", "rotating"]
 
+
+class MarkerlessPoseSettings(BaseModel):
+    """Per-run, measured-scale feature geometry for analyses without fiducials."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    baseline_mm: float = Field(gt=0, le=100000)
+    top_height_mm: float = Field(gt=0, le=100000)
+    feature_count: int = Field(default=4000, ge=500, le=20000)
+    minimum_stereo_inliers: int = Field(default=24, ge=8, le=1000)
+    minimum_rotating_inliers: int = Field(default=12, ge=6, le=1000)
+    maximum_epipolar_error_px: float = Field(default=2.0, gt=0, le=20)
+    minimum_parallax_deg: float = Field(default=1.0, gt=0, le=30)
+    maximum_side_elevation_deg: float = Field(default=25.0, ge=0, le=90)
+    maximum_stereo_reprojection_error_px: float = Field(default=4.0, gt=0, le=30)
+    maximum_pnp_reprojection_error_px: float = Field(default=5.0, gt=0, le=30)
+    use_motor_interpolation: bool = True
+    use_bundle_adjustment: bool = True
+
+
 class AnalysisCameraSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -152,6 +172,7 @@ class AnalysisSourcePreview(BaseModel):
     round_readiness: list[AnalysisRoundReadiness] = Field(default_factory=list)
     intrinsics_readiness: dict[str, dict[str, Any]] = Field(default_factory=dict)
     aruco_readiness: dict[str, Any] = Field(default_factory=dict)
+    pose_readiness: dict[str, Any] = Field(default_factory=dict)
     backend_readiness: dict[str, Any] = Field(default_factory=dict)
 
 

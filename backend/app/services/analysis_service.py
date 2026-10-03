@@ -46,9 +46,11 @@ from app.analysis.review import create_tip_correction
 from app.analysis.pose_alignment import (
     align_dataset_camera_poses,
     evaluate_fixed_camera_pose_consistency,
-    sample_aruco_readiness,
 )
-from app.analysis.pose_alignment.aruco_world import aruco_layout_snapshot
+from app.analysis.pose_alignment.markerless_pose import (
+    align_markerless_camera_poses,
+    estimate_fixed_stereo_pose,
+)
 from app.analysis.run_metadata import (
     next_dated_identifier,
     repository_commit,
@@ -61,7 +63,10 @@ from app.analysis.record_validator import (
     CaptureRecordValidator,
 )
 from app.analysis.tip.pipeline import analyze_round_tip
-from app.analysis.tip.trajectory_linker import link_tip_trajectory
+from app.analysis.tip.trajectory_linker import (
+    link_tip_trajectory,
+    order_analysis_rounds,
+)
 from app.core.config import (
     AppSettings,
     BACKEND_ROOT,
@@ -83,6 +88,7 @@ from app.models.analysis_models import (
     AnalysisSourceMode,
     AnalysisSourcePreview,
     AnalysisSourcePreviewRequest,
+    MarkerlessPoseSettings,
     RoundModelResult,
     TipCorrection,
     TipCorrectionRequest,
@@ -156,6 +162,25 @@ CAPTURE_CONFIGURATION_FIELDS = (
     "return_to_origin",
     "arm_height_mm",
 )
+
+
+def _model_failed_round_keys(
+    rounds: Iterable[AnalysisRound],
+    models_by_round: Mapping[str, RoundModelResult],
+    method_name: str,
+) -> set[str]:
+    if method_name != "rotating":
+        return set()
+    return {
+        item.round_key
+        for item in rounds
+        if item.round_id != "round.00"
+        and (
+            item.round_key not in models_by_round
+            or models_by_round[item.round_key].status != "completed"
+        )
+    }
+
 
 def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(base)
@@ -710,45 +735,13 @@ class AnalysisService:
                     else ["尚未建立有效內參。"]
                 ),
             }
-        layout = aruco_layout_snapshot(self.settings.pose_alignment.aruco_world)
-        sample_readiness = sample_aruco_readiness(
-            grouping.views,
-            {
-                camera_id: intrinsics
-                for camera_id, intrinsics in available_intrinsics.items()
-                if (
-                    camera_id in enabled_camera_ids
-                    and intrinsics.status == "valid"
-                    and not intrinsics.invalidation_reasons
-                )
-            },
-            self.settings.pose_alignment.aruco_world,
-            enabled_camera_ids=enabled_camera_ids,
-            minimum_pnp_inliers=(
-                self.settings.pose_alignment.minimum_pnp_inliers
+        pose_readiness = {
+            "intrinsics_ready": all(
+                item["ready"] for item in intrinsics_readiness.values()
             ),
-            maximum_reprojection_error_px=(
-                self.settings.pose_alignment
-                .maximum_aruco_reprojection_error_px
-            ),
-        )
-        for camera_id, camera_result in sample_readiness["cameras"].items():
-            if camera_result["status"] == "resolved":
-                continue
-            camera_label = camera_result["camera_label"]
-            validation_warnings.append(
-                f"{camera_label}抽樣影像尚未建立有效 ArUco 姿態；"
-                "正式分析會逐張偵測並保留失敗原因。"
-            )
-        aruco_readiness = {
-            "ready": bool(layout.get("markers")),
-            "layout_version": layout.get("layout_version"),
-            "dictionary": layout.get("dictionary"),
-            "marker_count": len(layout.get("markers", [])),
-            "marker_size_mm": layout.get("marker_size_mm"),
-            "world_origin": layout.get("world_origin"),
-            "unit": layout.get("unit", "mm"),
-            **sample_readiness,
+            "scale_source": "measured_stereo_baseline",
+            "stereo_pose_estimated": False,
+            "note": "雙鏡頭姿態會在分析時由共同影像特徵估算；毫米尺度須輸入實測基線。",
         }
         backend_readiness = self._reconstruction_backends.check(
             self.settings.reconstruction.backend
@@ -773,7 +766,7 @@ class AnalysisService:
             total_view_count=len(grouping.views),
             round_readiness=list(grouping.readiness),
             intrinsics_readiness=intrinsics_readiness,
-            aruco_readiness=aruco_readiness,
+            pose_readiness=pose_readiness,
             backend_readiness=backend_readiness,
         )
 
@@ -799,10 +792,7 @@ class AnalysisService:
                 "export_plant_point_cloud": True,
                 "export_render_preview": True,
             },
-            "pose_strategy": {
-                "use_aruco_world_pose": True,
-                "use_bundle_adjustment": True,
-            },
+            "pose_strategy": {},
             "background": {
                 "generate_plant_mask": True,
                 "use_plant_mask_in_loss": True,
@@ -834,6 +824,15 @@ class AnalysisService:
             "advanced": {},
         }
         merged = _deep_merge(defaults, dict(incoming))
+        try:
+            markerless = MarkerlessPoseSettings.model_validate(
+                merged.get("pose_strategy")
+            )
+        except ValidationError as error:
+            raise AnalysisError(
+                "無標記姿態設定無效；請填寫實測雙鏡頭基線與有效門檻。"
+            ) from error
+        merged["pose_strategy"] = markerless.model_dump(mode="json")
         raw_reconstruction = merged.get("reconstruction")
         if not isinstance(raw_reconstruction, Mapping):
             raise AnalysisError("三維模型設定格式無效。")
@@ -893,6 +892,20 @@ class AnalysisService:
         quality = str(reconstruction.get("quality_preset") or "")
         if quality not in {"preview", "standard", "high"}:
             raise AnalysisError("模型品質只能使用預覽、標準或高品質。")
+        preset_steps = {"preview": 3000, "standard": 10000, "high": 30000}
+        preset_factors = {"preview": 4, "standard": 2, "high": 1}
+        iterations = reconstruction.get("training_iterations", preset_steps[quality])
+        image_factor = reconstruction.get("image_factor", preset_factors[quality])
+        if (
+            isinstance(iterations, bool)
+            or not isinstance(iterations, int)
+            or not 500 <= iterations <= 100000
+        ):
+            raise AnalysisError("模型訓練步數必須介於 500 與 100000。")
+        if isinstance(image_factor, bool) or image_factor not in {1, 2, 4, 8}:
+            raise AnalysisError("訓練影像縮小倍率只能是 1、2、4 或 8。")
+        reconstruction["training_iterations"] = iterations
+        reconstruction["image_factor"] = image_factor
         capabilities = self._reconstruction_backends.get(
             backend
         ).capabilities
@@ -1137,37 +1150,7 @@ class AnalysisService:
                 request.method,
                 validation.camera_resolutions,
             )
-            pose_settings = self.settings.pose_alignment.model_dump(mode="json")
-            top_camera = self.settings.cameras["top"]
-            side_camera = self.settings.cameras["side"]
-            rotating_camera = self.settings.cameras["rotating"]
-            pose_settings["camera_installation_parameters"] = {
-                "top": {
-                    "height_mm": top_camera.installation_height_mm,
-                    "horizontal_distance_to_origin_mm": (
-                        top_camera.horizontal_distance_to_origin_mm
-                    ),
-                    "facing_origin_angle_deg": 90.0,
-                },
-                "side": {
-                    "height_mm": side_camera.installation_height_mm,
-                    "horizontal_distance_to_origin_mm": (
-                        side_camera.horizontal_distance_to_origin_mm
-                    ),
-                    "facing_origin_angle_deg": 0.0,
-                },
-                "rotating": {
-                    "arm_height_mm": rotating_camera.arm_height_mm,
-                    "horizontal_distance_to_origin_mm": (
-                        rotating_camera.horizontal_distance_to_origin_mm
-                    ),
-                },
-            }
-            layout_snapshot = aruco_layout_snapshot(
-                self.settings.pose_alignment.aruco_world
-            )
-            if not layout_snapshot.get("markers"):
-                raise AnalysisError("ArUco 世界基準配置不完整。")
+            layout_snapshot: dict[str, Any] = {}
 
             try:
                 source_manifest = self._manifest(validation)
@@ -1203,31 +1186,6 @@ class AnalysisService:
                     "捕捉紀錄無法建立分析輪次："
                     + "；".join(grouping.errors)
                 )
-            aruco_readiness = sample_aruco_readiness(
-                grouping.views,
-                intrinsics_snapshot,
-                self.settings.pose_alignment.aruco_world,
-                enabled_camera_ids=tuple(
-                    camera_id
-                    for camera_id, source in selected_sources.items()
-                    if source["enabled"]
-                ),
-                minimum_pnp_inliers=(
-                    self.settings.pose_alignment.minimum_pnp_inliers
-                ),
-                maximum_reprojection_error_px=(
-                    self.settings.pose_alignment
-                    .maximum_aruco_reprojection_error_px
-                ),
-            )
-            aruco_warnings = [
-                (
-                    f"{item['camera_label']}抽樣影像尚未建立有效 "
-                    "ArUco 姿態；正式分析會逐張偵測並保留失敗原因。"
-                )
-                for item in aruco_readiness["cameras"].values()
-                if item["status"] != "resolved"
-            ]
             included_capture_ids = {
                 view.capture_id
                 for view in grouping.views
@@ -1319,12 +1277,14 @@ class AnalysisService:
                     "incomplete_round_count": grouping.incomplete_round_count,
                     "warnings": list(dict.fromkeys([
                         *grouping.warnings,
-                        *aruco_warnings,
                     ])),
                 },
-                "pose_alignment": pose_settings,
                 "coordinate_space": "undistorted",
-                "aruco_readiness_at_creation": aruco_readiness,
+                "pose_reference_at_creation": {
+                    "scale_source": "measured_stereo_baseline",
+                    "baseline_mm": analysis_parameters["pose_strategy"]["baseline_mm"],
+                    "top_height_mm": analysis_parameters["pose_strategy"]["top_height_mm"],
+                },
                 "backend_readiness_at_creation": backend_readiness,
                 "storage_readiness_at_creation": {
                     "available_bytes": free_storage_bytes,
@@ -1363,7 +1323,6 @@ class AnalysisService:
                 artifacts.write_reconstruction_environment(backend_readiness)
                 artifacts.write_run(run)
                 artifacts.write_intrinsics_snapshot(intrinsics_snapshot)
-                artifacts.write_aruco_layout_snapshot(layout_snapshot)
                 self.repository.create(run)
                 self.repository.replace_rounds_and_views(
                     analysis_id,
@@ -1412,12 +1371,20 @@ class AnalysisService:
                     f"{camera_id} 影像解析度 {width} × {height} 與內參 "
                     f"{calibration.width} × {calibration.height} 的長寬比不相容。"
                 )
-        try:
-            stored_layout = self._artifacts(run).read_aruco_layout_snapshot()
-        except (OSError, ValueError) as error:
-            raise AnalysisError("分析建立時固化的 ArUco 基準快照遺失。") from error
-        if stored_layout != run.aruco_layout_snapshot:
-            raise AnalysisError("分析的 ArUco 基準快照與資料庫紀錄不一致。")
+        if run.aruco_layout_snapshot:
+            try:
+                stored_layout = self._artifacts(run).read_aruco_layout_snapshot()
+            except (OSError, ValueError) as error:
+                raise AnalysisError("分析建立時固化的 ArUco 基準快照遺失。") from error
+            if stored_layout != run.aruco_layout_snapshot:
+                raise AnalysisError("分析的 ArUco 基準快照與資料庫紀錄不一致。")
+        else:
+            try:
+                MarkerlessPoseSettings.model_validate(
+                    run.parameters["pose_strategy"]
+                )
+            except (KeyError, ValidationError) as error:
+                raise AnalysisError("分析缺少有效的無標記姿態與實測尺度設定。") from error
 
         rounds = self.repository.list_rounds(run.analysis_id)
         views = self.repository.list_views(run.analysis_id)
@@ -1670,7 +1637,11 @@ class AnalysisService:
             run = self._set_state(
                 run,
                 status="processing",
-                stage="detecting_aruco",
+                stage=(
+                    "detecting_aruco"
+                    if run.aruco_layout_snapshot
+                    else "estimating_camera_poses"
+                ),
                 current_frame=0,
                 progress=0.0,
                 clear_error=True,
@@ -1727,7 +1698,11 @@ class AnalysisService:
         resumed = self._set_state(
             validated,
             status="processing",
-            stage="detecting_aruco",
+            stage=(
+                "detecting_aruco"
+                if validated.aruco_layout_snapshot
+                else "estimating_camera_poses"
+            ),
             current_frame=0,
             progress=0.0,
             clear_error=True,
@@ -1971,7 +1946,15 @@ class AnalysisService:
             )
             self.repository.update_round(updated_round)
             rounds.append(updated_round)
-        trajectory = link_tip_trajectory(rounds, resolved_landmarks)
+        trajectory = link_tip_trajectory(
+            rounds,
+            resolved_landmarks,
+            blocked_interpolation_round_keys=_model_failed_round_keys(
+                rounds,
+                model_by_round,
+                run.method_name,
+            ),
+        )
         self.repository.replace_tip_trajectory(
             run.analysis_id,
             trajectory.points,
@@ -2275,8 +2258,36 @@ class AnalysisService:
             }
             for camera_id, snapshot in run.intrinsics_snapshot.items()
         }
-        pose_settings = self._pose_settings_for_run(run)
         pose_strategy = run.parameters.get("pose_strategy")
+        markerless = not run.aruco_layout_snapshot
+        pose_settings = None if markerless else self._pose_settings_for_run(run)
+        fixed_stereo_poses = None
+        stereo_quality: dict[str, object] = {}
+        if markerless:
+            try:
+                markerless_settings = MarkerlessPoseSettings.model_validate(
+                    pose_strategy
+                ).model_dump(mode="json")
+                all_frames = [{
+                    "capture_id": view.capture_id,
+                    "camera_id": view.camera_id,
+                    "relative_path": undistorted_by_view[view.view_id]["undistorted_path"],
+                    "file_path": str(
+                        self._artifacts(run).root
+                        / undistorted_by_view[view.view_id]["undistorted_path"]
+                    ),
+                    "timestamp": view.timestamp,
+                    "snapshot_id": view.snapshot_id,
+                    "round_key": view.round_key,
+                } for view in views]
+                fixed_stereo_poses, stereo_quality = estimate_fixed_stereo_pose(
+                    all_frames,
+                    undistorted_intrinsics,
+                    markerless_settings,
+                    cancel_check=lambda: self._check_cancel(cancel_event),
+                )
+            except (ValidationError, ValueError, cv2.error) as error:
+                raise AnalysisError(f"無標記雙鏡頭姿態估計失敗：{error}") from error
         use_feature_refinement = (
             bool(pose_strategy.get("use_bundle_adjustment", True))
             if isinstance(pose_strategy, Mapping)
@@ -2329,6 +2340,8 @@ class AnalysisService:
                     "timestamp": view.timestamp,
                     "angle_deg": view.angle_deg,
                     "motor_position_deg": view.motor_position_deg,
+                    "snapshot_id": view.snapshot_id,
+                    "round_key": view.round_key,
                 })
 
             def update_pose_stage(stage: str, progress: float) -> None:
@@ -2345,22 +2358,33 @@ class AnalysisService:
                     progress=0.18 + round_progress * 0.14,
                 )
 
-            result = align_dataset_camera_poses(
-                derived_frames,
-                undistorted_intrinsics,
-                pose_settings,
-                required_camera_ids=self._required_camera_ids(
-                    run.method_name
-                ),
-                debug_directory=(
-                    artifacts.root
-                    / "pose_debug"
-                    / f"round_{round_index:04d}"
-                ),
-                use_feature_refinement=use_feature_refinement,
-                stage_callback=update_pose_stage,
-                cancel_check=lambda: self._check_cancel(cancel_event),
-            )
+            if markerless:
+                update_pose_stage("estimating_camera_poses", 0.02)
+                result = align_markerless_camera_poses(
+                    derived_frames,
+                    undistorted_intrinsics,
+                    markerless_settings,
+                    fixed_stereo_poses,
+                    required_camera_ids=self._required_camera_ids(run.method_name),
+                    cancel_check=lambda: self._check_cancel(cancel_event),
+                )
+            else:
+                result = align_dataset_camera_poses(
+                    derived_frames,
+                    undistorted_intrinsics,
+                    pose_settings,
+                    required_camera_ids=self._required_camera_ids(
+                        run.method_name
+                    ),
+                    debug_directory=(
+                        artifacts.root
+                        / "pose_debug"
+                        / f"round_{round_index:04d}"
+                    ),
+                    use_feature_refinement=use_feature_refinement,
+                    stage_callback=update_pose_stage,
+                    cancel_check=lambda: self._check_cancel(cancel_event),
+                )
             pose_estimation_version = result.pose_estimation_version
             view_by_capture = {
                 (view.capture_id, view.camera_id): view
@@ -2388,6 +2412,7 @@ class AnalysisService:
                     else None
                 )
                 source = {
+                    "rig_stereo": "rig_stereo",
                     "aruco": "aruco",
                     "aruco_refined": "feature_refined",
                     "sfm": "feature_refined",
@@ -2427,6 +2452,9 @@ class AnalysisService:
                         ),
                         aruco_reprojection_error_px=(
                             pose.aruco_reprojection_error_px
+                        ),
+                        refinement_reprojection_error_px=(
+                            pose.feature_reprojection_error_px
                         ),
                         pose_source=source,
                         valid=pose.resolved,
@@ -2533,6 +2561,7 @@ class AnalysisService:
         ]
         aggregate_pose_quality = {
             "coordinate_space": "undistorted",
+            "world_scale": stereo_quality if markerless else {"scale_source": "aruco"},
             "fixed_camera_consistency": fixed_camera_consistency,
             "rounds": round_quality_payloads,
         }
@@ -2715,11 +2744,11 @@ class AnalysisService:
             )
             if translation_change > 50.0 or rotation_change > 10.0:
                 raise AnalysisError(
-                    "姿態精修結果偏離 ArUco 先驗上限。"
+                    "姿態精修結果偏離初始姿態上限。"
                 )
             camera_to_world = np.linalg.inv(matrix)
             warning = (
-                "已使用固定世界基準與 ArUco 位置先驗完成"
+                "已使用固定雙鏡頭世界基準與旋臂位置先驗完成"
                 "受約束多視角 Bundle Adjustment。"
             )
             warnings = list(stored.quality_warnings)
@@ -3176,7 +3205,9 @@ class AnalysisService:
             tip_settings.get("maximum_reprojection_error_px", 5.0)
         )
 
-        rounds = self.repository.list_rounds(run.analysis_id)
+        rounds = order_analysis_rounds(
+            self.repository.list_rounds(run.analysis_id)
+        )
         views_by_round: dict[str, list] = {}
         for view in self.repository.list_views(run.analysis_id):
             views_by_round.setdefault(view.round_key, []).append(view)
@@ -3428,6 +3459,11 @@ class AnalysisService:
         trajectory = link_tip_trajectory(
             resolved_rounds,
             resolved_landmarks,
+            blocked_interpolation_round_keys=_model_failed_round_keys(
+                resolved_rounds,
+                models_by_round,
+                run.method_name,
+            ),
         )
         self.repository.replace_tip_trajectory(
             run.analysis_id,

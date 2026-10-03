@@ -25,11 +25,11 @@ export default function AnalysisAvailableRecords({
       <SubsectionHeader
         titleId="analysis-record-selection-title"
         title="選擇紀錄"
-        description="選擇紀錄後會自動帶入紀錄根目錄、擷取模式並完成掃描。"
+        description="選一筆捕捉紀錄；下一步可選擇模式及分析視角。"
       />
 
       <div
-        className="max-h-80 min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-white/4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        className="max-h-[32rem] min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-black/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
         aria-label="紀錄選擇清單"
         role="list"
         tabIndex={0}
@@ -40,7 +40,7 @@ export default function AnalysisAvailableRecords({
 
           return (
             <article
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_8.5rem] items-center gap-3 border-b border-white/15 p-4 last:border-b-0 max-[720px]:grid-cols-1"
+              className={`grid min-w-0 grid-cols-1 items-center gap-3 border-b border-white/15 p-4 last:border-b-0 min-[720px]:grid-cols-[minmax(0,1fr)_8.5rem] ${selected ? "bg-emerald-500/10" : "hover:bg-white/[0.04]"}`}
               key={source.record_id}
               role="listitem"
             >
@@ -50,17 +50,17 @@ export default function AnalysisAvailableRecords({
                     {source.record_id || "未命名紀錄"}
                   </h3>
 
-                  <div className="flex flex-row gap-2">
-                    <StatusPill tone="success">可分析</StatusPill>
-                    {selected ? (
-                      <StatusPill tone="success">已選擇</StatusPill>
-                    ) : null}
-                  </div>
+                  <StatusPill tone="success">
+                    {selected ? "已選擇" : "可分析"}
+                  </StatusPill>
                 </div>
 
                 <InformationGrid
-                  items={metrics}
-                  rows={1}
+                  items={metrics.map((item) => ({
+                    ...item,
+                    truncate: true,
+                  }))}
+                  rows={2}
                   stackAtSmall
                 />
               </div>

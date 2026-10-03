@@ -17,29 +17,6 @@ export const ANALYSIS_CAMERA_LABELS = {
   rotating: "旋臂視角",
 };
 
-export const ARUCO_SAMPLE_STATUS_META = {
-  resolved: {
-    label: "抽樣定位成功",
-    tone: "success",
-  },
-  partial: {
-    label: "部分抽樣成功",
-    tone: "warning",
-  },
-  markers_detected: {
-    label: "已偵測，定位失敗",
-    tone: "warning",
-  },
-  markers_missing: {
-    label: "未偵測到基準",
-    tone: "warning",
-  },
-  unavailable: {
-    label: "無法抽樣",
-    tone: "error",
-  },
-};
-
 export const ANALYSIS_SETUP_STEPS = [
   {
     id: 1,
@@ -147,6 +124,17 @@ export const RECONSTRUCTION_QUALITY_OPTIONS = [
   },
 ];
 
+export const RECONSTRUCTION_QUALITY_PRESETS = {
+  preview: { trainingIterations: "3000", imageFactor: "4" },
+  standard: { trainingIterations: "10000", imageFactor: "2" },
+  high: { trainingIterations: "30000", imageFactor: "1" },
+};
+
+export const RECONSTRUCTION_BACKEND_OPTIONS = [
+  { value: "gsplat_3dgs", label: "gsplat" },
+  { value: "graphdeco_3dgs", label: "Graphdeco" },
+];
+
 export const RECONSTRUCTION_BACKEND_LABELS = {
   gsplat_3dgs: "gsplat 三維 Gaussian",
   graphdeco_3dgs: "Graphdeco 研究對照",
@@ -185,6 +173,19 @@ export const RECONSTRUCTION_QUALITY_LABELS = Object.fromEntries(
 export const ANALYSIS_PARAMETER_DEFAULTS = {
   reconstructionBackend: "gsplat_3dgs",
   qualityPreset: "standard",
+  trainingIterations: "10000",
+  imageFactor: "2",
+  baselineMm: "",
+  topHeightMm: "",
+  featureCount: "4000",
+  minimumStereoInliers: "24",
+  minimumRotatingInliers: "12",
+  maximumEpipolarErrorPx: "2",
+  minimumParallaxDeg: "1",
+  maximumSideElevationDeg: "25",
+  maximumStereoReprojectionErrorPx: "4",
+  maximumPnpReprojectionErrorPx: "5",
+  useMotorInterpolation: true,
   useBundleAdjustment: true,
   generatePlantMask: true,
   usePlantMaskInLoss: true,

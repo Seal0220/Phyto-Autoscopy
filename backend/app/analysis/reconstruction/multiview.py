@@ -172,7 +172,7 @@ def _errors(
     values = []
     for projection, observation in zip(projections, observations):
         projected = np.asarray(projection, dtype=np.float64) @ homogeneous
-        if abs(projected[2]) <= 1e-12:
+        if not np.isfinite(projected).all() or projected[2] <= 1e-12:
             values.append(float("inf"))
             continue
         pixel = projected[:2] / projected[2]
@@ -195,18 +195,28 @@ def robust_multiview_triangulate(
         confidence if confidence is not None else np.ones(len(projections)),
         dtype=np.float64,
     )
-    if weights.shape != (len(projections),) or not np.isfinite(weights).all():
+    if (
+        weights.shape != (len(projections),)
+        or not np.isfinite(weights).all()
+        or np.any(weights < 0)
+    ):
         raise ValueError("多視角觀測信心格式無效。")
-    used = np.ones(len(projections), dtype=bool)
-    point = _triangulate(projections, observations, weights)
-    errors = _errors(point, projections, observations)
+    if not np.isfinite(rejection_threshold_px) or rejection_threshold_px <= 0:
+        raise ValueError("多視角重投影門檻必須大於零。")
 
-    # top + side 是基準約束；額外觀測超過門檻時只排除該觀測。
+    # The first two observations form a measured two-view seed. Never let an
+    # outlying additional view pull the initial solution away from that seed.
+    point = _triangulate(projections[:2], observations[:2], weights[:2])
+    errors = _errors(point, projections, observations)
+    if not np.isfinite(errors[:2]).all():
+        raise ValueError("雙鏡頭基準點位於相機後方或無法投影。")
+    used = np.ones(len(projections), dtype=bool)
+
+    # Extra views are admitted against the seed, then checked again after
+    # refinement. A rejected view cannot alter the seeded coordinates.
     for index in range(2, len(projections)):
-        if errors[index] <= rejection_threshold_px:
-            continue
-        used[index] = False
-    if used.sum() >= 2 and not used.all():
+        used[index] = errors[index] <= rejection_threshold_px
+    for _ in range(max(1, len(projections) - 1)):
         selected = np.flatnonzero(used)
         point = _triangulate(
             [projections[index] for index in selected],
@@ -214,6 +224,11 @@ def robust_multiview_triangulate(
             weights[selected],
         )
         errors = _errors(point, projections, observations)
+        outliers = used & (errors > rejection_threshold_px)
+        outliers[:2] = False
+        if not outliers.any():
+            break
+        used[outliers] = False
     return MultiviewResult(
         point=point,
         reprojection_errors_px=tuple(float(value) for value in errors),

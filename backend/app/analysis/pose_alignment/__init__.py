@@ -1,4 +1,4 @@
-"""Dataset-owned ArUco world alignment for Analysis Runs."""
+"""Dataset-owned camera pose alignment for Analysis Runs."""
 
 from app.analysis.pose_alignment.fixed_camera_pose import (
     evaluate_fixed_camera_pose_consistency,

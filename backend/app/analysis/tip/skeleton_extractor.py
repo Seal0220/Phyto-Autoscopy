@@ -124,7 +124,7 @@ def extract_plant_skeleton(
         for source, target, data in skeleton.edges(data=True)
     ]
     payload = {
-        "coordinate_space": "aruco_world_mm",
+        "coordinate_space": "metric_world_mm",
         "base_node": int(base_node),
         "base_position_mm": points[base_node].tolist(),
         "nodes": [

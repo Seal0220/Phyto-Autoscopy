@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 PoseSource = Literal[
+    "rig_stereo",
     "aruco",
     "aruco_refined",
     "sfm",
@@ -31,6 +32,7 @@ class CameraPoseResult(BaseModel):
     visible_marker_count: int = 0
     pnp_inlier_count: int = 0
     aruco_reprojection_error_px: float | None = None
+    feature_reprojection_error_px: float | None = None
     sfm_match_count: int = 0
     quality_warnings: list[str] = Field(default_factory=list)
     failure_reason: str | None = None

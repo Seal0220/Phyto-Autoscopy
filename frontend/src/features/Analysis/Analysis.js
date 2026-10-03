@@ -11,6 +11,7 @@ import {
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
+import RetryMessage from "@/components/feedback/RetryMessage";
 import {
   Panel,
   PanelHeader,
@@ -38,9 +39,19 @@ export default function Analysis() {
   const activeRunCount = runs.filter((run) => [
     "validating",
     "processing",
+    "reconstructing",
+  ].includes(run.status)).length;
+  const attentionRunCount = runs.filter((run) => [
+    "draft",
+    "ready",
     "needs_review",
     "reviewing",
-    "reconstructing",
+    "failed",
+    "cancelled",
+  ].includes(run.status)).length;
+  const completedRunCount = runs.filter((run) => [
+    "completed",
+    "partially_completed",
   ].includes(run.status)).length;
   const hasData = sources.length > 0 || runs.length > 0;
 
@@ -81,22 +92,24 @@ export default function Analysis() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
+    <div className="mx-auto grid w-full max-w-7xl gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="分析總覽">
           <PanelHeader
             title="分析"
             action={(
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button
-                  disabled={loading}
-                  onClick={() => void load()}
-                >
-                  <FiRefreshCw
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  {loading ? "讀取中…" : "重新整理"}
-                </Button>
+                {!loadError ? (
+                  <Button
+                    disabled={loading}
+                    onClick={() => void load()}
+                  >
+                    <FiRefreshCw
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    {loading ? "讀取中…" : "重新整理"}
+                  </Button>
+                ) : null}
                 <Button
                   variant="primary"
                   onClick={() => openNewAnalysis()}
@@ -112,19 +125,36 @@ export default function Analysis() {
           />
 
           <div className="grid gap-4 p-5 max-sm:p-4">
-            {!loadError || hasData ? (
-              <div className="grid gap-3 min-[520px]:grid-cols-2">
+            {(!loadError || hasData) ? (
+              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4">
                 <StatusCard
-                  title="捕捉紀錄"
-                  content={sources.length}
+                  title="可用捕捉紀錄"
+                  content={sources.filter((source) => source.ready).length}
                   note="筆"
                 />
                 <StatusCard
-                  title="進行中分析"
+                  title="進行中"
                   content={activeRunCount}
                   note="個"
                 />
+                <StatusCard
+                  title="待處理"
+                  content={attentionRunCount}
+                  note="個"
+                />
+                <StatusCard
+                  title="已有結果"
+                  content={completedRunCount}
+                  note="個"
+                />
               </div>
+            ) : null}
+            {loadError ? (
+              <RetryMessage
+                message={loadError}
+                onRetry={() => void load()}
+                retrying={loading}
+              />
             ) : null}
           </div>
         </Panel>
