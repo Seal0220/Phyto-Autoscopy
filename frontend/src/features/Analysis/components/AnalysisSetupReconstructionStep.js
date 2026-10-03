@@ -185,7 +185,7 @@ export default function AnalysisSetupReconstructionStep({
       <InnerPanel>
         <SubsectionHeader
           title="相機姿態"
-          description="由校正內參與共同影像特徵估姿；請實測雙鏡頭光學中心距離及俯視鏡頭到平台的高度。"
+          description="由校正內參與共同影像特徵估姿；實測基線與俯視高度定尺度，側鏡頭安裝量測可檢查姿態偏差。"
           titleMode={1}
         />
         <div className="grid gap-3 min-[720px]:grid-cols-2">
@@ -212,6 +212,28 @@ export default function AnalysisSetupReconstructionStep({
             step={0.1}
             suffix="mm"
             required
+          />
+          <NumericInput
+            id="analysis-side-height-mm"
+            label="側鏡頭距桌面高度"
+            description="選填；側鏡頭光學中心到桌面平面的垂直距離，用於比對估計姿態。"
+            value={parameters.sideHeightMm}
+            onValueChange={(value) => onChange("sideHeightMm", value)}
+            min={0}
+            max={10000}
+            step={0.1}
+            suffix="mm"
+          />
+          <NumericInput
+            id="analysis-side-horizontal-distance-mm"
+            label="側鏡頭至中心水平距離"
+            description="選填；側鏡頭光學中心到分析原點（俯視鏡頭正下方）的水平距離，用於比對估計姿態。"
+            value={parameters.sideHorizontalDistanceMm}
+            onValueChange={(value) => onChange("sideHorizontalDistanceMm", value)}
+            min={0}
+            max={10000}
+            step={0.1}
+            suffix="mm"
           />
         </div>
         <DisclosurePanel

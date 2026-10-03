@@ -22,6 +22,9 @@ function decimalLabel(
   unit,
   digits = 3,
 ) {
+  if (value === null || value === undefined || value === "") {
+    return "尚無資料";
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed)
     ? `${parsed.toFixed(digits)} ${unit}`
@@ -148,6 +151,12 @@ export default function AnalysisRunPoseQuality({
   );
   const markerless = quality?.world_scale?.scale_source
     === "measured_stereo_baseline";
+  const measuredSideHeight = quality?.world_scale?.side_height_mm;
+  const measuredSideDistance = quality?.world_scale?.side_horizontal_distance_mm;
+  const hasSideHeight = measuredSideHeight !== null
+    && measuredSideHeight !== undefined;
+  const hasSideDistance = measuredSideDistance !== null
+    && measuredSideDistance !== undefined;
   const bundleAdjustment = (
     Array.isArray(quality?.rounds)
       ? quality.rounds
@@ -248,6 +257,64 @@ export default function AnalysisRunPoseQuality({
         columns={markerless ? 5 : 4}
         scroll
       />
+
+      {markerless && (hasSideHeight || hasSideDistance) ? (
+        <div className="grid gap-2 border-t border-white/15 pt-3">
+          <h5 className="m-0 text-xs font-black text-neutral-300">
+            側鏡頭安裝位置比對
+          </h5>
+          <InformationGrid
+            items={[
+              ...(hasSideHeight ? [
+                {
+                  label: "實測桌面高度",
+                  value: decimalLabel(measuredSideHeight, "mm", 1),
+                },
+                {
+                  label: "估計桌面高度",
+                  value: decimalLabel(
+                    quality.world_scale.estimated_side_height_mm,
+                    "mm",
+                    1,
+                  ),
+                },
+                {
+                  label: "高度差",
+                  value: decimalLabel(
+                    quality.world_scale.side_height_error_mm,
+                    "mm",
+                    1,
+                  ),
+                },
+              ] : []),
+              ...(hasSideDistance ? [
+                {
+                  label: "實測水平距離",
+                  value: decimalLabel(measuredSideDistance, "mm", 1),
+                },
+                {
+                  label: "估計水平距離",
+                  value: decimalLabel(
+                    quality.world_scale.estimated_side_horizontal_distance_mm,
+                    "mm",
+                    1,
+                  ),
+                },
+                {
+                  label: "水平距離差",
+                  value: decimalLabel(
+                    quality.world_scale.side_horizontal_distance_error_mm,
+                    "mm",
+                    1,
+                  ),
+                },
+              ] : []),
+            ]}
+            columns={3}
+            scroll
+          />
+        </div>
+      ) : null}
 
       {fixedCameraConsistency.map(([cameraId, summary]) => (
         <div

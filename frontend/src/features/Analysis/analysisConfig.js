@@ -177,6 +177,8 @@ export const ANALYSIS_PARAMETER_DEFAULTS = {
   imageFactor: "2",
   baselineMm: "",
   topHeightMm: "",
+  sideHeightMm: "",
+  sideHorizontalDistanceMm: "",
   featureCount: "4000",
   minimumStereoInliers: "24",
   minimumRotatingInliers: "12",

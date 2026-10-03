@@ -947,7 +947,7 @@ class AnalysisService:
             )
         except ValidationError as error:
             raise AnalysisError(
-                "無標記姿態設定無效；請填寫實測雙鏡頭基線與有效門檻。"
+                "無標記姿態設定無效；請確認實測距離、高度與姿態門檻。"
             ) from error
         merged["pose_strategy"] = markerless.model_dump(mode="json")
         raw_reconstruction = merged.get("reconstruction")
@@ -1401,6 +1401,8 @@ class AnalysisService:
                     "scale_source": "measured_stereo_baseline",
                     "baseline_mm": analysis_parameters["pose_strategy"]["baseline_mm"],
                     "top_height_mm": analysis_parameters["pose_strategy"]["top_height_mm"],
+                    "side_height_mm": analysis_parameters["pose_strategy"]["side_height_mm"],
+                    "side_horizontal_distance_mm": analysis_parameters["pose_strategy"]["side_horizontal_distance_mm"],
                 },
                 "backend_readiness_at_creation": backend_readiness,
                 "storage_readiness_at_creation": {
