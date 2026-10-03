@@ -68,8 +68,12 @@ def _apply_runtime_dependencies(context: AppContext, group: str) -> None:
         controller.safety = MotorSafety(context.settings.motor)
         if hasattr(controller, "profile"):
             controller.profile = MotorProfile(context.settings.motor)
-        if hasattr(controller, "_apply_profile"):
-            controller._apply_profile()
+        if context.settings.motor.enabled:
+            controller.start()
+            if hasattr(controller, "_apply_profile"):
+                controller._apply_profile()
+        else:
+            controller.close()
 
     if group in {"logging", "default"}:
         configure_logging(context.settings)

@@ -23,8 +23,9 @@ export default function MotorControls({
   onRunAction,
 }) {
   const [targetAngle, setTargetAngle] = useState(String(motor.command_position_deg ?? 0));
+  const motorEnabled = motor.enabled !== false;
   const motorConnected = Boolean(motor.connected);
-  const connectionUnavailable = !isConnected || !motorConnected;
+  const connectionUnavailable = !isConnected || !motorEnabled || !motorConnected;
   const engaged = Boolean(motor.engaged);
   const changingEngagement = busyActions.has("motor.engage")
     || busyActions.has("motor.disengage");
@@ -34,6 +35,9 @@ export default function MotorControls({
   ));
   const actionInProgress = motorActionInProgress || Boolean(motor.moving);
   const controlsDisabled = baseDisabled || actionInProgress;
+  const toggleDisabled = !isConnected || scheduleActive
+    || actionInProgress || busyActions.has("motor.stop")
+    || busyActions.has("motor.set_enabled");
   const parsedTarget = Number(targetAngle);
   const targetValid = Number.isFinite(parsedTarget)
     && parsedTarget >= Number(motor.minimum_angle_deg ?? 0)
@@ -49,45 +53,61 @@ export default function MotorControls({
   }
 
   return (
-    <fieldset
-      className={`
-        grid min-w-0 gap-5 border-0 p-0
-        ${scheduleActive || connectionUnavailable ? "grayscale opacity-60" : ""}
-      `}
-    >
+    <div className="grid min-w-0 gap-5">
       <SubsectionHeader
         title="馬達控制"
         description={
           !isConnected
             ? "即時通訊離線，馬達操作已停用。"
-            : !motorConnected
-              ? "後端正在自動偵測並連接馬達控制器。"
-              : scheduleActive
-                ? "排程進行中，馬達控制已停用。"
-                : "移動、原點與保持扭力等即時操作。"
+            : !motorEnabled
+              ? "馬達已停用，後端不會偵測或連接控制板。"
+              : !motorConnected
+                ? "後端正在自動偵測並連接馬達控制器。"
+                : scheduleActive
+                  ? "排程進行中，馬達控制已停用。"
+                  : "移動、原點與保持扭力等即時操作。"
         }
       >
         <StatusPill
           tone={
-            connectionUnavailable
-              ? "offline"
-              : scheduleActive
-                ? "warning"
-                : "success"
+            !motorEnabled
+              ? "neutral"
+              : connectionUnavailable
+                ? "offline"
+                : scheduleActive
+                  ? "warning"
+                  : "success"
           }
         >
           {
             !isConnected
               ? "即時連線離線"
-              : !motorConnected
-                ? "馬達未連接"
-                : scheduleActive
-                  ? "排程中"
-                  : "可操作"
+              : !motorEnabled
+                ? "馬達已停用"
+                : !motorConnected
+                  ? "馬達未連接"
+                  : scheduleActive
+                    ? "排程中"
+                    : "可操作"
           }
         </StatusPill>
       </SubsectionHeader>
 
+      <ToggleRow
+        checked={motorEnabled}
+        label="啟用馬達"
+        description="關閉後釋放馬達並停止偵測控制板；重新開啟後會自動嘗試連接。"
+        disabled={toggleDisabled}
+        onClick={() => void onRunAction(
+          "motor.set_enabled",
+          { enabled: !motorEnabled },
+          motorEnabled ? "馬達已停用。" : "馬達已啟用，正在偵測控制板。",
+        )}
+      />
+
+      <fieldset
+        className={`min-w-0 border-0 p-0 ${baseDisabled ? "grayscale opacity-60" : ""}`}
+      >
       <div className="flex flex-row gap-3">
         <div className="flex flex-row gap-2">
           <Button
@@ -186,6 +206,7 @@ export default function MotorControls({
           />
         </div>
       </div>
-    </fieldset>
+      </fieldset>
+    </div>
   );
 }

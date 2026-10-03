@@ -1,4 +1,8 @@
 const STATIC_HTTP_ACTIONS = {
+  "motor.set_enabled": {
+    endpoint: "/api/motor/enabled",
+    sendPayload: true,
+  },
   "motor.emergency_stop": {
     endpoint: "/api/motor/emergency-stop",
   },

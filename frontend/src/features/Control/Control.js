@@ -20,10 +20,7 @@ export default function Control({
   return (
     <Panel
       id="control"
-      className={`
-        min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[8.75rem] transition-[filter,opacity] duration-150 max-[980px]:scroll-mt-[11.5rem] motion-reduce:transition-none
-        ${controlLocked ? "grayscale opacity-60" : ""}
-      `}
+      className="min-[981px]:col-start-1 min-[981px]:row-start-3 scroll-mt-[8.75rem] max-[980px]:scroll-mt-[11.5rem]"
       aria-label="控制"
     >
       <PanelHeader
@@ -35,7 +32,7 @@ export default function Control({
             onClick={onToggle}
           />
         )}
-        muted={controlLocked}
+        muted={scheduleActive}
       />
       <div className="p-5 max-sm:p-4">
         <MotorControls

@@ -33,6 +33,8 @@ class PhidgetStepperController:
 
     def start(self) -> None:
         with self._lock:
+            if not self.settings.enabled:
+                return
             if (
                 self._auto_connect_thread is not None
                 and self._auto_connect_thread.is_alive()
@@ -50,7 +52,7 @@ class PhidgetStepperController:
     def _auto_connect_loop(self) -> None:
         while not self._auto_connect_stop.is_set():
             with self._lock:
-                should_connect = self._stepper is None
+                should_connect = self.settings.enabled and self._stepper is None
 
             if should_connect:
                 try:
@@ -88,6 +90,8 @@ class PhidgetStepperController:
     def connect(self, attachment_timeout_ms: int = 5000) -> None:
         with self._connect_lock:
             with self._lock:
+                if not self.settings.enabled:
+                    raise MotorError("馬達已停用，請先開啟啟用馬達。")
                 if self._stepper is not None:
                     return
             try:
@@ -157,7 +161,12 @@ class PhidgetStepperController:
                 self.state.connected = False
                 self.state.engaged = False
                 self.state.moving = False
+                self.state.last_error = None
             if stepper is not None:
+                try:
+                    stepper.setEngaged(False)
+                except Exception:
+                    logger.warning("Failed to disengage motor while closing")
                 try:
                     stepper.close()
                 except Exception as exc:
@@ -166,6 +175,8 @@ class PhidgetStepperController:
                     raise MotorError("關閉馬達控制器失敗。") from exc
 
     def _require_connected(self) -> None:
+        if not self.settings.enabled:
+            raise MotorError("馬達已停用，請先開啟啟用馬達。")
         if not self.state.connected or self._stepper is None:
             raise MotorError("馬達控制器尚未連接，後端正在自動偵測。")
 
@@ -195,6 +206,7 @@ class PhidgetStepperController:
             return MotorStatus(
                 name=self.settings.name,
                 controller=self.settings.controller,
+                enabled=self.settings.enabled,
                 connected=self.state.connected,
                 engaged=self.state.engaged,
                 moving=self.state.moving,
