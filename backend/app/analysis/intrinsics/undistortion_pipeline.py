@@ -9,6 +9,7 @@ import numpy as np
 
 from app.analysis.intrinsics.undistortion import FisheyeRemapCache
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.image_probe import AnalysisImageProbe, read_analysis_image
 from app.analysis.rounds.paths import (
     round_artifact_directory,
     safe_artifact_name,
@@ -17,8 +18,7 @@ from app.models.analysis_models import AnalysisView
 
 
 def _read_image(path: Path) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    image = read_analysis_image(path, cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError(f"影像無法解碼：{path.name}")
     return image
@@ -42,6 +42,7 @@ def undistort_analysis_views(
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
     cache = FisheyeRemapCache()
+    image_reader = AnalysisImageProbe(output_root / "image_cache")
     results: list[dict[str, Any]] = []
     total = len(views)
     written_masks: set[tuple[str, str]] = set()
@@ -53,7 +54,9 @@ def undistort_analysis_views(
         if snapshot is None:
             raise ValueError(f"找不到 {view.camera_id} 的內參快照。")
         source = Path(view.absolute_path)
-        image = _read_image(source)
+        image = image_reader.read(source)
+        if image is None:
+            raise ValueError(f"影像無法解碼：{source.name}")
         expected_size = (
             int(snapshot["analysis_image_width"]),
             int(snapshot["analysis_image_height"]),

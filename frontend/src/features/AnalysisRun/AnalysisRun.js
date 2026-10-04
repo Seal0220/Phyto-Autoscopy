@@ -109,6 +109,7 @@ export default function AnalysisRun({
       last_error: hasMatchingProgress && progress.last_error
         ? progress.last_error
         : run.last_error,
+      image_probe_backends: hasMatchingProgress ? progress.image_probe_backends : undefined,
     }
     : null;
   const display = analysisRunDisplay(effectiveRun);
@@ -183,12 +184,9 @@ export default function AnalysisRun({
                     note={effectiveRun.stage || "—"}
                   />
                   <StatusCard
-                    title="分析進度"
+                    title={display.progressTitle}
                     content={`${display.progressPercent}%`}
-                    note={`${effectiveRun.current_frame} / ${effectiveRun.total_frames} ${
-                      effectiveRun.stage === "undistorting_images" ? "張"
-                        : effectiveRun.stage === "estimating_stereo_pose" ? "組" : "輪"
-                    }`}
+                    note={[display.progressNote, display.probeNote].filter(Boolean).join(" · ")}
                   />
                   <StatusCard
                     title="人工檢查"
@@ -199,7 +197,7 @@ export default function AnalysisRun({
 
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3 text-xs font-black text-neutral-400">
-                    <span>執行進度</span>
+                    <span>{display.progressTitle}</span>
                     <StatusPill tone={display.status.tone}>
                       {display.status.label}
                     </StatusPill>
@@ -207,7 +205,7 @@ export default function AnalysisRun({
                   <div
                     className="h-2 overflow-hidden rounded-full border border-white/15 bg-black/20"
                     role="progressbar"
-                    aria-label="分析進度"
+                    aria-label={display.progressTitle}
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={display.progressPercent}

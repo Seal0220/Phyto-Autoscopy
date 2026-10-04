@@ -85,6 +85,10 @@ export const ANALYSIS_STATUS_META = {
 
 export const ANALYSIS_STAGE_LABELS = {
   validating: "驗證輸入資料",
+  validating_images: "轉檔並檢查影像",
+  verifying_input_files: "核對原始檔案內容",
+  checking_reconstruction_environment: "檢查重建環境",
+  validation_completed: "驗證完成",
   grouping_rounds: "整理分析輪次",
   snapshotting_intrinsics: "固化相機內參",
   undistorting_images: "套用內參並去畸變",

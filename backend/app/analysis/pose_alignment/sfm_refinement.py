@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.pose_alignment.models import CameraPoseResult
 
 
@@ -174,12 +176,9 @@ def _interpolate_pose(
 
 def _load_gray(path: Path) -> np.ndarray | None:
     try:
-        encoded = np.fromfile(path, dtype=np.uint8)
+        return read_analysis_image(path, cv2.IMREAD_GRAYSCALE)
     except OSError:
         return None
-    if encoded.size == 0:
-        return None
-    return cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
 
 
 def _scaled_camera_matrix(

@@ -2,6 +2,10 @@ import {
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STATUS_META,
 } from "../../Analysis/analysisConfig.js";
+import {
+  ANALYSIS_PROGRESS_UNITS,
+  ANALYSIS_VALIDATION_STAGES,
+} from "../analysisRunConfig.js";
 
 const ACTIVE_STATUSES = new Set([
   "validating",
@@ -106,6 +110,10 @@ export function normalizeAnalysisProgress(payload) {
       && typeof payload.processing_preview === "object"
       ? payload.processing_preview
       : null,
+    image_probe_backends: payload?.image_probe_backends
+      && typeof payload.image_probe_backends === "object"
+      ? payload.image_probe_backends
+      : {},
   };
 }
 
@@ -131,9 +139,22 @@ export function analysisRunDisplay(run) {
     label: run?.status ? "未知狀態" : "尚未開始",
     tone: "neutral",
   };
+  const probeCounts = run?.image_probe_backends || run?.parameters?.validation_image_probe_backends;
+  const validating = run?.status === "validating" || ANALYSIS_VALIDATION_STAGES.has(run?.stage);
 
   return {
     status,
+    probeNote: validating && probeCounts && (finiteNumber(probeCounts.gpu) + finiteNumber(probeCounts.cpu)) > 0
+      ? `轉檔 ${finiteNumber(probeCounts.converted)} 張 · GPU ${finiteNumber(probeCounts.gpu)} 張 · CPU 回退 ${finiteNumber(probeCounts.cpu)} 張`
+      : "",
+    progressTitle: validating
+      ? "驗證進度"
+      : "分析進度",
+    progressNote: finiteNumber(run?.total_frames) > 0
+      ? `${finiteNumber(run?.current_frame)} / ${finiteNumber(run?.total_frames)} ${
+        ANALYSIS_PROGRESS_UNITS[run?.stage] || "輪"
+      }`
+      : "準備中…",
     stage: ANALYSIS_STAGE_LABELS[run?.stage]
       || (run?.stage ? "未知階段" : "尚未開始"),
     progressPercent: Math.round(

@@ -27,6 +27,10 @@ AnalysisStatus = Literal[
 
 AnalysisStage = Literal[
     "validating",
+    "validating_images",
+    "verifying_input_files",
+    "checking_reconstruction_environment",
+    "validation_completed",
     "grouping_rounds",
     "snapshotting_intrinsics",
     "undistorting_images",
@@ -516,6 +520,7 @@ class AnalysisProgress(BaseModel):
     progress: float = 0.0
     last_error: str | None = None
     processing_preview: AnalysisProcessingPreview | None = None
+    image_probe_backends: dict[str, int] = Field(default_factory=dict)
 
     @field_validator("progress")
     @classmethod

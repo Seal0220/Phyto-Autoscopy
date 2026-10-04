@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.segmentation.plant_mask import create_plant_mask
 
 
@@ -30,8 +32,7 @@ class TipCandidateDetection:
 
 
 def _read_image(path: Path, flags: int) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, flags)
+    image = read_analysis_image(path, flags)
     if image is None:
         raise ValueError(f"尖端候選影像無法解碼：{path.name}")
     return image

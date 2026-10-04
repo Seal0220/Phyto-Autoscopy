@@ -8,6 +8,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.pose_alignment.models import (
     CameraPoseResult,
     PoseAlignmentResult,
@@ -263,10 +265,9 @@ def _write_debug_overlays(
             continue
         detection = detection_by_input.get((camera_id, input_id), {})
         try:
-            encoded = np.fromfile(Path(_value(frame, "file_path")), dtype=np.uint8)
+            image = read_analysis_image(Path(_value(frame, "file_path")), cv2.IMREAD_COLOR)
         except OSError:
             continue
-        image = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
         if image is None:
             continue
         for corners in detection.get("corners_px", []):

@@ -23,6 +23,8 @@ def _service():
     service = AnalysisService.__new__(AnalysisService)
     service._preview_lock = RLock()
     service._processing_previews = {}
+    service._validation_progress = {}
+    service._validation_progress_times = {}
     return service
 
 

@@ -7,6 +7,8 @@ from typing import Any
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.intrinsics.resolution_adapter import (
     build_intrinsics_snapshot,
 )
@@ -29,12 +31,9 @@ def _value(source: object, name: str, default=None):
 
 def _read_image(path: Path) -> np.ndarray | None:
     try:
-        encoded = np.fromfile(path, dtype=np.uint8)
+        return read_analysis_image(path, cv2.IMREAD_COLOR)
     except OSError:
         return None
-    if encoded.size == 0:
-        return None
-    return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
 
 
 def _sample_views(

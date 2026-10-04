@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.image_probe import read_analysis_image
 from app.analysis.rounds.paths import safe_artifact_name
 from app.analysis.segmentation.plant_mask import create_plant_mask
 
@@ -119,8 +120,7 @@ def _materialize_read_only_image(source: Path, destination: Path) -> None:
 
 
 def _read_image(path: Path, flags: int) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, flags)
+    image = read_analysis_image(path, flags)
     if image is None:
         raise ValueError(f"模型資料集影像無法解碼：{path.name}")
     return image

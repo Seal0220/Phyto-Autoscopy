@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.pose_alignment.aruco_world import marker_world_corners
 from app.analysis.pose_alignment.models import CameraPoseResult
 
@@ -18,12 +20,9 @@ def _value(source: object, name: str, default=None):
 
 def _load_image(path: Path) -> np.ndarray | None:
     try:
-        encoded = np.fromfile(path, dtype=np.uint8)
+        return read_analysis_image(path, cv2.IMREAD_COLOR)
     except OSError:
         return None
-    if encoded.size == 0:
-        return None
-    return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
 
 
 def _scaled_camera_matrix(

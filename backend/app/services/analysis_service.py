@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from threading import Event, RLock
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -242,6 +243,8 @@ class AnalysisService:
         self._lock = RLock()
         self._preview_lock = RLock()
         self._processing_previews: dict[str, AnalysisProcessingPreview | None] = {}
+        self._validation_progress: dict[str, AnalysisProgress] = {}
+        self._validation_progress_times: dict[str, float] = {}
         self._validator = CaptureRecordValidator()
         self._reconstruction_backends = ReconstructionBackendRegistry()
         self._runner = AnalysisJobManager(
@@ -624,7 +627,13 @@ class AnalysisService:
             image_hashes=image_hashes,
         )
 
-    def _validation_for_run(self, run: AnalysisRun) -> CaptureRecordValidation:
+    def _validation_for_run(
+        self,
+        run: AnalysisRun,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+        image_probe: ImageProbe | None = None,
+    ) -> CaptureRecordValidation:
         if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
             raise AnalysisError("找不到分析紀錄。")
         if not run.record_id:
@@ -632,16 +641,30 @@ class AnalysisService:
         mode_ids = run.parameters.get("mode_ids", [])
         if not isinstance(mode_ids, list):
             raise AnalysisError("分析擷取模式清單格式無效。")
-        return self._validation_for_record(
-            run.record_id,
-            method=run.method_name,
-            mode_ids=mode_ids,
-        )
+        probe = image_probe or AnalysisImageProbe(self._artifacts(run).root / "image_cache")
+        try:
+            return self._validation_for_record(
+                run.record_id,
+                method=run.method_name,
+                mode_ids=mode_ids,
+                progress_callback=progress_callback,
+                image_probe=probe,
+            )
+        finally:
+            if image_probe is None:
+                probe.close()
 
     @staticmethod
-    def _manifest(validation: CaptureRecordValidation) -> list[dict[str, Any]]:
+    def _manifest(
+        validation: CaptureRecordValidation,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> list[dict[str, Any]]:
         result = []
-        for frame in validation.frames:
+        total = len(validation.frames)
+        if progress_callback is not None:
+            progress_callback(0, total)
+        for index, frame in enumerate(validation.frames, start=1):
             stat = frame.file_path.stat()
             result.append({
                 "input_id": frame.capture_id,
@@ -659,6 +682,8 @@ class AnalysisService:
                 "modified_ns": stat.st_mtime_ns,
                 "sha256": _sha256(frame.file_path),
             })
+            if progress_callback is not None and (index % 32 == 0 or index == total):
+                progress_callback(index, total)
         return result
 
     @staticmethod
@@ -870,7 +895,9 @@ class AnalysisService:
         progress_callback: Callable[[int, int], None],
         cancel_requested: Callable[[], bool],
     ) -> AnalysisSourcePreview:
-        image_probe = AnalysisImageProbe()
+        image_probe = AnalysisImageProbe(
+            self.settings.paths.analysis_dir.parent / "temp" / "analysis_images" / request.record_id
+        )
         preview = self.preview_sources(
             request,
             progress_callback=progress_callback,
@@ -1473,8 +1500,10 @@ class AnalysisService:
     def _verify_frozen_manifest(
         run: AnalysisRun,
         validation: CaptureRecordValidation,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> None:
-        current = AnalysisService._manifest(validation)
+        current = AnalysisService._manifest(validation, progress_callback=progress_callback)
         frozen = run.parameters.get(
             "source_manifest",
             run.parameters.get("input_manifest", []),
@@ -1486,13 +1515,32 @@ class AnalysisService:
             )
 
     def _validate_round_analysis(self, run: AnalysisRun) -> AnalysisRun:
-        validation = self._validation_for_run(run)
+        image_probe = AnalysisImageProbe(self._artifacts(run).root / "image_cache")
+        try:
+            validation = self._validation_for_run(
+                run,
+                progress_callback=lambda current, total: self._update_validation_progress(
+                    run, "validating_images", current, total,
+                    0.45 * current / max(total, 1),
+                    image_probe_backends=image_probe.backend_counts,
+                ),
+                image_probe=image_probe,
+            )
+        finally:
+            image_probe.close()
         errors = self._blocking_validation_messages(validation)
         if errors:
             raise AnalysisError(
                 "紀錄不可分析：" + "；".join(dict.fromkeys(errors))
             )
-        self._verify_frozen_manifest(run, validation)
+        self._verify_frozen_manifest(
+            run,
+            validation,
+            progress_callback=lambda current, total: self._update_validation_progress(
+                run, "verifying_input_files", current, total,
+                0.45 + 0.50 * current / max(total, 1),
+            ),
+        )
         intrinsics = self._intrinsics_for_run(run)
         for camera_id in self._required_camera_ids(run.method_name):
             resolution = validation.camera_resolutions.get(camera_id)
@@ -1544,6 +1592,9 @@ class AnalysisService:
 
         reconstruction = run.parameters.get("reconstruction", {})
         backend_name = str(reconstruction.get("backend") or "")
+        self._update_validation_progress(
+            run, "checking_reconstruction_environment", 0, 1, 0.95,
+        )
         backend_readiness = self._reconstruction_backends.probe_runtime(
             backend_name
         )
@@ -1555,6 +1606,7 @@ class AnalysisService:
         parameters = {
             **run.parameters,
             "backend_readiness_at_validation": backend_readiness,
+            "validation_image_probe_backends": image_probe.backend_counts,
         }
         self.repository.update_parameters(
             run.analysis_id,
@@ -1565,10 +1617,10 @@ class AnalysisService:
         updated = self._set_state(
             run,
             status="ready",
-            stage="grouping_rounds",
-            current_frame=0,
-            total_frames=len(ready_rounds),
-            progress=0.0,
+            stage="validation_completed",
+            current_frame=len(views),
+            total_frames=len(views),
+            progress=1.0,
             clear_error=True,
         )
         self._log(
@@ -1596,12 +1648,74 @@ class AnalysisService:
                 clear_error=True,
             )
             try:
+                self._update_validation_progress(
+                    run, "validating_images", 0,
+                    len(run.parameters.get("source_manifest", run.parameters.get("input_manifest", []))),
+                    0.0,
+                )
                 return self._validate_round_analysis(run)
             except Exception as error:
+                with self._preview_lock:
+                    progress = self._validation_progress.get(analysis_id)
+                if progress is not None:
+                    self.repository.update_state(
+                        analysis_id,
+                        updated_at=utc_now_iso(),
+                        stage=progress.stage,
+                        current_frame=progress.current_frame,
+                        total_frames=progress.total_frames,
+                        progress=progress.progress,
+                    )
                 self._record_failure(run, error, context="驗證失敗")
                 if isinstance(error, AnalysisError):
                     raise
                 raise AnalysisError(f"分析驗證失敗：{error}") from error
+            finally:
+                with self._preview_lock:
+                    self._validation_progress.pop(analysis_id, None)
+                    self._validation_progress_times.pop(analysis_id, None)
+
+    def _update_validation_progress(
+        self,
+        run: AnalysisRun,
+        stage: str,
+        current: int,
+        total: int,
+        fraction: float,
+        *,
+        image_probe_backends: Mapping[str, int] | None = None,
+    ) -> None:
+        now = monotonic()
+        with self._preview_lock:
+            previous = self._validation_progress.get(run.analysis_id)
+            if (
+                previous is not None
+                and previous.stage == stage
+                and current < total
+                and now - self._validation_progress_times[run.analysis_id] < 0.5
+            ):
+                return
+            progress = AnalysisProgress(
+                analysis_id=run.analysis_id,
+                status="validating",
+                stage=stage,
+                current_frame=current,
+                total_frames=total,
+                progress=fraction,
+                image_probe_backends=(
+                    dict(image_probe_backends)
+                    if image_probe_backends is not None
+                    else previous.image_probe_backends if previous is not None else {}
+                ),
+            )
+            # Frequent updates must not deserialize or rewrite the frozen image manifests.
+            self._validation_progress[run.analysis_id] = progress
+            self._validation_progress_times[run.analysis_id] = now
+        if self.progress_callback is not None:
+            try:
+                self.progress_callback(progress)
+            except Exception:
+                logger.exception("Analysis validation progress callback failed")
 
     def _write_processing_preview(
         self,
@@ -1680,6 +1794,7 @@ class AnalysisService:
             progress=run.progress,
             last_error=run.last_error,
             processing_preview=preview,
+            image_probe_backends=run.parameters.get("validation_image_probe_backends", {}),
         )
 
     def _emit_progress(self, run: AnalysisRun) -> None:
@@ -1788,6 +1903,13 @@ class AnalysisService:
         )
 
     def get_progress(self, analysis_id: str | None = None) -> AnalysisProgress:
+        with self._preview_lock:
+            if analysis_id is not None:
+                live = self._validation_progress.get(analysis_id)
+            else:
+                live = next(iter(self._validation_progress.values()), None)
+        if live is not None:
+            return live
         if analysis_id is not None:
             run = self._require_run(analysis_id)
         else:

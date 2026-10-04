@@ -7,6 +7,8 @@ from typing import Mapping
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 
 @dataclass(frozen=True, slots=True)
 class PlantIsolationView:
@@ -68,8 +70,7 @@ def plant_isolation_views_from_dataset(
 
 
 def _read_mask(path: Path) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    mask = cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
+    mask = read_analysis_image(path, cv2.IMREAD_GRAYSCALE)
     if mask is None:
         raise ValueError(f"植物遮罩無法解碼：{path.name}")
     return mask > 0

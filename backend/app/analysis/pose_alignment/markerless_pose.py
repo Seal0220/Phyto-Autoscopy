@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.pose_alignment.models import (
     CameraPoseResult,
     PoseAlignmentResult,
@@ -23,10 +25,9 @@ def _value(item: object, key: str, default=None):
 
 def _gray(frame: object) -> np.ndarray | None:
     try:
-        encoded = np.fromfile(Path(_value(frame, "file_path")), dtype=np.uint8)
+        return read_analysis_image(Path(_value(frame, "file_path")), cv2.IMREAD_GRAYSCALE)
     except OSError:
         return None
-    return cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE) if encoded.size else None
 
 
 def _features(frame: object, count: int):

@@ -9,6 +9,8 @@ from typing import Any, Mapping
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.reconstruction.backend import CancelCheck, ProgressCallback
 from app.analysis.reconstruction.dataset_adapter import (
@@ -53,8 +55,7 @@ class GsplatTrainingResult:
 
 
 def _read_image(path: Path, flags: int) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, flags)
+    image = read_analysis_image(path, flags)
     if image is None:
         raise GsplatTrainingError(f"模型訓練影像無法解碼：{path.name}")
     return image

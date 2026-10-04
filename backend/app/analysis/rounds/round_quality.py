@@ -7,6 +7,8 @@ from typing import Mapping, Sequence
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.models.analysis_models import AnalysisView
 
 
@@ -54,8 +56,7 @@ class RoundQualityResult:
 
 
 def _read_grayscale(path: Path) -> np.ndarray:
-    encoded = np.fromfile(path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
+    image = read_analysis_image(path, cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise ValueError(f"分析衍生影像無法讀取：{path.name}")
     return image

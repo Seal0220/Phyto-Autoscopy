@@ -15,6 +15,7 @@ import {
 
 import {
   downloadAnalysisExport,
+  loadAnalysisProgress,
   loadAnalysisRunBundle,
   performAnalysisRunAction,
   UnknownAnalysisMutationOutcomeError,
@@ -48,6 +49,7 @@ export default function useAnalysisRun({
   const loadControllerRef = useRef(null);
   const mutationControllerRef = useRef(null);
   const exportControllerRef = useRef(null);
+  const progressControllerRef = useRef(null);
   const loadGenerationRef = useRef(0);
   const pollingRef = useRef(false);
   const runStatusRef = useRef("");
@@ -111,6 +113,49 @@ export default function useAnalysisRun({
     }
   }, [analysisId]);
 
+  const applyProgress = useCallback((payload) => {
+    const next = normalizeAnalysisProgress(payload);
+    if (!mountedRef.current || next.analysis_id !== analysisId) return;
+    runStatusRef.current = next.status;
+    setProgress(next);
+    if (!POLLED_STATUSES.has(next.status)) {
+      const terminalKey = `${analysisId}:${next.status}`;
+      if (lastTerminalProgressRef.current !== terminalKey) {
+        lastTerminalProgressRef.current = terminalKey;
+        void load({ silent: true });
+      }
+    } else {
+      lastTerminalProgressRef.current = "";
+    }
+  }, [analysisId, load]);
+
+  const pollProgress = useCallback(async () => {
+    const controller = new AbortController();
+    const generation = loadGenerationRef.current;
+    progressControllerRef.current = controller;
+    try {
+      const payload = await loadAnalysisProgress(
+        analysisId,
+        controller.signal,
+      );
+      if (!mountedRef.current || generation !== loadGenerationRef.current) return;
+      setLoadError("");
+      applyProgress(payload);
+    } catch (error) {
+      if (error?.name !== "AbortError" && mountedRef.current
+        && generation === loadGenerationRef.current) {
+        setLoadError(messageFromError(
+          error,
+          "讀取分析進度失敗，請重新讀取。",
+        ));
+      }
+    } finally {
+      if (progressControllerRef.current === controller) {
+        progressControllerRef.current = null;
+      }
+    }
+  }, [analysisId, applyProgress]);
+
   useEffect(() => {
     mountedRef.current = true;
     void load();
@@ -120,13 +165,12 @@ export default function useAnalysisRun({
         document.visibilityState !== "visible"
         || pollingRef.current
         || loadControllerRef.current
-        || mutationControllerRef.current
         || !POLLED_STATUSES.has(runStatusRef.current)
       ) {
         return;
       }
       pollingRef.current = true;
-      void load({ silent: true }).finally(() => {
+      void pollProgress().finally(() => {
         pollingRef.current = false;
       });
     }, POLL_INTERVAL_MS);
@@ -138,29 +182,14 @@ export default function useAnalysisRun({
       abortRequest(loadControllerRef.current);
       abortRequest(mutationControllerRef.current);
       abortRequest(exportControllerRef.current);
+      abortRequest(progressControllerRef.current);
     };
-  }, [load]);
+  }, [load, pollProgress]);
 
   useEffect(() => {
-    const analysisProgress = normalizeAnalysisProgress(snapshot?.analysis);
-    if (analysisProgress.analysis_id !== analysisId) return;
-
-    runStatusRef.current = analysisProgress.status;
-    setProgress(analysisProgress);
-    if (!POLLED_STATUSES.has(analysisProgress.status)) {
-      const terminalKey = `${analysisId}:${analysisProgress.status}`;
-      if (lastTerminalProgressRef.current !== terminalKey) {
-        lastTerminalProgressRef.current = terminalKey;
-        // The final socket update must also refresh per-round outputs after
-        // active polling stops, including a failure's last processing image.
-        void load({ silent: true });
-      }
-    } else {
-      lastTerminalProgressRef.current = "";
-    }
+    applyProgress(snapshot?.analysis);
   }, [
-    analysisId,
-    load,
+    applyProgress,
     snapshot,
   ]);
 

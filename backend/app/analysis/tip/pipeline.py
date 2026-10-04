@@ -8,6 +8,8 @@ from typing import Any, Callable, Mapping, Sequence
 import cv2
 import numpy as np
 
+from app.analysis.image_probe import read_analysis_image
+
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.reconstruction.plant_isolation import (
     PlantIsolationView,
@@ -114,8 +116,7 @@ def _write_reprojection_overlay(
     selected_ids: set[str],
     projected_point: tuple[float, float] | None,
 ) -> None:
-    encoded = np.fromfile(image_path, dtype=np.uint8)
-    image = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    image = read_analysis_image(image_path, cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError(f"尖端重投影影像無法解碼：{image_path.name}")
     for candidate in candidates:
