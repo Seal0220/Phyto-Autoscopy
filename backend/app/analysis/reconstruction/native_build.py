@@ -4,7 +4,7 @@ import os
 
 
 def configure_native_build() -> dict[str, str]:
-    """Configure both NVCC and direct MSVC invocations before loading gsplat."""
+    """Configure the MSVC flags used by gsplat's PyTorch JIT build."""
     if os.name != "nt":
         return {}
 
@@ -18,4 +18,18 @@ def configure_native_build() -> dict[str, str]:
         existing = os.environ.get(name, "").strip()
         if not existing.endswith(flag):
             os.environ[name] = f"{existing} {flag}".strip()
-    return {name: os.environ[name] for name in flags}
+
+    # gsplat 1.5.3 calls PyTorch's JIT extension builder. Its generated Ninja
+    # rules use this list for both C++ and NVCC host-compiler invocations.
+    # Put the option in those rules explicitly instead of relying on inherited
+    # environment variables, which are invisible in the reported command.
+    from torch.utils import cpp_extension
+
+    compiler_flags = cpp_extension.COMMON_MSVC_FLAGS
+    if "/Zc:preprocessor" not in compiler_flags:
+        compiler_flags.append("/Zc:preprocessor")
+
+    return {
+        **{name: os.environ[name] for name in flags},
+        "pytorch_msvc_flags": " ".join(compiler_flags),
+    }
