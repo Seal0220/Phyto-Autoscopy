@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.reconstruction.native_build import configure_native_build
 
 
 def _probe_error_message(error: BaseException) -> str:
@@ -78,8 +79,10 @@ def _probe_payload() -> dict[str, Any]:
 
 
 def run_probe(result_path: Path) -> int:
+    build_environment = configure_native_build()
     try:
         payload = _probe_payload()
+        payload["native_build_environment"] = build_environment
         write_json_atomic(result_path, payload)
         return 0
     except BaseException as error:
@@ -89,6 +92,7 @@ def run_probe(result_path: Path) -> int:
                 "available": False,
                 "cuda_extension_loadable": False,
                 "errors": [_probe_error_message(error)],
+                "native_build_environment": build_environment,
             },
         )
         return 1
