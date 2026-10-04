@@ -265,6 +265,11 @@ if defined CUDA_TOOLKIT_PATH (
   set "CUDA_PATH=%CUDA_TOOLKIT_PATH%"
   set "PATH=%CUDA_TOOLKIT_PATH%\bin;%PATH%"
   echo CUDA Toolkit: %CUDA_TOOLKIT_PATH%
+  if defined NVCC_PREPEND_FLAGS (
+    set "NVCC_PREPEND_FLAGS=-Xcompiler=/Zc:preprocessor %NVCC_PREPEND_FLAGS%"
+  ) else (
+    set "NVCC_PREPEND_FLAGS=-Xcompiler=/Zc:preprocessor"
+  )
 ) else (
   echo Warning: No CUDA Toolkit matches the installed PyTorch CUDA major version.
 )
