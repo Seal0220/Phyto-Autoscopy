@@ -197,7 +197,7 @@ class GsplatBackend:
         readiness = self.check_availability()
         if not readiness["available"]:
             return readiness
-        if self._runtime_readiness is None:
+        if self._runtime_readiness is None or not self._runtime_readiness.get("available"):
             self._runtime_readiness = probe_gsplat_runtime()
         runtime = dict(self._runtime_readiness)
         errors = list(runtime.get("errors") or [])

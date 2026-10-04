@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.reconstruction.native_build import configure_native_build
 from app.analysis.reconstruction.backend import (
     unsupported_reconstruction_outputs,
 )
@@ -51,6 +52,7 @@ def execute_job(
     progress_path: Path,
     cancel_path: Path,
 ) -> int:
+    configure_native_build()
     job = _read_job(job_path)
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
