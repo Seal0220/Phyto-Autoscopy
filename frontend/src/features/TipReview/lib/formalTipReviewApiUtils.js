@@ -101,27 +101,7 @@ export function completeFormalTipReview(
   );
 }
 
-export function formalViewImageUrl(
-  analysisId,
-  viewId,
-  coordinateSpace = "reprojection",
-) {
-  const query = new URLSearchParams({
-    coordinate_space: coordinateSpace,
-  });
-  return analysisPath(
-    analysisId,
-    `/views/${encodeURIComponent(viewId)}/image?${query.toString()}`,
-  );
-}
-
-export function formalArtifactUrl(
-  analysisId,
-  artifactPath,
-) {
-  const encodedPath = String(artifactPath || "")
-    .split(/[\\/]+/)
-    .map(encodeURIComponent)
-    .join("/");
-  return analysisPath(analysisId, `/artifacts/${encodedPath}`);
-}
+export {
+  analysisViewImageUrl as formalViewImageUrl,
+  analysisArtifactUrl as formalArtifactUrl,
+} from "../../../lib/analysisImageUtils.js";

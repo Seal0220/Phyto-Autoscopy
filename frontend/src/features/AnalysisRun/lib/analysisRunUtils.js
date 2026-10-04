@@ -102,7 +102,21 @@ export function normalizeAnalysisProgress(payload) {
     total_frames: Math.max(0, finiteNumber(payload?.total_frames)),
     progress: Math.min(1, Math.max(0, finiteNumber(payload?.progress))),
     last_error: text(payload?.last_error),
+    processing_preview: payload?.processing_preview
+      && typeof payload.processing_preview === "object"
+      ? payload.processing_preview
+      : null,
   };
+}
+
+export function analysisImageGroups(views) {
+  const groups = new Map();
+  for (const view of Array.isArray(views) ? views : []) {
+    const key = view.snapshot_id || view.timestamp || view.view_id;
+    if (!groups.has(key)) groups.set(key, { key, views: [] });
+    groups.get(key).views.push(view);
+  }
+  return [...groups.values()];
 }
 
 export function analysisRoundStatus(status) {

@@ -114,15 +114,36 @@ def _stereo_landmarks(
     intrinsics: Mapping[str, object],
     settings: Mapping[str, object],
     fixed_poses: Mapping[str, np.ndarray] | None = None,
+    *,
+    diagnostics: dict[str, object] | None = None,
+    debug_path: Path | None = None,
 ):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(matched_features=0, geometric_inliers=0, rejection_reason=None)
     top_data = _features(top, int(settings["feature_count"]))
     side_data = _features(side, int(settings["feature_count"]))
+    diagnostics["top_features"] = len(top_data[1]) if top_data is not None else 0
+    diagnostics["side_features"] = len(side_data[1]) if side_data is not None else 0
     if top_data is None or side_data is None:
+        diagnostics["rejection_reason"] = "影像讀取或特徵擷取失敗"
         return None
     top_image, top_points, top_descriptors = top_data
     side_image, side_points, side_descriptors = side_data
     matches = _matches(top_descriptors, side_descriptors)
+    diagnostics["matched_features"] = len(matches)
+    diagnostics["required_inliers"] = int(settings["minimum_stereo_inliers"])
+    if debug_path is not None:
+        # This is the actual descriptor matching result, before geometric filtering.
+        debug = cv2.drawMatches(
+            top_image, top_points, side_image, side_points, matches[:100], None,
+            flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+        )
+        success, encoded = cv2.imencode(".jpg", debug)
+        if success:
+            debug_path.parent.mkdir(parents=True, exist_ok=True)
+            encoded.tofile(debug_path)
     if len(matches) < int(settings["minimum_stereo_inliers"]):
+        diagnostics["rejection_reason"] = "共同特徵配對不足"
         return None
     top_pixels = np.asarray([top_points[item.queryIdx].pt for item in matches], dtype=np.float64)
     side_pixels = np.asarray([side_points[item.trainIdx].pt for item in matches], dtype=np.float64)
@@ -142,6 +163,7 @@ def _stereo_landmarks(
             threshold=threshold,
         )
         if essential is None or mask is None:
+            diagnostics["rejection_reason"] = "極線幾何估計失敗"
             return None
         _, rotation, translation, mask = cv2.recoverPose(
             essential,
@@ -176,7 +198,9 @@ def _stereo_landmarks(
         denominator = np.linalg.norm((top_h @ essential.T)[:, :2], axis=1)
         mask = (residual / np.maximum(denominator, 1e-12) < float(settings["maximum_epipolar_error_px"]) / min(top_matrix[0, 0], side_matrix[0, 0])).astype(np.uint8).reshape(-1, 1)
     inlier_indices = np.flatnonzero(mask.reshape(-1))
+    diagnostics["geometric_inliers"] = len(inlier_indices)
     if len(inlier_indices) < int(settings["minimum_stereo_inliers"]):
+        diagnostics["rejection_reason"] = "相機姿態幾何內點不足"
         return None
     top_rays = top_normalized[inlier_indices]
     side_rays = side_normalized[inlier_indices]
@@ -204,6 +228,8 @@ def _stereo_landmarks(
         reprojection_errors.append(error)
         valid &= np.isfinite(error) & (error <= float(settings["maximum_stereo_reprojection_error_px"]))
     if int(valid.sum()) < int(settings["minimum_stereo_inliers"]):
+        diagnostics["reprojection_inliers"] = int(valid.sum())
+        diagnostics["rejection_reason"] = "正深度或重投影檢查未通過"
         return None
     top_center = np.linalg.inv(top_pose)[:3, 3]
     side_center = np.linalg.inv(side_pose)[:3, 3]
@@ -220,10 +246,15 @@ def _stereo_landmarks(
         float(side_axis[2]),
         float(np.linalg.norm(side_axis[:2])),
     )))
+    diagnostics.update(parallax_deg=parallax_deg, side_elevation_deg=side_elevation_deg)
     if (
         parallax_deg < float(settings["minimum_parallax_deg"])
         or side_elevation_deg > float(settings["maximum_side_elevation_deg"])
     ):
+        diagnostics["rejection_reason"] = (
+            "視差角不足" if parallax_deg < float(settings["minimum_parallax_deg"])
+            else "側視相機仰角超出限制"
+        )
         return None
     indices = inlier_indices[valid]
     return {
@@ -247,19 +278,44 @@ def estimate_fixed_stereo_pose(
     intrinsics: Mapping[str, object],
     settings: Mapping[str, object],
     cancel_check: Callable[[], None] | None = None,
+    *,
+    debug_directory: Path | None = None,
+    progress_callback: Callable[[int, int, object, object, dict[str, object]], None] | None = None,
 ) -> tuple[dict[str, list[list[float]]], dict[str, object]]:
     best = None
-    for top, side in _pair_candidates(frames):
+    candidates = _pair_candidates(frames)
+    attempts = []
+    for index, (top, side) in enumerate(candidates, start=1):
         if cancel_check is not None:
             cancel_check()
+        diagnostics: dict[str, object] = {"pair_index": index, "pair_count": len(candidates)}
+        if progress_callback is not None:
+            progress_callback(index, len(candidates), top, side, diagnostics)
+        debug_path = debug_directory / f"pair_{index:03d}.jpg" if debug_directory else None
         try:
-            candidate = _stereo_landmarks(top, side, intrinsics, settings)
-        except (cv2.error, ValueError):
-            continue
+            candidate = _stereo_landmarks(
+                top, side, intrinsics, settings,
+                diagnostics=diagnostics, debug_path=debug_path,
+            )
+        except (cv2.error, ValueError) as error:
+            candidate = None
+            diagnostics["rejection_reason"] = f"姿態估計運算失敗：{error}"
+        attempts.append(dict(diagnostics))
+        if debug_path is not None and debug_path.is_file():
+            diagnostics["match_image_path"] = str(debug_path)
+        if progress_callback is not None:
+            progress_callback(index, len(candidates), top, side, diagnostics)
         if candidate is not None and (best is None or candidate["inliers"] > best["inliers"]):
             best = candidate
     if best is None:
-        raise ValueError("俯視角與側視角缺少足夠的共同靜態特徵，無法建立無標記雙鏡頭姿態；請改善共同視野或重新拍攝。")
+        strongest = max(attempts, key=lambda item: int(item.get("matched_features", 0)), default={})
+        raise ValueError(
+            f"無法建立無標記雙鏡頭姿態：已檢查 {len(candidates)} 組影像，"
+            f"共同特徵配對最多 {strongest.get('matched_features', 0)} 組，"
+            f"需要至少 {settings['minimum_stereo_inliers']} 個有效幾何內點。"
+            f"主要原因：{strongest.get('rejection_reason') or '沒有可配對的俯視與側視影像'}。"
+            "此階段尚未執行尖端偵測。"
+        )
     side_center = np.linalg.inv(best["poses"]["side"])[:3, 3]
     estimated_side_height_mm = float(side_center[2])
     estimated_side_horizontal_distance_mm = float(np.linalg.norm(side_center[:2]))

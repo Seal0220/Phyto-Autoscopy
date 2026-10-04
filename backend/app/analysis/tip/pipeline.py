@@ -211,6 +211,7 @@ def analyze_round_tip(
     save_diagnostics: bool = True,
     cancel_check: CancelCheck | None = None,
     stage_callback: StageCallback | None = None,
+    view_callback: Callable[[AnalysisView], None] | None = None,
 ) -> RoundTipAnalysisResult:
     round_root = round_artifact_directory(artifacts_root, round_item.round_key)
     tip_root = round_root / "tip"
@@ -260,6 +261,8 @@ def analyze_round_tip(
         projection, center = _projection(pose, intrinsics)
         source_images[view.view_id] = image_path
         projections[view.view_id] = projection
+        if view_callback is not None:
+            view_callback(view)
         detection = detect_tip_candidates(
             image_path,
             valid_mask_path=valid_mask_path,

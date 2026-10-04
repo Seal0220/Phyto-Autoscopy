@@ -20,6 +20,7 @@ import AnalysisRunActions from "./components/AnalysisRunActions";
 import AnalysisRunMetadata from "./components/AnalysisRunMetadata";
 import AnalysisRunPoseQuality from "./components/AnalysisRunPoseQuality";
 import AnalysisRunRoundOverview from "./components/AnalysisRunRoundOverview";
+import AnalysisRunProcessingImages from "./components/AnalysisRunProcessingImages";
 import useAnalysisRun from "./hooks/useAnalysisRun";
 import {
   analysisRunDisplay,
@@ -184,7 +185,10 @@ export default function AnalysisRun({
                   <StatusCard
                     title="分析進度"
                     content={`${display.progressPercent}%`}
-                    note={`${effectiveRun.current_frame} / ${effectiveRun.total_frames} 輪`}
+                    note={`${effectiveRun.current_frame} / ${effectiveRun.total_frames} ${
+                      effectiveRun.stage === "undistorting_images" ? "張"
+                        : effectiveRun.stage === "estimating_stereo_pose" ? "組" : "輪"
+                    }`}
                   />
                   <StatusCard
                     title="人工檢查"
@@ -247,7 +251,16 @@ export default function AnalysisRun({
                   }}
                 />
 
-                <AnalysisRunRoundOverview formalData={formalData} />
+                <AnalysisRunProcessingImages
+                  analysisId={analysisId}
+                  preview={hasMatchingProgress ? progress.processing_preview : null}
+                  status={effectiveRun.status}
+                />
+
+                <AnalysisRunRoundOverview
+                  analysisId={analysisId}
+                  formalData={formalData}
+                />
 
                 <AnalysisRunMetadata
                   formalData={formalData}

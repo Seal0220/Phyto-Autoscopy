@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from app.analysis import analysis_method
 from app.analysis.analysis_runner import AnalysisJobManager
 from app.analysis.artifacts import AnalysisArtifacts
+from app.analysis.export.json_export import write_json_atomic
 from app.analysis.intrinsics import (
     build_intrinsics_snapshot,
     undistort_analysis_views,
@@ -87,6 +88,8 @@ from app.models.analysis_models import (
     AnalysisRound,
     CameraPoseResult as AnalysisCameraPoseResult,
     AnalysisProgress,
+    AnalysisProcessingPreview,
+    AnalysisView,
     AnalysisRun,
     AnalysisSourceSummary,
     AnalysisSourceMode,
@@ -237,6 +240,8 @@ class AnalysisService:
         self.error_reporter = error_reporter
         self.intrinsic_calibration_service = intrinsic_calibration_service
         self._lock = RLock()
+        self._preview_lock = RLock()
+        self._processing_previews: dict[str, AnalysisProcessingPreview | None] = {}
         self._validator = CaptureRecordValidator()
         self._reconstruction_backends = ReconstructionBackendRegistry()
         self._runner = AnalysisJobManager(
@@ -1197,20 +1202,30 @@ class AnalysisService:
             except ValueError as error:
                 raise AnalysisError("來源影像路徑超出捕捉紀錄。") from error
         elif coordinate_space == "undistorted":
+            # A view becomes readable as soon as it is written; the complete
+            # manifest is published only after the undistortion loop finishes.
+            try:
+                manifest = artifacts.read_undistortion_manifest()
+            except FileNotFoundError:
+                manifest = []
             item = next(
                 (
                     row
-                    for row in artifacts.read_undistortion_manifest()
+                    for row in manifest
                     if str(row.get("view_id")) == view_id
                 ),
                 None,
             )
             if item is None:
-                raise AnalysisError("此視角尚無去畸變影像。")
-            candidate = self.get_artifact_path(
-                analysis_id,
-                str(item.get("undistorted_path") or ""),
-            )
+                candidate = (
+                    round_artifact_directory(artifacts.root, view.round_key)
+                    / "undistortion" / "images" / f"{safe_artifact_name(view.view_id)}.png"
+                ).resolve()
+            else:
+                candidate = self.get_artifact_path(
+                    analysis_id,
+                    str(item.get("undistorted_path") or ""),
+                )
         elif coordinate_space == "reprojection":
             candidate = (
                 round_artifact_directory(artifacts.root, view.round_key)
@@ -1588,20 +1603,91 @@ class AnalysisService:
                     raise
                 raise AnalysisError(f"分析驗證失敗：{error}") from error
 
+    def _write_processing_preview(
+        self,
+        run: AnalysisRun,
+        views: Iterable[AnalysisView],
+        *,
+        coordinate_space: str = "undistorted",
+        artifact_path: str | None = None,
+        message: str | None = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        selected = {}
+        for view in views:
+            selected.setdefault(view.camera_id, view)
+        preview = AnalysisProcessingPreview(
+            round_key=next(iter(selected.values())).round_key if selected else None,
+            views=[{
+                "view_id": view.view_id,
+                "camera_id": view.camera_id,
+                "snapshot_id": view.snapshot_id,
+                "timestamp": view.timestamp,
+            } for view in selected.values()],
+            coordinate_space=coordinate_space,
+            artifact_path=artifact_path,
+            message=message,
+            diagnostics=diagnostics or {},
+            updated_at=utc_now_iso(),
+        )
+        with self._preview_lock:
+            self._processing_previews[run.analysis_id] = preview
+            try:
+                write_json_atomic(
+                    self._artifacts(run).root / "processing_preview.json",
+                    preview.model_dump(mode="json"),
+                )
+            except OSError:
+                # Preview persistence is optional; image processing must continue.
+                logger.warning(
+                    "Could not persist processing preview for %s; live preview remains available",
+                    run.analysis_id,
+                    exc_info=True,
+                )
+
+    def _clear_processing_preview(self, run: AnalysisRun) -> None:
+        with self._preview_lock:
+            self._processing_previews[run.analysis_id] = None
+            try:
+                (self._artifacts(run).root / "processing_preview.json").unlink(missing_ok=True)
+            except OSError:
+                logger.warning(
+                    "Could not remove processing preview for %s",
+                    run.analysis_id,
+                    exc_info=True,
+                )
+
+    def _progress_for_run(self, run: AnalysisRun) -> AnalysisProgress:
+        with self._preview_lock:
+            if run.analysis_id in self._processing_previews:
+                preview = self._processing_previews[run.analysis_id]
+            else:
+                preview_path = self._artifacts(run).root / "processing_preview.json"
+                try:
+                    preview = AnalysisProcessingPreview.model_validate_json(
+                        preview_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, ValueError):
+                    preview = None
+                else:
+                    self._processing_previews[run.analysis_id] = preview
+        return AnalysisProgress(
+            analysis_id=run.analysis_id,
+            status=run.status,
+            stage=run.stage,
+            current_frame=run.current_frame,
+            total_frames=run.total_frames,
+            progress=run.progress,
+            last_error=run.last_error,
+            processing_preview=preview,
+        )
+
     def _emit_progress(self, run: AnalysisRun) -> None:
         if self.progress_callback is None:
             return
         try:
             self.progress_callback(
-                AnalysisProgress(
-                    analysis_id=run.analysis_id,
-                    status=run.status,
-                    stage=run.stage,
-                    current_frame=run.current_frame,
-                    total_frames=run.total_frames,
-                    progress=run.progress,
-                    last_error=run.last_error,
-                )
+                self._progress_for_run(run)
             )
         except Exception:
             logger.exception("Analysis progress callback failed")
@@ -1729,15 +1815,7 @@ class AnalysisService:
                 run = next(iter(processing.values()))
             if run is None:
                 return AnalysisProgress()
-        return AnalysisProgress(
-            analysis_id=run.analysis_id,
-            status=run.status,
-            stage=run.stage,
-            current_frame=run.current_frame,
-            total_frames=run.total_frames,
-            progress=run.progress,
-            last_error=run.last_error,
-        )
+        return self._progress_for_run(run)
 
     def start(self, analysis_id: str) -> AnalysisRun:
         with self._lock:
@@ -1906,6 +1984,7 @@ class AnalysisService:
                 raise AnalysisError("分析紀錄中，請先取消並等待背景工作停止。")
             self.repository.clear_results(analysis_id)
             artifacts = self._artifacts(run)
+            self._clear_processing_preview(run)
             for relative in (
                 "summaries",
                 "rounds",
@@ -1987,6 +2066,8 @@ class AnalysisService:
                     tombstone.replace(directory)
                 raise
             shutil.rmtree(tombstone, ignore_errors=True)
+            with self._preview_lock:
+                self._processing_previews.pop(analysis_id, None)
 
     def recover_interrupted_runs(self) -> None:
         for run in self.repository.list():
@@ -2333,6 +2414,7 @@ class AnalysisService:
         views = self.repository.list_views(run.analysis_id)
         if not rounds or not views:
             raise AnalysisError("分析缺少 Round／View 清單。")
+        self._clear_processing_preview(run)
         self._set_state(
             run,
             stage="snapshotting_intrinsics",
@@ -2344,6 +2426,9 @@ class AnalysisService:
         def update_undistortion(index: int, total: int) -> None:
             self._check_cancel(cancel_event)
             current = self._require_run(run.analysis_id)
+            self._write_processing_preview(
+                current, [views[index - 1]], message="目前完成去畸變的影像",
+            )
             self._set_state(
                 current,
                 stage="undistorting_images",
@@ -2400,11 +2485,37 @@ class AnalysisService:
                     "snapshot_id": view.snapshot_id,
                     "round_key": view.round_key,
                 } for view in views]
+                views_by_capture = {view.capture_id: view for view in views}
+
+                def update_stereo_preview(index, total, top, side, diagnostics):
+                    self._check_cancel(cancel_event)
+                    detail = dict(diagnostics)
+                    match_image = detail.pop("match_image_path", None)
+                    self._write_processing_preview(
+                        run,
+                        [views_by_capture[frame["capture_id"]] for frame in (top, side)],
+                        artifact_path=(
+                            Path(match_image).relative_to(artifacts.root).as_posix()
+                            if match_image else None
+                        ),
+                        message=f"雙鏡頭姿態估計：影像組 {index} / {total}",
+                        diagnostics=detail,
+                    )
+                    self._set_state(
+                        self._require_run(run.analysis_id),
+                        stage="estimating_stereo_pose",
+                        current_frame=index,
+                        total_frames=total,
+                        progress=0.18,
+                    )
+
                 fixed_stereo_poses, stereo_quality = estimate_fixed_stereo_pose(
                     all_frames,
                     undistorted_intrinsics,
                     markerless_settings,
                     cancel_check=lambda: self._check_cancel(cancel_event),
+                    debug_directory=artifacts.root / "pose_debug" / "stereo",
+                    progress_callback=update_stereo_preview,
                 )
             except (ValidationError, ValueError, cv2.error) as error:
                 raise AnalysisError(f"無標記雙鏡頭姿態估計失敗：{error}") from error
@@ -2447,6 +2558,9 @@ class AnalysisService:
                 updated_views.extend(round_views)
                 continue
             derived_frames = []
+            self._write_processing_preview(
+                run, round_views, message=f"{round_item.round_id} 的姿態估計輸入",
+            )
             derived_paths: dict[str, Path] = {}
             for view in round_views:
                 metadata = undistorted_by_view[view.view_id]
@@ -3029,6 +3143,11 @@ class AnalysisService:
         failed = sum(item.status in {"failed", "model_failed"} for item in rounds)
         for index, round_item in enumerate(candidates, start=1):
             self._check_cancel(cancel_event)
+            self._write_processing_preview(
+                run,
+                self.repository.list_views(run.analysis_id, round_item.round_key),
+                message=f"{round_item.round_id} 的建模輸入（第一組擷取）",
+            )
             model_id = f"{run.analysis_id}:{round_item.mode_id}:{round_item.round_id}:model"
             running_model = RoundModelResult(
                 analysis_id=run.analysis_id,
@@ -3371,6 +3490,10 @@ class AnalysisService:
             processed_index += 1
             self._check_cancel(cancel_event)
             current = self._require_run(run.analysis_id)
+            self._write_processing_preview(
+                current, views_by_round.get(round_item.round_key, ()),
+                message=f"{round_item.round_id} 的尖端分析輸入",
+            )
             self._set_state(
                 current,
                 status="processing",
@@ -3461,6 +3584,9 @@ class AnalysisService:
                     ),
                     cancel_check=lambda: self._check_cancel(cancel_event),
                     stage_callback=update_tip_stage,
+                    view_callback=lambda view: self._write_processing_preview(
+                        run, [view], message="目前正在偵測尖端候選的影像",
+                    ),
                 )
                 landmark = result.landmark
                 if result.model_result is not None:

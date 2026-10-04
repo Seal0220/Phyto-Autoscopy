@@ -51,6 +51,7 @@ export default function useAnalysisRun({
   const loadGenerationRef = useRef(0);
   const pollingRef = useRef(false);
   const runStatusRef = useRef("");
+  const lastTerminalProgressRef = useRef("");
   const {
     snapshot,
     socketError,
@@ -146,8 +147,20 @@ export default function useAnalysisRun({
 
     runStatusRef.current = analysisProgress.status;
     setProgress(analysisProgress);
+    if (!POLLED_STATUSES.has(analysisProgress.status)) {
+      const terminalKey = `${analysisId}:${analysisProgress.status}`;
+      if (lastTerminalProgressRef.current !== terminalKey) {
+        lastTerminalProgressRef.current = terminalKey;
+        // The final socket update must also refresh per-round outputs after
+        // active polling stops, including a failure's last processing image.
+        void load({ silent: true });
+      }
+    } else {
+      lastTerminalProgressRef.current = "";
+    }
   }, [
     analysisId,
+    load,
     snapshot,
   ]);
 

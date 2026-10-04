@@ -32,6 +32,7 @@ AnalysisStage = Literal[
     "undistorting_images",
     "detecting_aruco",
     "estimating_camera_poses",
+    "estimating_stereo_pose",
     "refining_camera_poses",
     "selecting_reconstruction_views",
     "extracting_features",
@@ -489,6 +490,23 @@ class TipCorrection(BaseModel):
     confidence_after: float
 
 
+class AnalysisProcessingView(BaseModel):
+    view_id: str
+    camera_id: CameraIdentifier
+    snapshot_id: str | None = None
+    timestamp: str | None = None
+
+
+class AnalysisProcessingPreview(BaseModel):
+    round_key: str | None = None
+    views: list[AnalysisProcessingView] = Field(default_factory=list)
+    coordinate_space: Literal["source", "undistorted"] = "source"
+    artifact_path: str | None = None
+    message: str | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    updated_at: str | None = None
+
+
 class AnalysisProgress(BaseModel):
     analysis_id: str | None = None
     status: str = "idle"
@@ -497,6 +515,7 @@ class AnalysisProgress(BaseModel):
     total_frames: int = 0
     progress: float = 0.0
     last_error: str | None = None
+    processing_preview: AnalysisProcessingPreview | None = None
 
     @field_validator("progress")
     @classmethod

@@ -103,9 +103,9 @@ export default function FormalTrajectoryViewer3D({
       setLoadError("");
       try {
         // Plotly depends on browser APIs and is loaded only on the result page.
-        const module = await import("plotly.js-gl3d-dist-min");
+        const plotlyModule = await import("plotly.js-gl3d-dist-min");
         if (!active) return;
-        plotly = module.default || module;
+        plotly = plotlyModule.default || plotlyModule;
         plotlyRef.current = plotly;
         await plotly.react(plotElement, traces, plotLayout(), PLOT_CONFIG);
         if (!active) {

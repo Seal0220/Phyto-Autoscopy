@@ -90,6 +90,7 @@ export const ANALYSIS_STAGE_LABELS = {
   undistorting_images: "套用內參並去畸變",
   detecting_aruco: "偵測 ArUco 基準",
   estimating_camera_poses: "估算相機姿態",
+  estimating_stereo_pose: "估算雙鏡頭相對姿態",
   refining_camera_poses: "精修相機姿態",
   selecting_reconstruction_views: "選擇模型影像",
   extracting_features: "提取多視角特徵",

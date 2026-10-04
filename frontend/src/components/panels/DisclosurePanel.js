@@ -4,9 +4,13 @@ export default function DisclosurePanel({
   children,
   description,
   title,
+  onToggle,
 }) {
   return (
-    <details className="group min-w-0 rounded-xl border border-white/15 bg-black/15">
+    <details
+      className="group min-w-0 rounded-xl border border-white/15 bg-black/15"
+      onToggle={onToggle}
+    >
       <summary className="grid min-h-12 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 focus-visible:outline-2 focus-visible:outline-emerald-300 [&::-webkit-details-marker]:hidden">
         <span className="grid min-w-0 gap-1">
           <span className="text-sm font-black text-neutral-100">{title}</span>
