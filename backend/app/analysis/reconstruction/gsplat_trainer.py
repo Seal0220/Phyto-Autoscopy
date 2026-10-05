@@ -18,6 +18,11 @@ from app.analysis.reconstruction.dataset_adapter import (
     PreparedRoundDataset,
     PreparedRoundView,
 )
+from app.analysis.reconstruction.dataset_adapter import _sha256
+from app.analysis.reconstruction.plant_isolation import foreground_point_selection
+
+
+PLANT_TRAINING_VERSION = "plant_silhouette_v1"
 
 
 _SH_C0 = 0.28209479177387814
@@ -40,6 +45,7 @@ class _TrainingView:
     loss_weight: np.ndarray | None
     camera_matrix: np.ndarray
     world_to_camera: np.ndarray
+    plant_mask: np.ndarray | None = None
 
 
 @dataclass(slots=True)
@@ -100,10 +106,10 @@ def _load_training_views(
             if valid_mask is not None
             else np.ones((height, width), dtype=np.float32)
         )
-        if (
-            use_plant_mask_in_loss
-            and source.plant_mask_path is not None
-        ):
+        plant_pixels = None
+        if use_plant_mask_in_loss:
+            if source.plant_mask_path is None:
+                raise GsplatTrainingError("植物模型訓練缺少植物遮罩。")
             plant_mask = _read_image(
                 source.plant_mask_path,
                 cv2.IMREAD_GRAYSCALE,
@@ -115,11 +121,12 @@ def _load_training_views(
                     interpolation=cv2.INTER_NEAREST,
                 )
             plant_pixels = plant_mask > 0
-            loss_weight = np.where(
-                loss_weight > 0,
-                np.where(plant_pixels, 1.0, 0.2),
-                0.0,
-            ).astype(np.float32)
+            if valid_mask is not None:
+                plant_pixels &= valid_mask
+            if not plant_pixels.any():
+                continue
+            loss_weight = plant_pixels.astype(np.float32)
+            image_float[~plant_pixels] = 0
 
         camera_matrix = source.camera_matrix.copy()
         camera_matrix[0, :] /= image_factor
@@ -140,8 +147,11 @@ def _load_training_views(
                 loss_weight=loss_weight,
                 camera_matrix=camera_matrix.astype(np.float32),
                 world_to_camera=normalized_pose,
+                plant_mask=plant_pixels,
             )
         )
+    if not views:
+        raise GsplatTrainingError("模型訓練沒有可用的植物影像。")
     return tuple(views)
 
 
@@ -229,6 +239,7 @@ def _checkpoint(
     strategy_state: Any = None,
     signature: str = "",
     losses: list[float] | None = None,
+    coordinate_unit: str = "millimetre",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -236,9 +247,10 @@ def _checkpoint(
         {
             "step": step,
             "splats": splats.state_dict(),
-            "center_world_mm": center_world_mm.tolist(),
-            "world_scale_mm": world_scale_mm,
-            "coordinate_space": "metric_world_mm",
+            **({"center_world_mm": center_world_mm.tolist(), "world_scale_mm": world_scale_mm}
+               if coordinate_unit == "millimetre" else {"center_world": center_world_mm.tolist(), "world_scale": world_scale_mm}),
+            "coordinate_space": "metric_world_mm" if coordinate_unit == "millimetre" else "model_world_relative",
+            "coordinate_unit": coordinate_unit,
             "format_version": 2,
             "signature": signature,
             "optimizers": {name: optimizer.state_dict() for name, optimizer in (optimizers or {}).items()},
@@ -289,6 +301,11 @@ def train_gsplat_model(
         raise GsplatTrainingError("模型訓練步數或影像縮小倍率無效。")
     output_dir.mkdir(parents=True, exist_ok=True)
     positions_world_mm, colors = _load_sparse_points(dataset)
+    foreground_only = bool(parameters.get("use_plant_mask", True))
+    initial_foreground_quality = None
+    if foreground_only:
+        selection, initial_foreground_quality = foreground_point_selection(positions_world_mm, dataset)
+        positions_world_mm, colors = positions_world_mm[selection], colors[selection]
     center_world_mm, world_scale_mm = _normalization(positions_world_mm)
     positions = (
         (positions_world_mm - center_world_mm) / world_scale_mm
@@ -298,9 +315,7 @@ def train_gsplat_model(
         image_factor=image_factor,
         center_world_mm=center_world_mm,
         world_scale_mm=world_scale_mm,
-        use_plant_mask_in_loss=bool(
-            parameters.get("use_plant_mask", True)
-        ),
+        use_plant_mask_in_loss=foreground_only,
     )
 
     device = torch.device("cuda:0")
@@ -309,9 +324,14 @@ def train_gsplat_model(
     # was disabled. Legacy weights-only checkpoints cannot restore Adam state.
     checkpoint_path = output_dir / "checkpoint" / "latest.pt"
     signature = step_signature({
+        "training_version": PLANT_TRAINING_VERSION,
+        **({"geometry_signature": dataset.geometry_signature, "coordinate_unit": dataset.coordinate_unit}
+           if dataset.geometry_signature is not None or dataset.coordinate_unit != "millimetre" else {}),
         "parameters": dict(parameters), "center": center_world_mm.tolist(), "scale": world_scale_mm,
         "views": [{"id": view.view_id, "hash": view.source_sha256,
-                   "pose": view.world_to_camera_matrix.tolist(), "K": view.camera_matrix.tolist()}
+                   "pose": view.world_to_camera_matrix.tolist(), "K": view.camera_matrix.tolist(),
+                   "plant_mask": _sha256(view.plant_mask_path) if foreground_only and view.plant_mask_path else None,
+                   "valid_mask": _sha256(view.valid_mask_path) if view.valid_mask_path else None}
                   for view in dataset.views],
     })
     saved = None
@@ -392,6 +412,7 @@ def train_gsplat_model(
             "loss_weight": torch.from_numpy(
                 view.loss_weight,
             ).to(device),
+            "plant_mask": torch.from_numpy(view.plant_mask).to(device) if view.plant_mask is not None else None,
             "K": torch.from_numpy(view.camera_matrix).to(device)[None],
             "viewmat": torch.from_numpy(view.world_to_camera).to(device)[None],
         })
@@ -421,7 +442,7 @@ def train_gsplat_model(
             checkpoint_path, torch=torch, step=completed_steps, splats=splats,
             center_world_mm=center_world_mm, world_scale_mm=world_scale_mm,
             optimizers=optimizers, scheduler=scheduler, strategy_state=strategy_state,
-            signature=signature, losses=losses,
+            signature=signature, losses=losses, coordinate_unit=dataset.coordinate_unit,
         )
 
     def check_cancellation_with_checkpoint() -> None:
@@ -439,7 +460,7 @@ def train_gsplat_model(
         item = tensors[step % len(tensors)]
         pixels = item["pixels"][None]
         height, width = pixels.shape[1:3]
-        renders, _, info = rasterization(
+        renders, alphas, info = rasterization(
             means=splats["means"],
             quats=splats["quats"],
             scales=torch.exp(splats["scales"]),
@@ -476,8 +497,10 @@ def train_gsplat_model(
             raise GsplatTrainingError(
                 "模型訓練遮罩沒有任何有效像素。"
             )
-        if mask is not None and bool(mask.any()):
-            mask_float = mask[None, ..., None].float()
+        plant_mask = item["plant_mask"]
+        ssim_mask = plant_mask if plant_mask is not None else mask
+        if ssim_mask is not None and bool(ssim_mask.any()):
+            mask_float = ssim_mask[None, ..., None].float()
             ssim_prediction = colors_rendered * mask_float
             ssim_target = pixels * mask_float
         else:
@@ -485,6 +508,14 @@ def train_gsplat_model(
             ssim_target = pixels
         ssim_loss = _ssim_loss(ssim_prediction, ssim_target, torch)
         loss = 0.8 * l1_loss + 0.2 * ssim_loss
+        if plant_mask is not None:
+            # RGB alone cannot distinguish empty black space from opaque black
+            # splats. Supervise opacity so the background stays empty geometry.
+            alpha = alphas[0, ..., 0]
+            foreground_alpha_loss = (1 - alpha[plant_mask]).mean()
+            background_mask = ~plant_mask if mask is None else mask & ~plant_mask
+            background_alpha_loss = alpha[background_mask].mean() if bool(background_mask.any()) else alpha.sum() * 0
+            loss = loss + .1 * (foreground_alpha_loss + background_alpha_loss)
         if not torch.isfinite(loss):
             raise GsplatTrainingError("模型損失出現非有限值，已停止該 Round。")
         loss.backward()
@@ -528,6 +559,21 @@ def train_gsplat_model(
                     persist_checkpoint()
                 raise
 
+    foreground_quality = None
+    if foreground_only:
+        check_cancellation_with_checkpoint()
+        world_points = (splats["means"].detach() * world_scale_mm + torch.as_tensor(
+            center_world_mm, dtype=splats["means"].dtype, device=device,
+        )).cpu().numpy()
+        selection, foreground_quality = foreground_point_selection(world_points, dataset)
+        selection &= torch.sigmoid(splats["opacities"]).detach().cpu().numpy() >= .005
+        if int(selection.sum()) < 4:
+            raise GsplatTrainingError("植物 Gaussian 有效點不足，請檢查植物遮罩。")
+        foreground_quality["exported_gaussian_count"] = int(selection.sum())
+        selection_tensor = torch.from_numpy(selection).to(device)
+        splats = torch.nn.ParameterDict({
+            name: torch.nn.Parameter(value.detach()[selection_tensor]) for name, value in splats.items()
+        })
     duration = time.monotonic() - started
     metrics = {
         "quality_preset": quality_name,
@@ -537,13 +583,18 @@ def train_gsplat_model(
         ),
         "initial_sparse_point_count": point_count,
         "gaussian_count": int(splats["means"].shape[0]),
-        "coordinate_space": "metric_world_mm",
+        "coordinate_space": "metric_world_mm" if dataset.coordinate_unit == "millimetre" else "model_world_relative",
+        "coordinate_unit": dataset.coordinate_unit,
         "camera_poses_fixed": True,
         "plant_mask_in_training_loss": bool(
             parameters.get("use_plant_mask", True)
         ),
-        "world_center_mm": center_world_mm.tolist(),
-        "internal_world_scale_mm": world_scale_mm,
+        "training_version": PLANT_TRAINING_VERSION,
+        "foreground_only": foreground_only,
+        "initial_foreground_selection": initial_foreground_quality,
+        "foreground_selection": foreground_quality,
+        **({"world_center_mm": center_world_mm.tolist(), "internal_world_scale_mm": world_scale_mm}
+           if dataset.coordinate_unit == "millimetre" else {"world_center": center_world_mm.tolist(), "internal_world_scale": world_scale_mm}),
         "resumed_from_step": resumed_from_step,
     }
     write_json_atomic(output_dir / "training_metrics.json", metrics)

@@ -11,6 +11,7 @@ import numpy as np
 from app.analysis.image_probe import read_analysis_image
 from app.analysis.gpu_operations import cuda_hamming_matches, detect_orb_features
 from app.analysis.checkpoints import StepJournal, step_signature
+from app.models.analysis_models import MINIMUM_MANUAL_STEREO_PAIRS
 
 from app.analysis.pose_alignment.models import (
     CameraPoseResult,
@@ -146,6 +147,51 @@ def _pair_candidates(frames: Sequence[object]) -> list[tuple[object, object]]:
     return paired[:24]
 
 
+def _record_stereo_inliers(diagnostics, stage, indices, manual):
+    diagnostics[f"{stage}_inliers"] = int(indices.size)
+    if manual:
+        diagnostics.update(validated_stage=stage, inlier_indices=indices.tolist())
+
+
+def _stereo_pose_matrices(rotation, translation, settings):
+    # World Z=0 is the platform under the top camera; retain right-handed axes.
+    top_pose = np.eye(4, dtype=np.float64)
+    top_pose[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    top_pose[2, 3] = float(settings["top_height_mm"])
+    relative = np.eye(4, dtype=np.float64)
+    relative[:3, :3] = rotation
+    relative[:3, 3] = translation.reshape(3) * float(settings["baseline_mm"])
+    return {"top": top_pose, "side": relative @ top_pose}
+
+
+def _manual_stereo_candidates(essential, mask, frames, intrinsics, settings, points, normalized, images, diagnostics):
+    """Five-point solutions must pass the same checks and yield a unique pose."""
+    solutions = []
+    strongest = None
+    for matrix in essential.reshape(-1, 3, 3):
+        _, rotation, translation, _ = cv2.recoverPose(matrix, *normalized, np.eye(3), mask=mask.copy())
+        candidate_diagnostics = {}
+        candidate = _stereo_landmarks(
+            *frames, intrinsics, settings, fixed_poses=_stereo_pose_matrices(rotation, translation, settings),
+            diagnostics=candidate_diagnostics, manual_points=points, prepared_images=images,
+        )
+        if strongest is None or len(candidate_diagnostics.get("inlier_indices", [])) > len(strongest.get("inlier_indices", [])):
+            strongest = candidate_diagnostics
+        if candidate is not None and not any(
+            np.allclose(candidate["poses"]["side"], other[0]["poses"]["side"], rtol=1e-6, atol=1e-5)
+            for other in solutions
+        ):
+            solutions.append((candidate, candidate_diagnostics))
+    diagnostics.update(strongest or {}, essential_candidate_count=len(essential) // 3)
+    if len(solutions) == 1:
+        candidate, checked = solutions[0]
+        diagnostics.update(checked)
+        return candidate
+    if len(solutions) > 1:
+        diagnostics.update(ambiguous=True, rejection_reason="配對存在多個相機姿態解，請再新增 1 組分散的對應點")
+    return None
+
+
 def _stereo_landmarks(
     top: object,
     side: object,
@@ -156,14 +202,17 @@ def _stereo_landmarks(
     diagnostics: dict[str, object] | None = None,
     debug_path: Path | None = None,
     manual_points: tuple[np.ndarray, np.ndarray] | None = None,
+    prepared_images: tuple[np.ndarray, np.ndarray] | None = None,
 ):
     diagnostics = diagnostics if diagnostics is not None else {}
     diagnostics.update(matched_features=0, geometric_inliers=0, rejection_reason=None)
+    if manual_points is not None:
+        diagnostics.update(validated_stage="not_started", inlier_indices=[])
     if manual_points is None:
         top_data = _features(top, int(settings["feature_count"]))
         side_data = _features(side, int(settings["feature_count"]))
     else:
-        images = (_gray(top), _gray(side))
+        images = prepared_images if prepared_images is not None else (_gray(top), _gray(side))
         if any(image is None for image in images):
             raise ValueError("人工配對影像無法讀取，請重新讀取後再試。")
         top_data, side_data = [
@@ -216,6 +265,12 @@ def _stereo_landmarks(
         if essential is None or mask is None:
             diagnostics["rejection_reason"] = "極線幾何估計失敗"
             return None
+        _record_stereo_inliers(diagnostics, "epipolar", np.flatnonzero(mask.reshape(-1)), manual_points is not None)
+        if manual_points is not None and essential.shape != (3, 3):
+            return _manual_stereo_candidates(
+                essential, mask, (top, side), intrinsics, settings, manual_points,
+                (top_normalized, side_normalized), (top_image, side_image), diagnostics,
+            )
         _, rotation, translation, mask = cv2.recoverPose(
             essential,
             top_normalized,
@@ -223,16 +278,8 @@ def _stereo_landmarks(
             np.eye(3),
             mask=mask,
         )
-        translation = translation.reshape(3) * float(settings["baseline_mm"])
-        # The platform directly beneath the top camera is world Z=0. Flip two
-        # axes so Z points upward while retaining a right-handed coordinate system.
-        top_pose = np.eye(4, dtype=np.float64)
-        top_pose[:3, :3] = np.diag([1.0, -1.0, -1.0])
-        top_pose[2, 3] = float(settings["top_height_mm"])
-        relative = np.eye(4, dtype=np.float64)
-        relative[:3, :3] = rotation
-        relative[:3, 3] = translation
-        side_pose = relative @ top_pose
+        poses = _stereo_pose_matrices(rotation, translation, settings)
+        top_pose, side_pose = poses["top"], poses["side"]
     else:
         top_pose = fixed_poses["top"]
         side_pose = fixed_poses["side"]
@@ -249,7 +296,7 @@ def _stereo_landmarks(
         denominator = np.linalg.norm((top_h @ essential.T)[:, :2], axis=1)
         mask = (residual / np.maximum(denominator, 1e-12) < float(settings["maximum_epipolar_error_px"]) / min(top_matrix[0, 0], side_matrix[0, 0])).astype(np.uint8).reshape(-1, 1)
     inlier_indices = np.flatnonzero(mask.reshape(-1))
-    diagnostics["geometric_inliers"] = len(inlier_indices)
+    _record_stereo_inliers(diagnostics, "geometric", inlier_indices, manual_points is not None)
     if len(inlier_indices) < int(settings["minimum_stereo_inliers"]):
         diagnostics["rejection_reason"] = "相機姿態幾何內點不足"
         return None
@@ -278,8 +325,8 @@ def _stereo_landmarks(
         error = np.linalg.norm(projection - pixels, axis=1)
         reprojection_errors.append(error)
         valid &= np.isfinite(error) & (error <= float(settings["maximum_stereo_reprojection_error_px"]))
+    _record_stereo_inliers(diagnostics, "reprojection", inlier_indices[valid], manual_points is not None)
     if int(valid.sum()) < int(settings["minimum_stereo_inliers"]):
-        diagnostics["reprojection_inliers"] = int(valid.sum())
         diagnostics["rejection_reason"] = "正深度或重投影檢查未通過"
         return None
     top_center = np.linalg.inv(top_pose)[:3, 3]
@@ -370,19 +417,25 @@ def estimate_fixed_stereo_pose(
     return _stereo_pose_result(best, settings)
 
 
-def estimate_manual_stereo_pose(top, side, intrinsics, settings, correspondences):
-    """Use human correspondences, retaining depth, reprojection and parallax checks."""
+def estimate_manual_stereo_pose(top, side, intrinsics, settings, correspondences, *, diagnostics=None):
+    """Use same-capture physical points, including visible plant tips and nodes."""
     points = tuple(np.asarray([
         [pair[camera]["x_px"], pair[camera]["y_px"]] for pair in correspondences
     ], dtype=np.float64) for camera in ("top", "side"))
-    manual_settings = {**settings, "minimum_stereo_inliers": 8}
-    diagnostics = {}
+    minimum = MINIMUM_MANUAL_STEREO_PAIRS
+    manual_settings = {**settings, "minimum_stereo_inliers": minimum}
+    diagnostics = diagnostics if diagnostics is not None else {}
     best = _stereo_landmarks(top, side, intrinsics, manual_settings,
                              diagnostics=diagnostics, manual_points=points)
     if best is None:
+        count = len(diagnostics.get("inlier_indices", []))
+        advice = (
+            "請修正配對或增加分散的對應點，芽尖、葉尖及莖節皆可選用。"
+            if count < minimum else "請檢查配對與相機設定。"
+        )
         raise ValueError(
             f"人工配對未通過幾何檢查：{diagnostics.get('rejection_reason') or '配對不足'}。"
-            "請修正對應位置，至少保留 8 組有效配對。"
+            f"本次內點 {count}/{len(correspondences)} 組，需至少 {minimum} 組。{advice}"
         )
     poses, quality = _stereo_pose_result(best, manual_settings)
     quality.update(estimation_source="manual_correspondences", manual_correspondence_count=len(correspondences))

@@ -11,6 +11,9 @@ from pydantic import (
 )
 
 
+MINIMUM_MANUAL_STEREO_PAIRS = 5
+
+
 AnalysisStatus = Literal[
     "draft",
     "validating",
@@ -39,6 +42,10 @@ AnalysisStage = Literal[
     "detecting_aruco",
     "estimating_camera_poses",
     "estimating_stereo_pose",
+    "estimating_reference_poses",
+    "building_reference_model",
+    "aligning_model_cameras",
+    "waiting_for_model_review",
     "waiting_for_stereo_review",
     "refining_camera_poses",
     "selecting_reconstruction_views",
@@ -219,7 +226,7 @@ class StereoPoseReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     top_view_id: str = Field(min_length=1, max_length=512)
     side_view_id: str = Field(min_length=1, max_length=512)
-    correspondences: list[StereoPointPair] = Field(min_length=8, max_length=200)
+    correspondences: list[StereoPointPair] = Field(min_length=MINIMUM_MANUAL_STEREO_PAIRS, max_length=200)
 
     @model_validator(mode="after")
     def unique_points(self):
@@ -227,6 +234,21 @@ class StereoPoseReviewRequest(BaseModel):
             points = {(getattr(pair, camera).x_px, getattr(pair, camera).y_px) for pair in self.correspondences}
             if len(points) != len(self.correspondences):
                 raise ValueError("每組配對都必須使用不同的影像位置。")
+        return self
+
+
+class ModelPointPair(StereoPointPair):
+    model_point_id: int = Field(ge=0)
+
+
+class ModelPoseReviewRequest(StereoPoseReviewRequest):
+    reference_signature: str = Field(min_length=1, max_length=128)
+    correspondences: list[ModelPointPair] = Field(min_length=4, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_model_points(self):
+        if len({pair.model_point_id for pair in self.correspondences}) != len(self.correspondences):
+            raise ValueError("每組配對必須選擇不同的模型參照點。")
         return self
 
 

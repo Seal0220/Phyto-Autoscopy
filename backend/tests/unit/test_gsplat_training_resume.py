@@ -9,7 +9,8 @@ from app.analysis.reconstruction.native_build import configure_native_build
 from app.core.exceptions import AnalysisPausedError
 
 
-def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, monkeypatch):
+@pytest.mark.parametrize("coordinate_unit", ["millimetre", "relative"])
+def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, monkeypatch, coordinate_unit):
     torch = pytest.importorskip("torch")
     if not torch.cuda.is_available():
         pytest.skip("CUDA is unavailable")
@@ -26,6 +27,7 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
         analysis_id="analysis-test", round_key="round", root=tmp_path, images_dir=tmp_path,
         masks_dir=tmp_path, database_path=tmp_path / "database.db", sparse_dir=tmp_path,
         metadata_path=tmp_path / "metadata.json", views=(source,),
+        coordinate_unit=coordinate_unit,
     )
     random = np.random.default_rng(17)
     points = random.uniform(-10, 10, (64, 3)).astype(np.float32)
@@ -44,7 +46,8 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
         loss_weight=np.ones((16, 16), np.float32), camera_matrix=matrix, world_to_camera=pose,
     )
     monkeypatch.setattr(trainer, "_load_training_views", lambda *args, **kwargs: (training_view,))
-    settings = {"quality_preset": "preview", "training_iterations": 500, "image_factor": 1, "save_checkpoint": False}
+    settings = {"quality_preset": "preview", "training_iterations": 500, "image_factor": 1, "save_checkpoint": False,
+                "use_plant_mask": False}
 
     def train_until(directory, stop):
         def progress(stage, fraction, message):
@@ -58,6 +61,9 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
     paused = train_until(tmp_path / "resumed", 10)
     assert paused["step"] == 10
     assert paused["format_version"] == 2
+    assert paused["coordinate_unit"] == coordinate_unit
+    assert paused["coordinate_space"] == ("metric_world_mm" if coordinate_unit == "millimetre" else "model_world_relative")
+    assert ("center_world_mm" in paused) is (coordinate_unit == "millimetre")
     assert paused["optimizers"] and paused["scheduler"] and paused["strategy_state"]
     with (tmp_path / "resumed" / "training_steps.csv").open("a") as handle:
         handle.write("11,0,cuda\n12,0,cuda\n")

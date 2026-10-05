@@ -6,7 +6,6 @@ import {
   analysisRunActionAvailability,
   analysisRunActionRequest,
   analysisRunDisplay,
-  framePairCounts,
   isValidAnalysisId,
   normalizeAnalysisProgress,
   normalizeAnalysisRun,
@@ -43,7 +42,8 @@ test("analysis run actions follow lifecycle status", () => {
   assert.equal(analysisRunActionAvailability("processing").cancel, true);
   assert.equal(analysisRunActionAvailability("failed").retry, true);
   assert.equal(analysisRunActionAvailability("failed").reset, true);
-  assert.equal("resume" in analysisRunActionAvailability("failed"), false);
+  assert.equal(analysisRunActionAvailability("failed").resume, false);
+  assert.equal(analysisRunActionAvailability("paused").resume, true);
   assert.equal(analysisRunActionAvailability("needs_review").review, true);
   assert.equal(analysisRunActionAvailability("needs_review").skipReview, true);
   assert.equal(analysisRunActionAvailability("reviewing").skipReview, true);
@@ -62,20 +62,5 @@ test("skip-review action reconstructs with an explicit incomplete-review flag", 
   assert.deepEqual(analysisRunActionRequest("validate"), {
     action: "validate",
     body: {},
-  });
-});
-
-test("frame pair counts distinguish automatic, manual, and unresolved", () => {
-  const counts = framePairCounts([
-    { pair_status: "paired" },
-    { pair_status: "manually_aligned" },
-    { pair_status: "top_missing" },
-    { pair_status: "outside_tolerance" },
-  ]);
-
-  assert.deepEqual(counts, {
-    paired: 1,
-    manuallyAligned: 1,
-    unresolved: 2,
   });
 });

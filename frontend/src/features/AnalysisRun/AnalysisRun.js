@@ -265,11 +265,24 @@ export default function AnalysisRun({
                   }}
                 />
 
-                <AnalysisRunProcessingImages
-                  analysisId={analysisId}
-                  preview={hasMatchingProgress ? progress.processing_preview : null}
-                  status={effectiveRun.status}
-                />
+                {stereoReview ? (
+                  <AnalysisRunStereoReview
+                    key={analysisId}
+                    analysisId={analysisId}
+                    open={stereoReviewOpen}
+                    onClose={closeStereoReview}
+                    onAccepted={acceptStereoReview}
+                    onReloadRun={() => load({ silent: true, confirmMutation: true })}
+                  />
+                ) : null}
+
+                {!stereoReview || !stereoReviewOpen ? (
+                  <AnalysisRunProcessingImages
+                    analysisId={analysisId}
+                    preview={hasMatchingProgress ? progress.processing_preview : null}
+                    status={effectiveRun.status}
+                  />
+                ) : null}
 
                 <AnalysisRunCheckpoints
                   checkpoints={hasMatchingProgress ? progress.checkpoints : null}
@@ -298,16 +311,6 @@ export default function AnalysisRun({
             ) : null}
           </div>
         </Panel>
-        {stereoReview ? (
-          <AnalysisRunStereoReview
-            key={analysisId}
-            analysisId={analysisId}
-            open={stereoReviewOpen}
-            onClose={closeStereoReview}
-            onAccepted={acceptStereoReview}
-            onReloadRun={() => load({ silent: true, confirmMutation: true })}
-          />
-        ) : null}
     </div>
   );
 }

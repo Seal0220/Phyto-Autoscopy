@@ -52,10 +52,29 @@ def execute_job(
     progress_path: Path,
     cancel_path: Path,
 ) -> int:
-    configure_native_build()
     job = _read_job(job_path)
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    if job.get("kind") == "reference_sfm":
+        from app.analysis.reconstruction.reference_sfm import build_reference_sfm
+
+        def reference_cancel():
+            if cancel_path.exists():
+                raise WorkerCancelled("參照模型已保存，等待恢復。")
+
+        def reference_progress(stage, value, message):
+            reference_cancel()
+            write_json_atomic(progress_path, {"stage": stage, "progress": value, "message": message, "updated_at": _utc_now()})
+
+        try:
+            result = build_reference_sfm(job, output_dir, progress=reference_progress, cancel_check=reference_cancel)
+            write_json_atomic(result_path, result)
+            return 0
+        except Exception as error:
+            write_json_atomic(result_path, {"status": "cancelled" if isinstance(error, WorkerCancelled) else "failed", "error": _public_error(error)})
+            traceback.print_exc()
+            return 1
+    configure_native_build()
     backend_name = str(job.get("backend") or "").strip()
     parameters = job.get("parameters")
     if not isinstance(parameters, Mapping):
@@ -235,6 +254,7 @@ def execute_job(
             or sparse.get("quality", {}).get("point_count"),
             "model_quality": {
                 **metrics,
+                "coordinate_unit": job.get("world_coordinate_unit", "millimetre"),
                 "sparse_initialization": sparse.get("quality", {}),
                 "plant_gaussian_export": plant_export_quality,
                 "backend_readiness": readiness,

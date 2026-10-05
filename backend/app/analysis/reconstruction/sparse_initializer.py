@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
+import shutil
 from typing import Callable
 
 import numpy as np
@@ -49,6 +50,30 @@ def initialize_sparse_geometry(
         raise SparseInitializationError(
             "尚未安裝 PyCOLMAP，無法建立稀疏初始化點。"
         ) from error
+
+    if dataset.initial_sparse_path is not None:
+        # The rotating model already estimated poses and tracks; do not extract
+        # or triangulate the same images a second time.
+        reconstruction = pycolmap.Reconstruction(dataset.initial_sparse_path)
+        by_name = {image.name: image for image in reconstruction.images.values()
+                   if image.image_id in reconstruction.reg_image_ids()}
+        for view in dataset.views:
+            image = by_name.get(view.image_name)
+            if image is None or not np.allclose(image.cam_from_world().matrix(), view.world_to_camera_matrix[:3], atol=1e-6):
+                raise SparseInitializationError("參照模型姿態與訓練影像不一致。")
+        dataset.sparse_dir.mkdir(parents=True, exist_ok=True)
+        for path in dataset.initial_sparse_path.glob("*.bin"):
+            shutil.copy2(path, dataset.sparse_dir / path.name)
+        cloud = dataset.sparse_dir.parent / "sparse_points.ply"
+        reconstruction.export_PLY(cloud)
+        if cancel_check is not None:
+            cancel_check()
+        if progress_callback is not None:
+            progress_callback("initializing_round_geometry", 1)
+        return {"reconstruction_path": str(dataset.sparse_dir), "point_cloud_path": str(cloud),
+                "quality": {"point_count": reconstruction.num_points3D(), "coordinate_unit": dataset.coordinate_unit,
+                            "initialization_source": "rotating_sfm_reference", "bundle_adjustment": {"enabled": False, "status": "already_initialized"}},
+                "refined_camera_poses": []}
 
     def progress(stage: str, value: float) -> None:
         if cancel_check is not None:
@@ -261,7 +286,7 @@ def initialize_sparse_geometry(
             reconstruction.compute_mean_reprojection_error()
         ),
         "triangulation_pose_difference": triangulation_pose_difference,
-        "coordinate_unit": "millimetre",
+        "coordinate_unit": dataset.coordinate_unit,
         "fixed_camera_poses_constant": True,
         "camera_intrinsics_constant": True,
         "bundle_adjustment": bundle_adjustment_quality,

@@ -46,18 +46,75 @@ def _geometry():
     return pairs, settings, intrinsics, center
 
 
-@pytest.mark.parametrize("count", [8, 30])
+@pytest.mark.parametrize("count", [5, 6, 8, 30])
 def test_manual_pairing_recovers_measured_pose_without_automatic_features(monkeypatch, count):
     pairs, settings, intrinsics, expected_center = _geometry()
     pairs = pairs[:count]
-    monkeypatch.setattr(markerless_pose, "_gray", lambda _: np.zeros((960, 1280), np.uint8))
+    reads = []
+    def read_image(frame):
+        reads.append(frame)
+        return np.zeros((960, 1280), np.uint8)
+    monkeypatch.setattr(markerless_pose, "_gray", read_image)
     monkeypatch.setattr(markerless_pose, "_features", lambda *args: pytest.fail("manual review extracted automatic features"))
-    poses, quality = markerless_pose.estimate_manual_stereo_pose({}, {}, intrinsics, settings, pairs)
+    diagnostics = {}
+    poses, quality = markerless_pose.estimate_manual_stereo_pose(
+        {}, {}, intrinsics, settings, pairs, diagnostics=diagnostics,
+    )
     actual_center = np.linalg.inv(np.asarray(poses["side"]))[:3, 3]
     assert np.linalg.norm(actual_center - expected_center) < .1
-    assert quality["stereo_inliers"] >= 8
+    assert quality["stereo_inliers"] == count
     assert quality["stereo_reprojection_rmse_px"] < .1
     assert quality["estimation_source"] == "manual_correspondences"
+    assert diagnostics["validated_stage"] == "reprojection"
+    assert diagnostics["inlier_indices"] == list(range(count))
+    assert diagnostics["reprojection_inliers"] == quality["stereo_inliers"]
+    assert len(reads) == 2
+
+
+def test_five_pairs_with_multiple_valid_poses_require_another_point(monkeypatch):
+    pairs, settings, intrinsics, _ = _geometry()
+    monkeypatch.setattr(markerless_pose, "_gray", lambda _: np.zeros((960, 1280), np.uint8))
+    settings["maximum_side_elevation_deg"] = 90
+    diagnostics = {}
+    with pytest.raises(ValueError, match="多個相機姿態解"):
+        markerless_pose.estimate_manual_stereo_pose(
+            {}, {}, intrinsics, settings, pairs[:5], diagnostics=diagnostics,
+        )
+    assert diagnostics["ambiguous"] is True
+    assert diagnostics["essential_candidate_count"] > 1
+
+
+def test_four_pairs_cannot_estimate_unknown_stereo_pose(monkeypatch):
+    pairs, settings, intrinsics, _ = _geometry()
+    monkeypatch.setattr(markerless_pose, "_gray", lambda _: np.zeros((960, 1280), np.uint8))
+    monkeypatch.setattr(markerless_pose.cv2, "findEssentialMat", lambda *args, **kwargs: pytest.fail("four-point pose was attempted"))
+    with pytest.raises(ValueError, match="至少 5 組"):
+        markerless_pose.estimate_manual_stereo_pose({}, {}, intrinsics, settings, pairs[:4])
+
+
+def test_failed_pose_reports_actual_count_and_original_pair_indices(monkeypatch):
+    pairs, settings, intrinsics, _ = _geometry()
+    pairs = pairs[:9]
+    monkeypatch.setattr(markerless_pose, "_gray", lambda _: np.zeros((960, 1280), np.uint8))
+    recover_pose = markerless_pose.cv2.recoverPose
+    selected = [0, 2, 4, 8]
+
+    def recover_with_fewer_inliers(*args, **kwargs):
+        _, rotation, translation, mask = recover_pose(*args, **kwargs)
+        mask[:] = 0
+        mask[selected] = 1
+        return len(selected), rotation, translation, mask
+
+    monkeypatch.setattr(markerless_pose.cv2, "recoverPose", recover_with_fewer_inliers)
+    diagnostics = {}
+    with pytest.raises(ValueError, match="本次內點 4/9 組"):
+        markerless_pose.estimate_manual_stereo_pose(
+            {}, {}, intrinsics, settings, pairs, diagnostics=diagnostics,
+        )
+    assert diagnostics["validated_stage"] == "geometric"
+    assert diagnostics["epipolar_inliers"] == 9
+    assert diagnostics["geometric_inliers"] == 4
+    assert diagnostics["inlier_indices"] == selected
 
 
 def test_manual_pairing_still_rejects_invalid_geometry(monkeypatch):
@@ -142,6 +199,8 @@ def test_manual_review_saves_verified_rig_and_continues_from_checkpoint(tmp_path
     data = json.loads((tmp_path / "pose_debug/stereo/manual_review.json").read_text(encoding="utf-8"))
     assert data["accepted"] and data["reviewed_by"] == "reviewer"
     assert len(data["request"]["correspondences"]) == 30
+    assert data["validation"]["validated_stage"] == "reprojection"
+    assert data["validation"]["inlier_indices"] == list(range(30))
 
 
 def test_failed_manual_geometry_keeps_editable_draft_without_starting_job(tmp_path, monkeypatch):
@@ -156,11 +215,16 @@ def test_failed_manual_geometry_keeps_editable_draft_without_starting_job(tmp_pa
     data = service.get_stereo_review("analysis-test")
     assert len(data["draft"]["correspondences"]) == 30
     assert "人工配對未通過" in data["reason"]
+    assert data["validation"]["validated_stage"] in {"epipolar", "geometric", "reprojection"}
+    assert len(data["validation"]["inlier_indices"]) <= 30
+    assert "本次內點" in data["reason"]
+    saved = json.loads((tmp_path / "pose_debug/stereo/manual_review.json").read_text(encoding="utf-8"))
+    assert data["validation"] == saved["validation"]
 
 
 def test_manual_request_rejects_missing_duplicate_nonfinite_points():
     pairs, *_ = _geometry()
-    for invalid in [pairs[:7], [pairs[0]] * 8, [{**pairs[0], "top": {"x_px": float("nan"), "y_px": 3}}, *pairs[1:8]]]:
+    for invalid in [pairs[:4], [pairs[0]] * 5, [{**pairs[0], "top": {"x_px": float("nan"), "y_px": 3}}, *pairs[1:5]]]:
         with pytest.raises(ValidationError):
             StereoPoseReviewRequest(top_view_id="a", side_view_id="b", correspondences=invalid)
 
@@ -196,10 +260,10 @@ def test_review_api_validates_pairs_and_preserves_authenticated_reviewer(tmp_pat
     with TestClient(app) as client:
         response = client.get("/api/analysis/analysis-test/stereo-review")
         assert response.status_code == 200
-        assert response.json()["minimum_pairs"] == 8
+        assert response.json()["minimum_pairs"] == 5
         assert [view["camera_id"] for view in response.json()["views"]] == ["top", "side"]
         invalid = request.model_dump(mode="json")
-        invalid["correspondences"] = invalid["correspondences"][:7]
+        invalid["correspondences"] = invalid["correspondences"][:4]
         assert client.post("/api/analysis/analysis-test/stereo-review", json=invalid).status_code == 422
         assert not starts
         response = client.post("/api/analysis/analysis-test/stereo-review", json=request.model_dump(mode="json"))

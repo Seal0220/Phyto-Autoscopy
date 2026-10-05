@@ -24,25 +24,6 @@ def _valid_mask(value: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray:
     return np.where(mask > 0, 255, 0).astype(np.uint8)
 
 
-def _remove_small_components(
-    mask: np.ndarray,
-    minimum_area: int,
-) -> tuple[np.ndarray, int]:
-    count, labels, statistics, _ = cv2.connectedComponentsWithStats(
-        mask,
-        connectivity=8,
-    )
-    output = np.zeros_like(mask)
-    retained = 0
-    for label in range(1, count):
-        area = int(statistics[label, cv2.CC_STAT_AREA])
-        if area < minimum_area:
-            continue
-        output[labels == label] = 255
-        retained += 1
-    return output, retained
-
-
 def create_plant_mask(
     image: np.ndarray,
     *,
@@ -61,60 +42,50 @@ def create_plant_mask(
     valid_values = excess_green[valid > 0]
     if valid_values.size == 0:
         raise ValueError("影像沒有有效像素可建立植物遮罩。")
-    normalized_excess = cv2.normalize(
-        excess_green,
-        None,
-        0,
-        255,
-        cv2.NORM_MINMAX,
-    ).astype(np.uint8)
-    _, excess_mask = cv2.threshold(
-        normalized_excess,
-        0,
-        255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU,
-    )
-
     hsv = convert_color(bgr, cv2.COLOR_BGR2HSV)
-    hsv_mask = cv2.inRange(
-        hsv,
-        np.asarray((20, 24, 18), dtype=np.uint8),
-        np.asarray((105, 255, 255), dtype=np.uint8),
+    hue, saturation, value = cv2.split(hsv)
+    # Relative Lab/Otsu votes classify the dark green cast of the enclosure as
+    # foliage. Require actual illuminated green tissue before growing a region.
+    brightness = max(30.0, min(60.0, float(np.percentile(value[valid > 0], 75)) + 10))
+    green_pixels = (
+        (hue >= 20) & (hue <= 105) & (saturation >= 24)
+        & (excess_green > 4) & (green > red) & (value >= brightness)
     )
-
-    lab = convert_color(bgr, cv2.COLOR_BGR2LAB)
-    a_channel = lab[..., 1]
-    a_threshold = float(np.percentile(a_channel[valid > 0], 48))
-    lab_mask = np.where(a_channel <= a_threshold, 255, 0).astype(np.uint8)
-
-    votes = (
-        (excess_mask > 0).astype(np.uint8)
-        + (hsv_mask > 0).astype(np.uint8)
-        + (lab_mask > 0).astype(np.uint8)
+    seeds = green_pixels & (excess_green >= 8) & (value >= max(40, brightness)) & (valid > 0)
+    # Keep white leaf highlights and pale/yellow stems connected to foliage.
+    # Detached lamps and the red/brown pot cannot seed a plant component.
+    highlights = (saturation < 48) & (value >= max(80, brightness + 20))
+    stems = (hue >= 15) & (hue <= 40) & (excess_green > 3) & (value >= brightness)
+    candidate = np.where((green_pixels | highlights | stems) & (valid > 0), 255, 0).astype(np.uint8)
+    combined = binary_morphology(
+        candidate,
+        np.ones((1, 1), dtype=np.uint8),
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
     )
-    combined = np.where(votes >= 2, 255, 0).astype(np.uint8)
-    combined = cv2.bitwise_and(combined, valid)
-    scale = max(1, round(min(width, height) / 480))
-    opening = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (2 * scale + 1, 2 * scale + 1),
-    )
-    closing = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (4 * scale + 1, 4 * scale + 1),
-    )
-    combined = binary_morphology(combined, opening, closing)
-    minimum_area = max(32, round(width * height * 0.00015))
-    combined, component_count = _remove_small_components(
-        combined,
-        minimum_area,
-    )
+    combined[valid == 0] = 0
+    count, labels, statistics, _ = cv2.connectedComponentsWithStats(combined, connectivity=8)
+    seed_counts = np.bincount(labels[seeds], minlength=count)
+    minimum_area = max(12, round(width * height * 0.00001))
+    retained = (statistics[:, cv2.CC_STAT_AREA] >= minimum_area) & (seed_counts >= 3)
+    retained[0] = False
+    if retained.any():
+        main = int(np.argmax(np.where(retained, seed_counts, 0)))
+        distance = cv2.distanceTransform((labels != main).astype(np.uint8), cv2.DIST_L2, 3)
+        nearest = np.full(count, np.inf)
+        np.minimum.at(nearest, labels.ravel(), distance.ravel())
+        green_fraction = seed_counts / np.maximum(statistics[:, cv2.CC_STAT_AREA], 1)
+        retained &= (nearest <= max(16, min(width, height) * .04)) & (green_fraction >= .2)
+        retained[main] = True
+    combined = (retained[labels] * 255).astype(np.uint8)
+    component_count = int(retained.sum())
 
     foreground = int(np.count_nonzero(combined))
     valid_count = max(int(np.count_nonzero(valid)), 1)
     ratio = foreground / valid_count
-    coverage_score = min(ratio / 0.03, 1.0) * min(0.55 / max(ratio, 1e-6), 1.0)
-    agreement = float(np.mean(votes[combined > 0]) / 3.0) if foreground else 0.0
+    # A small plant can legitimately occupy less than one percent of a full
+    # enclosure frame; clean seed agreement matters more than scene coverage.
+    coverage_score = min(ratio / 0.003, 1.0) * min(0.55 / max(ratio, 1e-6), 1.0)
+    agreement = float(np.mean(green_pixels[combined > 0])) if foreground else 0.0
     confidence = float(np.clip(0.55 * agreement + 0.45 * coverage_score, 0.0, 1.0))
     return PlantMaskResult(
         mask=combined,

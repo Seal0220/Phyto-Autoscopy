@@ -22,6 +22,7 @@ from app.models.analysis_models import (
     TipObservation2D,
     TipTrajectoryPoint,
     StereoPoseReviewRequest,
+    ModelPoseReviewRequest,
 )
 from app.security.auth import Principal, get_request_principal
 
@@ -329,7 +330,7 @@ def get_stereo_review(analysis_id: str, context: AppContext = Depends(get_contex
 
 @router.post("/{analysis_id}/stereo-review", response_model=AnalysisRun)
 def submit_stereo_review(
-    analysis_id: str, request: StereoPoseReviewRequest,
+    analysis_id: str, request: StereoPoseReviewRequest | ModelPoseReviewRequest,
     context: AppContext = Depends(get_context),
     principal: Principal = Depends(get_request_principal),
 ) -> AnalysisRun:

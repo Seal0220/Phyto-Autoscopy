@@ -61,12 +61,59 @@ pause; forced termination can replay iterations since the latest snapshot.
 Native extraction or triangulation calls finish their current step before a pause
 takes effect. Source identity and checkpoint outputs are checked before reuse.
 
-If automatic fixed stereo pose estimation cannot find valid shared features, the
-analysis enters **等待人工雙鏡頭配對** and opens a human review dialog. Mark at least
-eight corresponding static positions in the undistorted top and side images,
-then use **驗證配對並繼續分析**. The paired images must come from the same round and
+For **rotating** analyses without ArUco, rotating images first establish unknown
+poses with CUDA SIFT and COLMAP mapping. Motor angles and registered camera
+centres fit a rotation axis and a circular initial pose prior; position and
+orientation residuals remain in the quality report. A 3DGS reference model is
+trained in that relative coordinate frame before either fixed camera must align.
+Its existing sparse tracks initialize training directly, without a second
+extraction/matching pass. The fixed cameras then register against the reference
+through the rotating views, so direct top/side feature overlap is not required.
+
+If registration needs help, **等待人工對齊模型** opens the actual Gaussian model
+in a WebGL viewer above the two images. Click the rendered model to select its
+world-space Gaussian anchor, drag to orbit, right-drag to pan, or scroll inside
+the preview to zoom. The only control button is **重設鏡頭**. Scrolling outside
+the preview moves the page; focused keyboard controls use arrows, Shift+arrows,
++/- and 0. Select at least four
+distinct known 3D reference points and their physical positions in both images.
+Clicking a new model anchor creates another correspondence; clicking an existing
+anchor selects its pair. Numbered markers keep previously selected points visible.
+PnP checks positive depth and reprojection; ambiguous geometry needs another
+point. The browser preserves PLY vertex order and verifies its SHA-256; the
+server resolves coordinates from the same PLY, validates the model signature
+and rejects faint/background points. Existing sparse anchors and drafts remain
+usable without retraining. Large Gaussian arrays are not duplicated in JSON.
+Only after registration does the measured stereo baseline set millimetre scale;
+the axis and measured top height define the world frame. Each round uses that
+rig and motor orbit as initial poses, followed by constrained refinement and its
+own model/tip analysis. SfM snapshots, reference training and registration are
+durable; resuming an accepted review keeps the completed reference model.
+Earlier rotating runs waiting for direct stereo matching become **paused** on
+startup, ready for the user to resume this new workflow. No work starts by itself.
+
+With plant masking enabled, gsplat trains only plant RGB and supervises foreground
+opacity plus transparent background. Illuminated green tissue seeds the mask;
+connected pale leaf highlights and stems are retained, while the dark enclosure,
+detached lamps and pot are excluded. Multi-view mask evidence filters sparse
+initialization and exported Gaussians in both relative and metric coordinates.
+Mask content and the training version invalidate older tensor checkpoints and
+reference model caches. SfM may still use scene features to estimate camera poses.
+
+For **fixed** analyses, if automatic stereo pose estimation cannot find valid shared features, the
+analysis enters **等待人工雙鏡頭配對** and expands the inline human review section.
+The page scrolls to the section; images use their natural height and the document
+owns scrolling. Mark at least five corresponding physical positions in the
+undistorted top and side images, then use **驗證並繼續**. Visible bud tips, leaf
+tips and stem nodes are eligible when they identify the same physical point in
+both views. The paired images must come from the same round and
 snapshot. Manual pairs still pass essential geometry, positive depth,
 reprojection, and parallax checks; invalid pairs remain editable for correction.
+The five-point solver can return several poses; all are checked, and ambiguous
+results require another correspondence. Four pairs cannot estimate unknown
+stereo extrinsics. The last validation's inlier count and original pair indices
+are saved with the draft and shown in the review interface; editing points clears
+the previous verdict.
 Accepted poses, the submitted pairs, and the authenticated reviewer are saved
 before continuing from existing image checkpoints. This review cannot be skipped
 through the later tip-review action. On startup, earlier runs that failed because

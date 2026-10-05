@@ -26,4 +26,8 @@ export const ANALYSIS_PROGRESS_UNITS = {
   undistorting_images: "張",
   estimating_stereo_pose: "組",
   waiting_for_stereo_review: "組",
+  estimating_reference_poses: "%",
+  building_reference_model: "%",
+  aligning_model_cameras: "組",
+  waiting_for_model_review: "組",
 };

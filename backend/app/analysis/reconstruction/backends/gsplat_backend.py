@@ -129,6 +129,10 @@ def _plant_splat_selection(
 ) -> np.ndarray:
     if result.plant_splat_mask is not None:
         return result.plant_splat_mask
+    if result.training.metrics.get("foreground_only"):
+        result.plant_splat_mask = np.ones(len(result.training.splats["means"]), dtype=bool)
+        result.plant_export_quality = dict(result.training.metrics.get("foreground_selection") or {})
+        return result.plant_splat_mask
 
     splats = world_space_splats(result.training)
     points = splats["means"].detach().cpu().numpy()

@@ -134,7 +134,7 @@ export default function AnalysisRunActions({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          {stereoReview ? "人工雙鏡頭配對" : "人工修正"}
+          {stage === "waiting_for_model_review" ? "對齊模型" : stereoReview ? "人工配對" : "人工修正"}
         </Button>
       ) : null}
       {available.skipReview ? (

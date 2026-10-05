@@ -189,6 +189,36 @@ def classify_plant_points(
     )
 
 
+def foreground_point_selection(
+    points: np.ndarray,
+    dataset: object,
+    *,
+    minimum_count: int = 4,
+) -> tuple[np.ndarray, dict]:
+    """Keep multi-view plant evidence in either relative or metric coordinates."""
+    coordinates = np.asarray(points, dtype=np.float64)
+    views = plant_isolation_views_from_dataset(dataset)
+    support, visibility = _projection_support(coordinates, views)
+    minimum_support = min(2, len(views))
+    selected = (
+        np.isfinite(coordinates).all(axis=1)
+        & (support >= minimum_support)
+        & (support >= visibility * .5)
+    )
+    count = int(selected.sum())
+    if count < minimum_count:
+        raise ValueError("多視角植物遮罩內的三維點不足，請檢查植物影像。")
+    return selected, {
+        "input_point_count": len(coordinates),
+        "plant_point_count": count,
+        "background_point_count": len(coordinates) - count,
+        "supporting_view_count": len(views),
+        "minimum_mask_support": minimum_support,
+        "minimum_visible_mask_ratio": .5,
+        "classification_evidence": "multiview_plant_mask",
+    }
+
+
 def isolate_plant_point_cloud(
     scene_point_cloud_path: Path,
     output_path: Path,
@@ -343,6 +373,7 @@ __all__ = [
     "PlantIsolationView",
     "PlantPointClassification",
     "classify_plant_points",
+    "foreground_point_selection",
     "isolate_plant_point_cloud",
     "plant_isolation_views_from_dataset",
     "point_cloud_support",

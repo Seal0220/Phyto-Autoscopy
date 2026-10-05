@@ -5,13 +5,18 @@ import FullscreenImage from "@/components/media/FullscreenImage";
 import RetryMessage from "@/components/feedback/RetryMessage";
 import { ANALYSIS_CAMERA_LABELS } from "@/features/Analysis/analysisConfig";
 import { analysisViewImageUrl } from "@/lib/analysisImageUtils";
-import { stereoImagePoint } from "../lib/analysisStereoReviewUtils";
+import {
+  stereoImagePoint,
+  stereoPairCheck,
+  stereoPairLabel,
+} from "../lib/analysisStereoReviewUtils";
 
 export default function AnalysisRunStereoReviewImage({
   analysisId,
   view,
   pairs,
   selected,
+  validation,
   disabled,
   onPointChange,
 }) {
@@ -63,11 +68,12 @@ export default function AnalysisRunStereoReviewImage({
       />
       {pairs.map((pair, index) => pair[camera] ? (
         <g key={index}>
+          <title>{stereoPairLabel(pair, index, validation)}</title>
           <circle
             cx={pair[camera].x_px}
             cy={pair[camera].y_px}
             r={(index === selected ? 8 : 5) * markerScale}
-            fill={index === selected ? "#34d399" : "#ffffff"}
+            fill={stereoPairCheck(validation, index) === "check" ? "#fbbf24" : index === selected ? "#34d399" : "#ffffff"}
             stroke="#06100c"
             strokeWidth={2 * markerScale}
           />
@@ -87,7 +93,7 @@ export default function AnalysisRunStereoReviewImage({
     </svg>
   );
   return (
-    <article className="grid min-w-0 gap-2">
+    <article className="grid min-w-0 content-start gap-2">
       <h3 className="text-sm font-black text-white">{label}</h3>
       <div className="relative overflow-hidden rounded-xl bg-black">
         {/* 原生像素座標是幾何驗證的輸入。 */}
@@ -95,7 +101,7 @@ export default function AnalysisRunStereoReviewImage({
         <img
           key={attempt}
           src={url}
-          alt={`${label}去畸變影像，請選取共同靜態位置`}
+          alt={`${label}去畸變影像，請配對同一個芽尖、葉尖、莖節或其他共同位置`}
           className="block h-auto w-full select-none"
           draggable="false"
           width={width}

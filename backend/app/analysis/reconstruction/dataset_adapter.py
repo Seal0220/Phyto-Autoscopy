@@ -46,6 +46,9 @@ class PreparedRoundDataset:
     sparse_dir: Path
     metadata_path: Path
     views: tuple[PreparedRoundView, ...]
+    coordinate_unit: str = "millimetre"
+    initial_sparse_path: Path | None = None
+    geometry_signature: str | None = None
 
 
 def update_round_dataset_pose_metadata(
@@ -337,7 +340,11 @@ def prepare_round_dataset(
     if len(prepared_views) < 3:
         raise ValueError("每輪多視角模型至少需要三個具有有效姿態的 View。")
     camera_ids = {item.camera_id for item in prepared_views}
-    missing = {"top", "side", "rotating"} - camera_ids
+    coordinate_unit = str(job.get("world_coordinate_unit") or "millimetre")
+    if coordinate_unit not in {"millimetre", "relative"}:
+        raise ValueError("模型座標單位無效。")
+    required_cameras = {"rotating"} if coordinate_unit == "relative" else {"top", "side", "rotating"}
+    missing = required_cameras - camera_ids
     if missing:
         raise ValueError("模型資料集缺少必要視角：" + "、".join(sorted(missing)))
 
@@ -346,11 +353,13 @@ def prepare_round_dataset(
         "analysis_id": analysis_id,
         "round_key": round_key,
         "coordinate_space": "undistorted",
-        "world_coordinate_unit": "millimetre",
+        "world_coordinate_unit": coordinate_unit,
         "world_coordinate_source": (
-            "measured_stereo_baseline_and_feature_poses"
-            if any(view.pose_source == "rig_stereo" for view in prepared_views)
-            else "aruco_snapshot_and_refined_camera_poses"
+            "rotating_sfm_reference" if coordinate_unit == "relative" else (
+                "measured_stereo_baseline_and_feature_poses"
+                if any(view.pose_source == "rig_stereo" for view in prepared_views)
+                else "aruco_snapshot_and_refined_camera_poses"
+            )
         ),
         "source_images_are_read_only": True,
         "plant_mask_in_training_loss": use_plant_mask_in_loss,
@@ -387,6 +396,13 @@ def prepare_round_dataset(
         ],
     }
     write_json_atomic(metadata_path, metadata)
+    initial_sparse = Path(job["initial_sparse_path"]).resolve() if job.get("initial_sparse_path") else None
+    if initial_sparse is not None:
+        if artifact_root is None:
+            raise ValueError("參照模型缺少產物根目錄。")
+        initial_sparse.relative_to(artifact_root)
+        if not (initial_sparse / "points3D.bin").is_file():
+            raise ValueError("參照模型的稀疏初始化資料遺失。")
     return PreparedRoundDataset(
         analysis_id=analysis_id,
         round_key=round_key,
@@ -397,4 +413,7 @@ def prepare_round_dataset(
         sparse_dir=sparse_dir,
         metadata_path=metadata_path,
         views=tuple(prepared_views),
+        coordinate_unit=coordinate_unit,
+        initial_sparse_path=initial_sparse,
+        geometry_signature=job.get("geometry_signature"),
     )
