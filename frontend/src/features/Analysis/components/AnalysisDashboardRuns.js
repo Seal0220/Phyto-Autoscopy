@@ -15,6 +15,7 @@ import {
   StatusPill,
 } from "@/components/panels/Panel";
 import { formatDateTime } from "@/lib/formatUtils";
+import { needsStereoPoseReview } from "@/features/AnalysisRun/lib/analysisStereoReviewUtils";
 
 import { ANALYSIS_METHODS } from "../analysisConfig";
 import {
@@ -23,7 +24,7 @@ import {
   analysisStatusMeta,
 } from "../lib/analysisUtils";
 
-const ACTIVE_STATUSES = new Set(["validating", "processing", "reconstructing"]);
+const ACTIVE_STATUSES = new Set(["validating", "processing", "reconstructing", "pausing"]);
 const ATTENTION_STATUSES = new Set([
   "draft", "ready", "needs_review", "reviewing", "failed", "cancelled",
 ]);
@@ -49,6 +50,12 @@ function primaryAction(
   run,
   callbacks,
 ) {
+  if (needsStereoPoseReview(run)) {
+    return {
+      label: "人工雙鏡頭配對",
+      onClick: () => callbacks.onOpen(run.analysis_id),
+    };
+  }
   if (["needs_review", "reviewing"].includes(run.status)) {
     return {
       label: "人工修正",

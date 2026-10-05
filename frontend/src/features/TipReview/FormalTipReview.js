@@ -31,6 +31,7 @@ import {
 } from "@/components/panels/Panel";
 import { ANALYSIS_METHODS } from "@/features/Analysis/analysisConfig";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
+import { needsStereoPoseReview } from "@/features/AnalysisRun/lib/analysisStereoReviewUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import { formatDateTime } from "@/lib/formatUtils";
 
@@ -115,6 +116,15 @@ export default function FormalTipReview({
   });
   const runDisplay = analysisRunDisplay(run);
   const locked = Boolean(pendingAction) || loading;
+  const stereoReview = needsStereoPoseReview(run);
+
+  useEffect(() => {
+    if (stereoReview) router.replace(`/analysis/${encodeURIComponent(analysisId)}`);
+  }, [
+    analysisId,
+    router,
+    stereoReview,
+  ]);
 
   useEffect(() => {
     const error = mutationError || loadError;
@@ -219,6 +229,17 @@ export default function FormalTipReview({
       value: displayNumber(resolvedLandmark?.temporal_distance_mm, " mm", 3),
     },
   ];
+
+  if (stereoReview) {
+    return (
+      <p
+        className="mx-auto pt-24 text-center text-sm font-semibold text-neutral-400"
+        role="status"
+      >
+        轉往人工雙鏡頭配對中…
+      </p>
+    );
+  }
 
   return (
     <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">

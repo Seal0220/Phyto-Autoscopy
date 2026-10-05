@@ -30,6 +30,7 @@ const POLLED_STATUSES = new Set([
   "validating",
   "processing",
   "reconstructing",
+  "pausing",
 ]);
 
 export default function useAnalysisRun({
@@ -218,6 +219,16 @@ export default function useAnalysisRun({
       const nextRun = normalizeAnalysisRun(payload);
       runStatusRef.current = nextRun.status;
       setRun(nextRun);
+      setProgress((previous) => normalizeAnalysisProgress({
+        ...previous,
+        analysis_id: nextRun.analysis_id,
+        status: nextRun.status,
+        stage: nextRun.stage,
+        current_frame: nextRun.current_frame,
+        total_frames: nextRun.total_frames,
+        progress: nextRun.progress,
+        last_error: nextRun.last_error,
+      }));
       setMutationError("");
       setMutationOutcomeUnknown(false);
       void load({ silent: true });

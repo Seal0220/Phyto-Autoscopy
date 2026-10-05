@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from app.analysis.image_probe import read_analysis_image
+from app.analysis.gpu_operations import cuda_hamming_matches, detect_orb_features
 
 from app.analysis.pose_alignment.models import CameraPoseResult
 
@@ -233,30 +234,14 @@ def recover_neighbor_rotation(
     target_image = _load_gray(target_path)
     if anchor_image is None or target_image is None:
         return None, 0
-    detector = cv2.ORB_create(nfeatures=2500)
-    anchor_points, anchor_descriptors = detector.detectAndCompute(
-        anchor_image,
-        None,
-    )
-    target_points, target_descriptors = detector.detectAndCompute(
-        target_image,
-        None,
-    )
+    anchor_points, anchor_descriptors, _ = detect_orb_features(anchor_image, 2500)
+    target_points, target_descriptors, _ = detect_orb_features(target_image, 2500)
     if anchor_descriptors is None or target_descriptors is None:
         return None, 0
-    matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
-    candidates = matcher.knnMatch(
-        anchor_descriptors,
-        target_descriptors,
-        k=2,
-    )
-    matches = [
-        first
-        for pair in candidates
-        if len(pair) == 2
-        for first, second in [pair]
-        if first.distance < 0.75 * second.distance
-    ]
+    matches = cuda_hamming_matches(anchor_descriptors, target_descriptors, reciprocal=False)
+    if matches is None:
+        candidates = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(anchor_descriptors, target_descriptors, k=2)
+        matches = [pair[0] for pair in candidates if len(pair) == 2 and pair[0].distance < .75 * pair[1].distance]
     if len(matches) < minimum_matches:
         return None, len(matches)
     anchor_pixels = np.asarray(

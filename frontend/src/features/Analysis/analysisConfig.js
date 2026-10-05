@@ -45,6 +45,14 @@ export const ANALYSIS_STATUS_META = {
     label: "驗證中",
     tone: "warning",
   },
+  pausing: {
+    label: "保存並暫停中",
+    tone: "warning",
+  },
+  paused: {
+    label: "已暫停",
+    tone: "neutral",
+  },
   ready: {
     label: "可開始",
     tone: "success",
@@ -84,6 +92,8 @@ export const ANALYSIS_STATUS_META = {
 };
 
 export const ANALYSIS_STAGE_LABELS = {
+  converting_images: "轉換 TIFF 影像",
+  phase: "階段完成",
   validating: "驗證輸入資料",
   validating_images: "轉檔並檢查影像",
   verifying_input_files: "核對原始檔案內容",
@@ -95,6 +105,7 @@ export const ANALYSIS_STAGE_LABELS = {
   detecting_aruco: "偵測 ArUco 基準",
   estimating_camera_poses: "估算相機姿態",
   estimating_stereo_pose: "估算雙鏡頭相對姿態",
+  waiting_for_stereo_review: "等待人工雙鏡頭配對",
   refining_camera_poses: "精修相機姿態",
   selecting_reconstruction_views: "選擇模型影像",
   extracting_features: "提取多視角特徵",

@@ -6,11 +6,13 @@ import {
   ANALYSIS_PROGRESS_UNITS,
   ANALYSIS_VALIDATION_STAGES,
 } from "../analysisRunConfig.js";
+import { needsStereoPoseReview } from "./analysisStereoReviewUtils.js";
 
 const ACTIVE_STATUSES = new Set([
   "validating",
   "processing",
   "reconstructing",
+  "pausing",
 ]);
 
 const ROUND_STATUS_META = {
@@ -114,6 +116,9 @@ export function normalizeAnalysisProgress(payload) {
       && typeof payload.image_probe_backends === "object"
       ? payload.image_probe_backends
       : {},
+    checkpoints: payload?.checkpoints && typeof payload.checkpoints === "object"
+      ? payload.checkpoints
+      : { completed_steps: 0, recent_steps: [] },
   };
 }
 
@@ -141,12 +146,18 @@ export function analysisRunDisplay(run) {
   };
   const probeCounts = run?.image_probe_backends || run?.parameters?.validation_image_probe_backends;
   const validating = run?.status === "validating" || ANALYSIS_VALIDATION_STAGES.has(run?.stage);
+  const workerNote = finiteNumber(probeCounts?.workers) > 0
+    ? `自動並行 ${finiteNumber(probeCounts.workers)} 執行緒${probeCounts.tuning ? `（試速中，上限 ${finiteNumber(probeCounts.worker_limit)}）` : ""}`
+    : "";
+  const backendNote = probeCounts && (finiteNumber(probeCounts.gpu) + finiteNumber(probeCounts.cpu) + finiteNumber(probeCounts.reused)) > 0
+    ? probeCounts.remap_gpu !== undefined
+      ? `GPU 去畸變 ${finiteNumber(probeCounts.remap_gpu) + finiteNumber(probeCounts.reused_gpu)} 張 · CPU 去畸變 ${finiteNumber(probeCounts.remap_cpu) + finiteNumber(probeCounts.reused_cpu)} 張 · 沿用已完成影像 ${finiteNumber(probeCounts.reused)} 張`
+      : `轉檔 ${finiteNumber(probeCounts.converted)} 張 · GPU ${finiteNumber(probeCounts.gpu)} 張 · CPU 回退 ${finiteNumber(probeCounts.cpu)} 張`
+    : "";
 
   return {
     status,
-    probeNote: validating && probeCounts && (finiteNumber(probeCounts.gpu) + finiteNumber(probeCounts.cpu)) > 0
-      ? `轉檔 ${finiteNumber(probeCounts.converted)} 張 · GPU ${finiteNumber(probeCounts.gpu)} 張 · CPU 回退 ${finiteNumber(probeCounts.cpu)} 張`
-      : "",
+    probeNote: [workerNote, backendNote].filter(Boolean).join(" · "),
     progressTitle: validating
       ? "驗證進度"
       : "分析進度",
@@ -165,20 +176,24 @@ export function analysisRunDisplay(run) {
 
 export function analysisRunActionAvailability(
   status,
+  stage,
 ) {
+  const stereoReview = needsStereoPoseReview({ status, stage });
   return {
     validate: status === "draft",
     start: status === "ready",
     cancel: ACTIVE_STATUSES.has(status),
+    pause: ACTIVE_STATUSES.has(status) && status !== "pausing",
+    resume: status === "paused",
     retry: ["failed", "cancelled"].includes(status),
-    reset: ["failed", "cancelled"].includes(status),
-    review: [
+    reset: ["failed", "cancelled", "paused"].includes(status),
+    review: stereoReview || [
       "needs_review",
       "reviewing",
       "completed",
       "partially_completed",
     ].includes(status),
-    skipReview: ["needs_review", "reviewing"].includes(status),
+    skipReview: !stereoReview && ["needs_review", "reviewing"].includes(status),
     results: ["completed", "partially_completed"].includes(status),
     export: ["completed", "partially_completed"].includes(status),
   };
@@ -203,7 +218,7 @@ export function analysisRunActionRequest(action) {
 export function analysisInputCount(run) {
   return Array.isArray(run?.parameters?.input_manifest)
     ? run.parameters.input_manifest.length
-    : 0;
+    : finiteNumber(run?.parameters?.input_count);
 }
 
 export function formatAnalysisTimestamp(value) {

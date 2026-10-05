@@ -25,4 +25,5 @@ export const ANALYSIS_PROGRESS_UNITS = {
   validation_completed: "張",
   undistorting_images: "張",
   estimating_stereo_pose: "組",
+  waiting_for_stereo_review: "組",
 };

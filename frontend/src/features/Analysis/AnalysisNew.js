@@ -204,6 +204,21 @@ export default function AnalysisNew({
       );
     }
 
+    if (["validating", "pausing", "paused"].includes(createdRun.status)) {
+      return (
+        <Button
+          variant="primary"
+          onClick={() => router.push(`/analysis/${encodeURIComponent(createdRun.analysis_id)}`)}
+        >
+          <FiPlay
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          查看進度與暫停
+        </Button>
+      );
+    }
+
     if ([
       "processing",
       "needs_review",

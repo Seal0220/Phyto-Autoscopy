@@ -80,16 +80,23 @@ def _projection_support(
     points: np.ndarray,
     views: list[PlantIsolationView],
 ) -> tuple[np.ndarray, np.ndarray]:
-    homogeneous = np.column_stack((points, np.ones(len(points))))
-    support = np.zeros(len(points), dtype=np.int16)
-    visibility = np.zeros(len(points), dtype=np.int16)
+    from app.analysis.gpu_operations import cuda_projection_support
+
+    projections_and_masks = []
     for view in views:
         projection = np.asarray(view.projection_matrix, dtype=np.float64)
         if projection.shape != (3, 4):
             raise ValueError("植物模型投影矩陣格式無效。")
+        projections_and_masks.append((projection, _read_mask(view.plant_mask_path)))
+    gpu_result = cuda_projection_support(points, projections_and_masks)
+    if gpu_result is not None:
+        return gpu_result
+    homogeneous = np.column_stack((points, np.ones(len(points))))
+    support = np.zeros(len(points), dtype=np.int16)
+    visibility = np.zeros(len(points), dtype=np.int16)
+    for projection, mask in projections_and_masks:
         pixels = (projection @ homogeneous.T).T
         depth = pixels[:, 2]
-        mask = _read_mask(view.plant_mask_path)
         height, width = mask.shape
         valid_depth = depth > 1e-8
         x = np.zeros(len(points), dtype=np.int64)

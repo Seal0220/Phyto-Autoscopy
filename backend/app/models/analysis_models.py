@@ -14,6 +14,8 @@ from pydantic import (
 AnalysisStatus = Literal[
     "draft",
     "validating",
+    "pausing",
+    "paused",
     "ready",
     "processing",
     "needs_review",
@@ -37,6 +39,7 @@ AnalysisStage = Literal[
     "detecting_aruco",
     "estimating_camera_poses",
     "estimating_stereo_pose",
+    "waiting_for_stereo_review",
     "refining_camera_poses",
     "selecting_reconstruction_views",
     "extracting_features",
@@ -198,6 +201,33 @@ class AnalysisReconstructRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     manual_review_completed: bool = True
+
+
+class StereoImagePoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    x_px: float = Field(ge=0)
+    y_px: float = Field(ge=0)
+
+
+class StereoPointPair(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    top: StereoImagePoint
+    side: StereoImagePoint
+
+
+class StereoPoseReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    top_view_id: str = Field(min_length=1, max_length=512)
+    side_view_id: str = Field(min_length=1, max_length=512)
+    correspondences: list[StereoPointPair] = Field(min_length=8, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_points(self):
+        for camera in ("top", "side"):
+            points = {(getattr(pair, camera).x_px, getattr(pair, camera).y_px) for pair in self.correspondences}
+            if len(points) != len(self.correspondences):
+                raise ValueError("每組配對都必須使用不同的影像位置。")
+        return self
 
 
 class AnalysisRun(BaseModel):
@@ -521,6 +551,7 @@ class AnalysisProgress(BaseModel):
     last_error: str | None = None
     processing_preview: AnalysisProcessingPreview | None = None
     image_probe_backends: dict[str, int] = Field(default_factory=dict)
+    checkpoints: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("progress")
     @classmethod

@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.analysis.image_probe import probe_image_cpu
+from app.core.exceptions import OperationCancelledError
 
 
 CANONICAL_CAMERA_IDS = frozenset({"top", "side", "rotating"})
@@ -500,6 +501,8 @@ class CaptureRecordValidator:
 
             try:
                 resolution = self.image_probe(file_path)
+            except OperationCancelledError:
+                raise
             except Exception as exc:
                 issues.append(
                     RecordValidationIssue(

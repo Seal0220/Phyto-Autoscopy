@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiRefreshCw } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
@@ -17,10 +17,13 @@ import {
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
+import AnalysisRunCheckpoints from "./components/AnalysisRunCheckpoints";
 import AnalysisRunMetadata from "./components/AnalysisRunMetadata";
 import AnalysisRunPoseQuality from "./components/AnalysisRunPoseQuality";
 import AnalysisRunRoundOverview from "./components/AnalysisRunRoundOverview";
 import AnalysisRunProcessingImages from "./components/AnalysisRunProcessingImages";
+import AnalysisRunStereoReview from "./components/AnalysisRunStereoReview";
+import { needsStereoPoseReview } from "./lib/analysisStereoReviewUtils";
 import useAnalysisRun from "./hooks/useAnalysisRun";
 import {
   analysisRunDisplay,
@@ -114,6 +117,16 @@ export default function AnalysisRun({
     : null;
   const display = analysisRunDisplay(effectiveRun);
   const locked = Boolean(pendingAction) || mutationOutcomeUnknown;
+  const stereoReview = needsStereoPoseReview(effectiveRun);
+  const [stereoReviewOpen, setStereoReviewOpen] = useState(false);
+  useEffect(() => {
+    setStereoReviewOpen(stereoReview);
+  }, [stereoReview, analysisId]);
+  const closeStereoReview = useCallback(() => setStereoReviewOpen(false), []);
+  const acceptStereoReview = useCallback(() => {
+    setStereoReviewOpen(false);
+    void load({ silent: true });
+  }, [load]);
 
   return (
     <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
@@ -231,11 +244,14 @@ export default function AnalysisRun({
                   locked={locked}
                   pendingAction={pendingAction}
                   status={effectiveRun.status}
+                  stage={effectiveRun.stage}
+                  stereoReview={stereoReview}
                   onAction={(action) => void performAction(action)}
                   onExport={() => void downloadExport()}
-                  onOpenReview={() => router.push(
-                    `/analysis/${encodeURIComponent(analysisId)}/review`,
-                  )}
+                  onOpenReview={() => {
+                    if (stereoReview) setStereoReviewOpen(true);
+                    else router.push(`/analysis/${encodeURIComponent(analysisId)}/review`);
+                  }}
                   onOpenResults={() => router.push(
                     `/analysis/${encodeURIComponent(analysisId)}/results`,
                   )}
@@ -252,6 +268,11 @@ export default function AnalysisRun({
                 <AnalysisRunProcessingImages
                   analysisId={analysisId}
                   preview={hasMatchingProgress ? progress.processing_preview : null}
+                  status={effectiveRun.status}
+                />
+
+                <AnalysisRunCheckpoints
+                  checkpoints={hasMatchingProgress ? progress.checkpoints : null}
                   status={effectiveRun.status}
                 />
 
@@ -277,6 +298,16 @@ export default function AnalysisRun({
             ) : null}
           </div>
         </Panel>
+        {stereoReview ? (
+          <AnalysisRunStereoReview
+            key={analysisId}
+            analysisId={analysisId}
+            open={stereoReviewOpen}
+            onClose={closeStereoReview}
+            onAccepted={acceptStereoReview}
+            onReloadRun={() => load({ silent: true, confirmMutation: true })}
+          />
+        ) : null}
     </div>
   );
 }

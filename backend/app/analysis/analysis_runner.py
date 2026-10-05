@@ -66,6 +66,16 @@ class AnalysisJobManager:
             current = self._jobs.get(analysis_id)
             if current is None or current[0].done():
                 return False
+            current[1].pause_requested = False
+            current[1].set()
+            return True
+
+    def pause(self, analysis_id: str) -> bool:
+        with self._lock:
+            current = self._jobs.get(analysis_id)
+            if current is None or current[0].done():
+                return False
+            current[1].pause_requested = True
             current[1].set()
             return True
 
@@ -118,5 +128,6 @@ class AnalysisJobManager:
                 return
             self._closed = True
             for _, cancel_event in self._jobs.values():
+                cancel_event.pause_requested = True
                 cancel_event.set()
         self._executor.shutdown(wait=True, cancel_futures=True)

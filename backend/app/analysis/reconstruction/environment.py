@@ -23,6 +23,24 @@ def reconstruction_environment() -> dict[str, Any]:
     gpu_free_memory_bytes = None
     gpu_allocated_memory_bytes = None
     cuda_error = None
+    opencv_version = None
+    opencv_cuda_available = False
+    pycolmap_cuda_available = False
+    vision_cuda_errors = []
+
+    try:
+        import cv2
+
+        opencv_version = cv2.__version__
+        opencv_cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
+    except Exception as error:
+        vision_cuda_errors.append(f"OpenCV: {error}")
+    try:
+        import pycolmap
+
+        pycolmap_cuda_available = bool(getattr(pycolmap, "has_cuda", False))
+    except Exception as error:
+        vision_cuda_errors.append(f"PyCOLMAP: {error}")
 
     if torch_version is not None:
         try:
@@ -54,6 +72,10 @@ def reconstruction_environment() -> dict[str, Any]:
         "gpu_free_memory_bytes": gpu_free_memory_bytes,
         "gpu_allocated_memory_bytes": gpu_allocated_memory_bytes,
         "cuda_error": cuda_error,
+        "opencv_version": opencv_version,
+        "opencv_cuda_available": opencv_cuda_available,
+        "pycolmap_cuda_available": pycolmap_cuda_available,
+        "vision_cuda_errors": vision_cuda_errors,
         "gsplat_version": _package_version("gsplat"),
         "pycolmap_version": _package_version("pycolmap"),
         "open3d_version": _package_version("open3d"),

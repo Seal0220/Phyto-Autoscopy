@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from threading import RLock
+from threading import Event, RLock
 from types import SimpleNamespace
 
 import pytest
 
 from app.analysis.record_validator import CaptureFrame
+from app.core.exceptions import AnalysisPausedError
 from app.models.analysis_models import AnalysisRun
 from app.services import analysis_service
 from app.services.analysis_service import AnalysisService
 
 
-def _service():
+def _service(tmp_path):
     service = AnalysisService.__new__(AnalysisService)
     service._preview_lock = RLock()
     service._validation_progress = {}
     service._validation_progress_times = {}
+    service._live_progress = {}
+    service._processing_previews = {}
+    service.repository = SimpleNamespace(update_state=lambda *args, **kwargs: None)
+    service._artifacts = lambda _: SimpleNamespace(root=tmp_path)
     service.progress_callback = None
     return service
 
@@ -30,8 +35,8 @@ def _run():
     )
 
 
-def test_live_progress_bypasses_large_run_loads_and_throttles_without_losing_final_update(monkeypatch):
-    service, run = _service(), _run()
+def test_live_progress_bypasses_large_run_loads_and_throttles_without_losing_final_update(monkeypatch, tmp_path):
+    service, run = _service(tmp_path), _run()
     events = []
     service.progress_callback = events.append
     service._require_run = lambda _: pytest.fail("Progress must not load the frozen manifests")
@@ -65,62 +70,81 @@ def test_hash_progress_preserves_integrity_checks_and_reports_processed_images(t
 
 
 @pytest.mark.parametrize("fails", [False, True])
-def test_validation_cache_is_removed_on_success_and_failure(fails):
-    service, run = _service(), _run()
+def test_validation_cache_is_removed_on_success_and_failure(fails, tmp_path):
+    service, run = _service(tmp_path), _run()
     updates = []
     service.repository = SimpleNamespace(update_state=lambda *args, **kwargs: updates.append(kwargs))
     service._lock = RLock()
-    service._runner = SimpleNamespace(is_active=lambda _: False)
-    service._require_run = lambda _: run
-    service._set_state = lambda *args, **kwargs: run
+    service._runner = SimpleNamespace(is_active=lambda _: False, start=lambda _: True)
+    state = [run]
+    service._require_run = lambda _: state[0]
+
+    def set_state(current, **kwargs):
+        state[0] = current.model_copy(update=kwargs)
+        return state[0]
+
+    service._set_state = set_state
     service._record_failure = lambda *args, **kwargs: None
 
-    def validate(current):
+    def validate(current, event):
         service._update_validation_progress(current, "verifying_input_files", 32, 65, .69)
         if fails:
             raise ValueError("test failure")
-        return current.model_copy(update={"status": "ready", "progress": 1})
+        return set_state(current, status="ready", progress=1)
 
     service._validate_round_analysis = validate
-    if fails:
-        with pytest.raises(Exception, match="test failure"):
-            service.validate(run.analysis_id)
-        assert updates[-1]["current_frame"] == 32
-    else:
-        assert service.validate(run.analysis_id).progress == 1
+    assert service.validate(run.analysis_id).status == "validating"
+    service._run_job(run.analysis_id, Event())
+    assert updates[-1]["current_frame"] == 32
+    if not fails:
+        assert state[0].progress == 1
     assert service._validation_progress == {}
     assert service._validation_progress_times == {}
 
 
-def test_validation_connects_gpu_probe_all_stages_and_completed_counts(monkeypatch, tmp_path):
-    service, run = _service(), _run()
+@pytest.mark.parametrize("pause_during_runtime", [False, True])
+def test_validation_connects_gpu_probe_all_stages_and_completed_counts(monkeypatch, tmp_path, pause_during_runtime):
+    service, run = _service(tmp_path), _run()
     run.parameters["pose_strategy"] = {"baseline_mm": 100, "top_height_mm": 200}
     events, persisted = [], []
-    probe = SimpleNamespace(backend_counts={"gpu": 65, "cpu": 0, "converted": 65}, close=lambda: None)
-    monkeypatch.setattr(analysis_service, "AnalysisImageProbe", lambda root: probe)
+    probe = SimpleNamespace(backend_counts={"gpu": 65, "cpu": 0, "converted": 65}, close=lambda: None,
+                            hashes={}, results={}, manifest=lambda views: [], prefetch=lambda paths: None)
+    monkeypatch.setattr(analysis_service, "UndistortionProcessor", lambda *args, **kwargs: probe)
     service.progress_callback = events.append
     artifacts = SimpleNamespace(root=tmp_path, write_parameters=persisted.append)
     service._artifacts = lambda _: artifacts
 
     def validate(current, *, progress_callback, image_probe):
-        assert image_probe is probe
+        assert callable(image_probe)
         progress_callback(65, 65)
         return SimpleNamespace(camera_resolutions={camera: (1280, 960) for camera in ("top", "side", "rotating")})
 
     service._validation_for_run = validate
     service._blocking_validation_messages = lambda _: []
-    service._verify_frozen_manifest = lambda *args, progress_callback: [progress_callback(0, 65), progress_callback(65, 65)]
+    service._verify_frozen_manifest = lambda *args, progress_callback, hashes: [progress_callback(0, 65), progress_callback(65, 65)]
     service._intrinsics_for_run = lambda _: {camera: SimpleNamespace(width=1280, height=960) for camera in ("top", "side", "rotating")}
     service.repository = SimpleNamespace(
         list_rounds=lambda _: [SimpleNamespace(status="ready")],
         list_views=lambda _: [],
         update_parameters=lambda *args: None,
+        update_state=lambda *args, **kwargs: None,
     )
-    service._reconstruction_backends = SimpleNamespace(probe_runtime=lambda _: {"available": True})
+    cancellation = Event()
+    def runtime(_):
+        if pause_during_runtime:
+            cancellation.pause_requested = True
+            cancellation.set()
+        return {"available": True}
+    service._reconstruction_backends = SimpleNamespace(probe_runtime=runtime)
     service._set_state = lambda current, **kwargs: current.model_copy(update=kwargs)
     service._log = lambda *args: None
-    completed = service._validate_round_analysis(run)
-    assert [event.stage for event in events] == ["validating_images", "verifying_input_files", "verifying_input_files", "checking_reconstruction_environment"]
+    if pause_during_runtime:
+        with pytest.raises(AnalysisPausedError):
+            service._validate_round_analysis(run, cancellation)
+        assert not persisted
+        return
+    completed = service._validate_round_analysis(run, cancellation)
+    assert [event.stage for event in events] == ["undistorting_images", "verifying_input_files", "verifying_input_files", "checking_reconstruction_environment"]
     assert [event.progress for event in events] == [.45, .45, .95, .95]
     assert completed.status == "ready"
     assert completed.stage == "validation_completed"

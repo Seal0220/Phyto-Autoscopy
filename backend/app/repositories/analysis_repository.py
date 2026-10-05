@@ -40,9 +40,16 @@ class AnalysisRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    @staticmethod
-    def _run_from_row(row) -> AnalysisRun:
+    def _run_from_row(self, row) -> AnalysisRun:
         payload = dict(row)
+        state = self.database.fetchone(
+            "SELECT * FROM analysis_run_progress WHERE analysis_id=?",
+            (payload["analysis_id"],),
+        )
+        if state is not None:
+            latest = max(payload["updated_at"], state["updated_at"])
+            payload.update(dict(state))
+            payload["updated_at"] = latest
         payload["parameters"] = _json_load(payload.pop("parameters_json"), {})
         payload["intrinsics_snapshot"] = _json_load(
             payload.pop("intrinsics_snapshot_json"),
@@ -156,6 +163,22 @@ class AnalysisRepository:
             )
         return [self._run_from_row(row) for row in rows]
 
+    def get_image_context(self, analysis_id: str) -> AnalysisRun | None:
+        """Paths and scalar state only; never load frozen manifests for an image."""
+        row = self.database.fetchone(
+            """
+            SELECT analysis_id, record_id, method_name, method_version, git_commit,
+                created_at, updated_at, created_by, output_path, status, stage,
+                current_frame, total_frames, progress, manual_review_completed,
+                last_error, '{}' AS parameters_json, '{}' AS intrinsics_snapshot_json,
+                '{}' AS aruco_layout_snapshot_json, '[]' AS camera_pose_results_json,
+                '{}' AS pose_quality_json, '{}' AS reconstruction_environment_json
+            FROM analysis_runs WHERE analysis_id=? AND method_name IN (?, ?)
+            """,
+            (analysis_id, *SUPPORTED_ANALYSIS_METHODS),
+        )
+        return self._run_from_row(row) if row else None
+
     def update_state(
         self,
         analysis_id: str,
@@ -198,10 +221,26 @@ class AnalysisRepository:
             assignments.append("last_error=?")
             values.append(last_error)
         values.append(analysis_id)
-        self.database.execute(
-            f"UPDATE analysis_runs SET {', '.join(assignments)} WHERE analysis_id=?",
-            values,
+        columns = (
+            "analysis_id, updated_at, status, stage, current_frame, total_frames, progress, "
+            "completed_round_count, failed_round_count, tip_marker_count, trajectory_status, "
+            "manual_review_completed, last_error"
         )
+        with self.database.transaction() as connection:
+            # Older analyses acquire a small state row on their first update.
+            exists = connection.execute(
+                "SELECT 1 FROM analysis_run_progress WHERE analysis_id=?", (analysis_id,),
+            ).fetchone()
+            if exists is None:
+                connection.execute(
+                    f"INSERT INTO analysis_run_progress ({columns}) SELECT {columns} "
+                    "FROM analysis_runs WHERE analysis_id=?",
+                    (analysis_id,),
+                )
+            connection.execute(
+                f"UPDATE analysis_run_progress SET {', '.join(assignments)} WHERE analysis_id=?",
+                values,
+            )
 
     def update_parameters(
         self,
@@ -349,6 +388,11 @@ class AnalysisRepository:
         """
 
         with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE analysis_run_progress SET completed_round_count=0, failed_round_count=0, "
+                "tip_marker_count=0, trajectory_status=NULL WHERE analysis_id=?",
+                (analysis_id,),
+            )
             connection.execute(
                 """
                 UPDATE analysis_runs
@@ -525,6 +569,13 @@ class AnalysisRepository:
             )
             for row in rows
         ]
+
+    def get_view(self, analysis_id: str, view_id: str) -> AnalysisView | None:
+        row = self.database.fetchone(
+            "SELECT * FROM analysis_views WHERE analysis_id=? AND view_id=?",
+            (analysis_id, view_id),
+        )
+        return AnalysisView(**dict(row)) if row is not None else None
 
     def update_round(self, item: AnalysisRound) -> None:
         self.database.execute(

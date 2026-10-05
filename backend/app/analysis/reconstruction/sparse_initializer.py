@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Callable
 
 import numpy as np
 
 from app.analysis.export.json_export import write_json_atomic
+from app.analysis.checkpoints import StepJournal, step_signature
 from app.analysis.reconstruction.constrained_bundle_adjustment import (
     refine_sparse_camera_poses,
 )
@@ -21,6 +23,9 @@ class SparseInitializationError(RuntimeError):
 
 def _device(pycolmap: object, requested: str):
     device_type = getattr(pycolmap, "Device")
+    if requested.lower() == "cuda" and not getattr(pycolmap, "has_cuda", True):
+        logging.getLogger(__name__).info("PyCOLMAP was built without CUDA; falling back to CPU SIFT")
+        return getattr(device_type, "cpu")
     requested_device = getattr(device_type, requested.lower(), None)
     if requested_device is not None:
         return requested_device
@@ -51,8 +56,33 @@ def initialize_sparse_geometry(
         if progress_callback is not None:
             progress_callback(stage, value)
 
+    def save(stage, payload, *, outputs=()):
+        with StepJournal(dataset.root) as journal:
+            journal.save(stage, dataset.round_key, signature, payload, outputs=outputs)
+
+    signature = step_signature({
+        "version": 2, "bundle_adjustment": use_constrained_bundle_adjustment,
+        "views": [{"id": view.view_id, "hash": view.source_sha256,
+                   "K": view.camera_matrix.tolist(), "pose": view.world_to_camera_matrix.tolist()}
+                  for view in dataset.views],
+    })
+    with StepJournal(dataset.root) as journal:
+        completed = journal.get("initializing_round_geometry", dataset.round_key, signature)
+        features = journal.get("extracting_features", dataset.round_key, signature)
+        matches = journal.get("matching_features", dataset.round_key, signature)
+    if completed is not None:
+        by_id = {view.view_id: view for view in dataset.views}
+        for pose in completed.get("refined_camera_poses", []):
+            if pose.get("refined") and pose["view_id"] in by_id:
+                by_id[pose["view_id"]].world_to_camera_matrix[:] = np.asarray(pose["world_to_camera_matrix"])
+        update_round_dataset_pose_metadata(dataset, completed["quality"]["bundle_adjustment"],
+                                          completed.get("refined_camera_poses", []))
+        progress("initializing_round_geometry", 1.0)
+        return completed
+
     database_path = dataset.database_path
-    if database_path.exists():
+    reuse_database = features is not None and database_path.is_file()
+    if database_path.exists() and not reuse_database:
         database_path.unlink()
     camera_ids = {
         "top": 1,
@@ -86,36 +116,58 @@ def initialize_sparse_geometry(
     initial = pycolmap.Reconstruction()
     with pycolmap.Database.open(database_path) as database:
         for camera in camera_by_id.values():
-            database.write_camera(camera, use_camera_id=True)
+            if not reuse_database:
+                database.write_camera(camera, use_camera_id=True)
             initial.add_camera_with_trivial_rig(camera)
+        if not reuse_database and hasattr(database, "write_rig"):
+            # Extraction otherwise assigns rig IDs in filename order.
+            for rig in initial.rigs.values():
+                database.write_rig(rig, use_rig_id=True)
         for image_id, view in enumerate(dataset.views, start=1):
             image = pycolmap.Image(
                 name=view.image_name,
                 camera_id=camera_ids[view.camera_id],
                 image_id=image_id,
             )
-            database.write_image(image, use_image_id=True)
             initial.add_image_with_trivial_frame(
                 image,
                 pycolmap.Rigid3d(view.world_to_camera_matrix[:3, :]),
             )
+            if not reuse_database:
+                if hasattr(database, "write_frame"):
+                    database.write_frame(initial.frame(image_id), use_frame_id=True)
+                database.write_image(initial.image(image_id), use_image_id=True)
 
     image_names = [item.image_name for item in dataset.views]
     reader_options = pycolmap.ImageReaderOptions()
     reader_options.mask_path = dataset.masks_dir
-    pycolmap.extract_features(
-        database_path=database_path,
-        image_path=dataset.images_dir,
-        image_names=image_names,
-        camera_mode=pycolmap.CameraMode.PER_IMAGE,
-        reader_options=reader_options,
-        device=_device(pycolmap, requested_device),
-    )
+    device = _device(pycolmap, requested_device)
+    backend = "cuda" if device == pycolmap.Device.cuda else "cpu"
+    if not reuse_database:
+        extraction = dict(
+            database_path=database_path, image_path=dataset.images_dir, image_names=image_names,
+            camera_mode=pycolmap.CameraMode.PER_IMAGE, reader_options=reader_options,
+        )
+        try:
+            pycolmap.extract_features(**extraction, device=device)
+        except Exception:
+            if backend != "cuda":
+                raise
+            logging.getLogger(__name__).warning("CUDA SIFT failed; retrying on CPU", exc_info=True)
+            device, backend = pycolmap.Device.cpu, "cpu"
+            pycolmap.extract_features(**extraction, device=device)
+        save("extracting_features", {"backend": backend})
     progress("matching_features", 0.38)
-    pycolmap.match_exhaustive(
-        database_path=database_path,
-        device=_device(pycolmap, requested_device),
-    )
+    if not reuse_database or matches is None:
+        try:
+            pycolmap.match_exhaustive(database_path=database_path, device=device)
+        except Exception:
+            if backend != "cuda":
+                raise
+            logging.getLogger(__name__).warning("CUDA SIFT matching failed; retrying on CPU", exc_info=True)
+            backend = "cpu"
+            pycolmap.match_exhaustive(database_path=database_path, device=pycolmap.Device.cpu)
+        save("matching_features", {"backend": backend})
     progress("initializing_round_geometry", 0.72)
 
     options = pycolmap.IncrementalPipelineOptions()
@@ -218,10 +270,13 @@ def initialize_sparse_geometry(
         dataset.sparse_dir.parent / "quality.json",
         quality,
     )
-    progress("initializing_round_geometry", 1.0)
-    return {
+    result = {
         "reconstruction_path": str(dataset.sparse_dir),
         "point_cloud_path": str(sparse_point_cloud),
         "quality": quality,
         "refined_camera_poses": refined_camera_poses,
     }
+    save("initializing_round_geometry", result,
+         outputs=[sparse_point_cloud, *dataset.sparse_dir.glob("*.bin")])
+    progress("initializing_round_geometry", 1.0)
+    return result

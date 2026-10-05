@@ -268,6 +268,7 @@ def analyze_round_tip(
             image_path,
             valid_mask_path=valid_mask_path,
             candidate_prefix=view.view_id,
+            checkpoint_root=artifacts_root,
         )
         safe_view_id = safe_artifact_name(view.view_id)
         mask_output_root = (

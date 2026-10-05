@@ -11,6 +11,7 @@ dependencies = [
   "opencv-contrib-python>=4.12,<5",
   "cv2-enumerate-cameras>=1.3.3,<2",
   "numpy",
+  "psutil>=5.9,<8",
   "scipy",
   "pandas",
   "aiofiles",
@@ -19,7 +20,7 @@ dependencies = [
   "sqlalchemy",
   "torch>=2.1",
   "gsplat>=1.5,<2",
-  "pycolmap>=3.13,<4",
+  "pycolmap>=3.13,<5",
   "open3d>=0.19,<1",
   "networkx>=3.2,<4",
 ]

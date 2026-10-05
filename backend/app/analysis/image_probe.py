@@ -10,6 +10,8 @@ from uuid import uuid4
 import cv2
 import numpy as np
 
+from app.analysis.gpu_operations import convert_color
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ class AnalysisImageProbe:
 
     GPU_EXTENSIONS = frozenset({".tif", ".tiff"})
 
-    def __init__(self, cache_root: Path | None = None) -> None:
+    def __init__(self, cache_root: Path | None = None, *, initialize_decoder: bool = True) -> None:
         self.gpu_decoded = 0
         self.cpu_decoded = 0
         self.converted = 0
@@ -49,6 +51,12 @@ class AnalysisImageProbe:
         self._gpu_decoder = None
         self._decode_params = None
         self._gpu_failures: dict[str, int] = {}
+        self._gpu_initialized = False
+        if initialize_decoder:
+            self._initialize_decoder()
+
+    def _initialize_decoder(self) -> None:
+        self._gpu_initialized = True
         try:
             from nvidia import nvimgcodec
 
@@ -83,7 +91,7 @@ class AnalysisImageProbe:
     def __exit__(self, *args) -> None:
         self.close()
 
-    def prepare(self, path: Path) -> Path:
+    def prepare(self, path: Path, *, image: np.ndarray | None = None) -> Path:
         if path.suffix.lower() in self.GPU_EXTENSIONS:
             return path
         # Content checks still hash the original file. This identity is only for
@@ -94,7 +102,8 @@ class AnalysisImageProbe:
         destination = self.cache_root / key[:2] / f"{key}.tiff"
         if destination.is_file():
             return destination
-        image = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        if image is None:
+            image = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
         if image is None:
             raise ValueError(f"影像無法轉成 TIFF：{path.name}")
         # LZW is lossless and supported by nvTIFF; preserve channels and bit depth.
@@ -121,6 +130,8 @@ class AnalysisImageProbe:
 
     def _decode_gpu(self, path: Path):
         extension = path.suffix.lower()
+        if extension in self.GPU_EXTENSIONS and not self._gpu_initialized:
+            self._initialize_decoder()
         if (
             extension in self.GPU_EXTENSIONS
             and self._gpu_decoder is not None
@@ -159,19 +170,19 @@ class AnalysisImageProbe:
                 if image.ndim == 3 and image.shape[2] == 1:
                     image = image[:, :, 0]
                 elif image.ndim == 3 and image.shape[2] == 3:
-                    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                    image = convert_color(image, cv2.COLOR_RGB2BGR)
                 elif image.ndim == 3 and image.shape[2] == 4:
-                    image = cv2.cvtColor(image, cv2.COLOR_RGBA2BGRA)
+                    image = convert_color(image, cv2.COLOR_RGBA2BGRA)
                 if flags != cv2.IMREAD_UNCHANGED:
                     if image.dtype == np.uint16 and not flags & cv2.IMREAD_ANYDEPTH:
                         image = (image >> 8).astype(np.uint8)
                     if flags == cv2.IMREAD_GRAYSCALE and image.ndim == 3:
-                        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                        image = convert_color(image, cv2.COLOR_BGR2GRAY)
                     elif flags == cv2.IMREAD_COLOR:
                         if image.ndim == 2:
-                            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+                            image = convert_color(image, cv2.COLOR_GRAY2BGR)
                         elif image.shape[2] == 4:
-                            image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+                            image = convert_color(image, cv2.COLOR_BGRA2BGR)
                 self.gpu_decoded += 1
                 return image
             except Exception:

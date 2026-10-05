@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
+from app.analysis.gpu_operations import binary_morphology, convert_color
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,14 +75,14 @@ def create_plant_mask(
         cv2.THRESH_BINARY + cv2.THRESH_OTSU,
     )
 
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    hsv = convert_color(bgr, cv2.COLOR_BGR2HSV)
     hsv_mask = cv2.inRange(
         hsv,
         np.asarray((20, 24, 18), dtype=np.uint8),
         np.asarray((105, 255, 255), dtype=np.uint8),
     )
 
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    lab = convert_color(bgr, cv2.COLOR_BGR2LAB)
     a_channel = lab[..., 1]
     a_threshold = float(np.percentile(a_channel[valid > 0], 48))
     lab_mask = np.where(a_channel <= a_threshold, 255, 0).astype(np.uint8)
@@ -102,8 +103,7 @@ def create_plant_mask(
         cv2.MORPH_ELLIPSE,
         (4 * scale + 1, 4 * scale + 1),
     )
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, opening)
-    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, closing)
+    combined = binary_morphology(combined, opening, closing)
     minimum_area = max(32, round(width * height * 0.00015))
     combined, component_count = _remove_small_components(
         combined,

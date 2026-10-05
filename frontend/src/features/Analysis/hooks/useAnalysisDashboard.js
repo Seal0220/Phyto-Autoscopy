@@ -27,6 +27,7 @@ const POLLING_STATUSES = new Set([
   "validating",
   "processing",
   "reconstructing",
+  "pausing",
 ]);
 const ACTIVE_POLL_INTERVAL_MS = 5_000;
 

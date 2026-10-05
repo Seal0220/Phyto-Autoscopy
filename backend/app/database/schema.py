@@ -439,6 +439,28 @@ def initialize_schema(database: Database) -> None:
                     connection.execute(
                         f"ALTER TABLE analysis_runs ADD COLUMN {name} {definition}"
                     )
+            # Frequent progress writes must not rewrite the large frozen manifests.
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_run_progress (
+                    analysis_id TEXT PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    stage TEXT,
+                    current_frame INTEGER NOT NULL,
+                    total_frames INTEGER NOT NULL,
+                    progress REAL NOT NULL,
+                    completed_round_count INTEGER NOT NULL,
+                    failed_round_count INTEGER NOT NULL,
+                    tip_marker_count INTEGER NOT NULL,
+                    trajectory_status TEXT,
+                    manual_review_completed INTEGER NOT NULL,
+                    last_error TEXT,
+                    FOREIGN KEY(analysis_id)
+                        REFERENCES analysis_runs(analysis_id) ON DELETE CASCADE
+                )
+                """
+            )
             connection.execute("DROP TABLE IF EXISTS calibration_profiles")
             connection.execute("DROP TABLE IF EXISTS calibration_observations")
             connection.execute("DROP TABLE IF EXISTS extrinsic_profile_cameras")

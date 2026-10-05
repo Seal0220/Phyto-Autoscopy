@@ -107,6 +107,7 @@ def run_reconstruction_worker(
                     cancellation_started_at = time.monotonic()
                 if (
                     cancellation_started_at is not None
+                    and not getattr(cancel_event, "pause_requested", False)
                     and time.monotonic() - cancellation_started_at
                     > cancellation_grace_seconds
                 ):

@@ -100,6 +100,8 @@ def refine_sparse_camera_poses(
                 pycolmap.PosePriorCoordinateSystem.CARTESIAN
             ),
         )
+        if hasattr(pose_priors[image_id], "corr_data_id"):
+            pose_priors[image_id].corr_data_id = image.data_id
 
     for point3d_id in candidate.points3D.keys():
         config.add_variable_point(int(point3d_id))
@@ -108,20 +110,38 @@ def refine_sparse_camera_poses(
     options.refine_focal_length = False
     options.refine_principal_point = False
     options.refine_extra_params = False
-    options.loss_function_type = pycolmap.LossFunctionType.CAUCHY
-    options.loss_function_scale = 2.0
+    # PyCOLMAP 4 moved solver-specific options under `ceres`.
+    solver_options = getattr(options, "ceres", options)
+    solver_options.loss_function_type = pycolmap.LossFunctionType.CAUCHY
+    solver_options.loss_function_scale = 2.0
+    if hasattr(solver_options, "use_gpu"):
+        solver_options.use_gpu = bool(getattr(pycolmap, "has_cuda", False))
+        solver_options.gpu_index = "0"
+        if hasattr(solver_options, "min_num_images_gpu_solver"):
+            solver_options.min_num_images_gpu_solver = 0
     prior_options = pycolmap.PosePriorBundleAdjustmentOptions()
-    prior_options.use_robust_loss_on_prior_position = True
-    prior_options.prior_position_loss_scale = 2.7954834829151074
+    if hasattr(prior_options, "ceres"):
+        prior_options.ceres.prior_position_loss_function_type = pycolmap.LossFunctionType.CAUCHY
+        prior_options.ceres.prior_position_loss_scale = 2.7954834829151074
+        prior_arguments = list(pose_priors.values())
+    else:
+        prior_options.use_robust_loss_on_prior_position = True
+        prior_options.prior_position_loss_scale = 2.7954834829151074
+        prior_arguments = pose_priors
 
     adjuster = pycolmap.create_pose_prior_bundle_adjuster(
         options,
         prior_options,
         config,
-        pose_priors,
+        prior_arguments,
         candidate,
     )
     summary = adjuster.solve()
+    if hasattr(summary, "is_solution_usable") and not summary.is_solution_usable():
+        raise RuntimeError("姿態微調解算失敗，已保留原始相機姿態。")
+    solver_summary = getattr(summary, "ceres_summary", summary)
+    dense_backend = str(_summary_value(solver_summary, "dense_linear_algebra_library_type", ""))
+    sparse_backend = str(_summary_value(solver_summary, "sparse_linear_algebra_library_type", ""))
     if int(candidate.num_points3D()) < 4:
         raise RuntimeError("姿態精修使稀疏三維點不足，已保留原始相機姿態。")
     refined_camera_poses: list[dict[str, Any]] = []
@@ -186,6 +206,8 @@ def refine_sparse_camera_poses(
     quality = {
         "enabled": True,
         "status": "completed",
+        "backend": "cuda" if "CUDA" in dense_backend + sparse_backend else "cpu",
+        "gpu_requested": bool(getattr(solver_options, "use_gpu", False)),
         "fixed_camera_poses_constant": True,
         "camera_intrinsics_constant": True,
         "world_scale_source": (
@@ -203,10 +225,10 @@ def refine_sparse_camera_poses(
             candidate.compute_mean_reprojection_error()
         ),
         "successful_steps": int(
-            _summary_value(summary, "num_successful_steps", 0) or 0
+            _summary_value(solver_summary, "num_successful_steps", 0) or 0
         ),
         "unsuccessful_steps": int(
-            _summary_value(summary, "num_unsuccessful_steps", 0) or 0
+            _summary_value(solver_summary, "num_unsuccessful_steps", 0) or 0
         ),
         "termination_type": str(
             _summary_value(summary, "termination_type", "unknown")

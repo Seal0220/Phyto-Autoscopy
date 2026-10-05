@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import cv2
 import numpy as np
 
 from app.analysis.image_probe import read_analysis_image
+from app.analysis.checkpoints import StepJournal, step_signature
 
 from app.analysis.segmentation.plant_mask import create_plant_mask
 
@@ -112,7 +114,7 @@ def _candidate_heatmap(
     )
 
 
-def detect_tip_candidates(
+def _detect_tip_candidates(
     image_path: Path,
     *,
     valid_mask_path: Path | None = None,
@@ -200,6 +202,47 @@ def detect_tip_candidates(
         mask_confidence=segmentation.confidence,
         foreground_ratio=segmentation.foreground_ratio,
     )
+
+
+def detect_tip_candidates(
+    image_path: Path,
+    *,
+    valid_mask_path: Path | None = None,
+    candidate_prefix: str = "candidate",
+    maximum_candidates: int = 12,
+    checkpoint_root: Path | None = None,
+) -> TipCandidateDetection:
+    if checkpoint_root is None:
+        return _detect_tip_candidates(image_path, valid_mask_path=valid_mask_path,
+                                      candidate_prefix=candidate_prefix, maximum_candidates=maximum_candidates)
+    paths = [image_path, *([valid_mask_path] if valid_mask_path is not None else [])]
+    signature = step_signature({"version": 1, "count": maximum_candidates,
+                                "inputs": [(str(path), path.stat().st_size, path.stat().st_mtime_ns) for path in paths]})
+    with StepJournal(checkpoint_root) as journal:
+        saved = journal.get("detecting_tip_candidates", candidate_prefix, signature)
+        if saved is not None:
+            with np.load(saved["arrays"], allow_pickle=False) as arrays:
+                return TipCandidateDetection(
+                    candidates=tuple(TipCandidate2D(**item) for item in saved["candidates"]),
+                    plant_mask=arrays["plant_mask"], skeleton=arrays["skeleton"], heatmap=arrays["heatmap"],
+                    mask_confidence=saved["mask_confidence"], foreground_ratio=saved["foreground_ratio"],
+                )
+        result = _detect_tip_candidates(image_path, valid_mask_path=valid_mask_path,
+                                        candidate_prefix=candidate_prefix, maximum_candidates=maximum_candidates)
+        destination = checkpoint_root / "checkpoints" / "tip_candidates" / f"{step_signature(candidate_prefix)}.npz"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("wb") as handle:
+                np.savez_compressed(handle, plant_mask=result.plant_mask, skeleton=result.skeleton, heatmap=result.heatmap)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        journal.save("detecting_tip_candidates", candidate_prefix, signature, {
+            "arrays": str(destination), "candidates": [asdict(item) for item in result.candidates],
+            "mask_confidence": result.mask_confidence, "foreground_ratio": result.foreground_ratio,
+        }, outputs=[destination])
+        return result
 
 
 __all__ = [

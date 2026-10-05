@@ -611,7 +611,7 @@ export default function useAnalysisSetup({
       result,
       {
         ...previous,
-        status: "ready",
+        status: "validating",
         stage: "validating",
       },
     ));

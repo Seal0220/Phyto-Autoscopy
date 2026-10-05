@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.analysis.pose_alignment import markerless_pose
+from app.analysis.checkpoints import StepJournal
 from app.analysis.rounds.paths import round_artifact_directory, safe_artifact_name
 from app.core.exceptions import AnalysisError
 from app.models.analysis_models import AnalysisRun, AnalysisView
@@ -25,6 +26,7 @@ def _service():
     service._processing_previews = {}
     service._validation_progress = {}
     service._validation_progress_times = {}
+    service._live_progress = {}
     return service
 
 
@@ -57,9 +59,13 @@ def test_failed_processing_preview_survives_service_reload(tmp_path):
         diagnostics={"matched_features": 3, "required_inliers": 24},
         artifact_path="pose_debug/stereo/pair_001.jpg",
     )
+    with StepJournal(tmp_path) as journal:
+        journal.save("undistorting_images", "view-top", "test", {"backend": "cuda"})
     reloaded = _service()
     reloaded._artifacts = service._artifacts
-    preview = reloaded._progress_for_run(run).processing_preview
+    progress = reloaded._progress_for_run(run)
+    preview = progress.processing_preview
+    assert progress.model_dump()["checkpoints"]["completed_steps"] == 1
     assert preview.round_key == "record:mode:round.01"
     assert [view.camera_id for view in preview.views] == ["top", "side"]
     assert preview.diagnostics["matched_features"] == 3
@@ -79,7 +85,10 @@ def test_undistorted_image_is_readable_before_complete_manifest(tmp_path):
     service = _service()
     run, view = _run(), _view()
     service._require_run = lambda _: run
-    service.repository = SimpleNamespace(list_views=lambda _: [view])
+    service.repository = SimpleNamespace(
+        get_image_context=lambda _: run,
+        get_view=lambda *_: view,
+    )
 
     def missing_manifest():
         raise FileNotFoundError()

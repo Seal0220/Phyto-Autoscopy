@@ -4,6 +4,7 @@ import {
   FiEye,
   FiFastForward,
   FiPlay,
+  FiPause,
   FiRefreshCw,
   FiRotateCcw,
   FiSquare,
@@ -25,8 +26,10 @@ export default function AnalysisRunActions({
   onSkipReview,
   pendingAction,
   status,
+  stage,
+  stereoReview,
 }) {
-  const available = analysisRunActionAvailability(status);
+  const available = analysisRunActionAvailability(status, stage);
   let skipReviewLabel = "略過人工確認並完成";
   if (pendingAction === "reconstruct_without_review") {
     skipReviewLabel = "完成分析中…";
@@ -58,6 +61,31 @@ export default function AnalysisRunActions({
             aria-hidden="true"
           />
           {pendingAction === "start" ? "啟動中…" : "開始分析"}
+        </Button>
+      ) : null}
+      {available.pause ? (
+        <Button
+          disabled={locked}
+          onClick={() => onAction("pause")}
+        >
+          <FiPause
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {pendingAction === "pause" ? "要求暫停中…" : "暫停並保存"}
+        </Button>
+      ) : null}
+      {available.resume ? (
+        <Button
+          variant="primary"
+          disabled={locked}
+          onClick={() => onAction("resume")}
+        >
+          <FiPlay
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {pendingAction === "resume" ? "恢復中…" : "恢復分析"}
         </Button>
       ) : null}
       {available.cancel ? (
@@ -106,7 +134,7 @@ export default function AnalysisRunActions({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          人工修正
+          {stereoReview ? "人工雙鏡頭配對" : "人工修正"}
         </Button>
       ) : null}
       {available.skipReview ? (

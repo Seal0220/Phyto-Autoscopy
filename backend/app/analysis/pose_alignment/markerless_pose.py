@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 import math
+from uuid import uuid4
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from app.analysis.image_probe import read_analysis_image
+from app.analysis.gpu_operations import cuda_hamming_matches, detect_orb_features
+from app.analysis.checkpoints import StepJournal, step_signature
 
 from app.analysis.pose_alignment.models import (
     CameraPoseResult,
@@ -17,6 +20,10 @@ from app.analysis.pose_alignment.pipeline import _quality_summary
 from app.analysis.pose_alignment.sfm_refinement import (
     fill_rotating_results,
 )
+
+
+class StereoPoseEstimationError(ValueError):
+    """Expected lack of usable stereo geometry, recoverable with human input."""
 
 
 def _value(item: object, key: str, default=None):
@@ -34,14 +41,44 @@ def _features(frame: object, count: int):
     image = _gray(frame)
     if image is None:
         return None
-    detector = cv2.ORB_create(nfeatures=count)
-    keypoints, descriptors = detector.detectAndCompute(image, None)
+    path = Path(_value(frame, "file_path"))
+    root = next((parent for parent in path.parents if parent.name.startswith("analysis_")), None)
+    stat = path.stat()
+    signature = step_signature({"version": cv2.__version__, "count": count, "path": str(path),
+                                "size": stat.st_size, "mtime": stat.st_mtime_ns})
+    if root is not None:
+        with StepJournal(root) as journal:
+            saved = journal.get("extracting_features", str(path), signature)
+            if saved is not None:
+                with np.load(saved["arrays"], allow_pickle=False) as arrays:
+                    keypoints = [cv2.KeyPoint(float(row[0]), float(row[1]), float(row[2]), float(row[3]),
+                                             float(row[4]), int(row[5]), int(row[6])) for row in arrays["keypoints"]]
+                    return image, keypoints, arrays["descriptors"]
+    keypoints, descriptors, backend = detect_orb_features(image, count)
     if descriptors is None or len(keypoints) < 8:
         return None
+    if root is not None:
+        destination = root / "checkpoints" / "orb_features" / f"{signature}.npz"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("wb") as handle:
+                np.savez_compressed(handle, descriptors=descriptors, keypoints=np.asarray([
+                    [*point.pt, point.size, point.angle, point.response, point.octave, point.class_id] for point in keypoints
+                ]))
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        with StepJournal(root) as journal:
+            journal.save("extracting_features", str(path), signature,
+                         {"arrays": str(destination), "backend": backend}, outputs=[destination])
     return image, keypoints, descriptors
 
 
 def _matches(first: np.ndarray, second: np.ndarray) -> list[cv2.DMatch]:
+    gpu_matches = cuda_hamming_matches(first, second)
+    if gpu_matches is not None:
+        return gpu_matches
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
     forward = matcher.knnMatch(first, second, k=2)
     backward = matcher.knnMatch(second, first, k=2)
@@ -118,11 +155,21 @@ def _stereo_landmarks(
     *,
     diagnostics: dict[str, object] | None = None,
     debug_path: Path | None = None,
+    manual_points: tuple[np.ndarray, np.ndarray] | None = None,
 ):
     diagnostics = diagnostics if diagnostics is not None else {}
     diagnostics.update(matched_features=0, geometric_inliers=0, rejection_reason=None)
-    top_data = _features(top, int(settings["feature_count"]))
-    side_data = _features(side, int(settings["feature_count"]))
+    if manual_points is None:
+        top_data = _features(top, int(settings["feature_count"]))
+        side_data = _features(side, int(settings["feature_count"]))
+    else:
+        images = (_gray(top), _gray(side))
+        if any(image is None for image in images):
+            raise ValueError("人工配對影像無法讀取，請重新讀取後再試。")
+        top_data, side_data = [
+            (image, [cv2.KeyPoint(float(x), float(y), 1) for x, y in points], None)
+            for image, points in zip(images, manual_points)
+        ]
     diagnostics["top_features"] = len(top_data[1]) if top_data is not None else 0
     diagnostics["side_features"] = len(side_data[1]) if side_data is not None else 0
     if top_data is None or side_data is None:
@@ -130,7 +177,10 @@ def _stereo_landmarks(
         return None
     top_image, top_points, top_descriptors = top_data
     side_image, side_points, side_descriptors = side_data
-    matches = _matches(top_descriptors, side_descriptors)
+    matches = (
+        _matches(top_descriptors, side_descriptors) if manual_points is None
+        else [cv2.DMatch(index, index, 0) for index in range(len(manual_points[0]))]
+    )
     diagnostics["matched_features"] = len(matches)
     diagnostics["required_inliers"] = int(settings["minimum_stereo_inliers"])
     if debug_path is not None:
@@ -310,13 +360,36 @@ def estimate_fixed_stereo_pose(
             best = candidate
     if best is None:
         strongest = max(attempts, key=lambda item: int(item.get("matched_features", 0)), default={})
-        raise ValueError(
+        raise StereoPoseEstimationError(
             f"無法建立無標記雙鏡頭姿態：已檢查 {len(candidates)} 組影像，"
             f"共同特徵配對最多 {strongest.get('matched_features', 0)} 組，"
             f"需要至少 {settings['minimum_stereo_inliers']} 個有效幾何內點。"
             f"主要原因：{strongest.get('rejection_reason') or '沒有可配對的俯視與側視影像'}。"
             "此階段尚未執行尖端偵測。"
         )
+    return _stereo_pose_result(best, settings)
+
+
+def estimate_manual_stereo_pose(top, side, intrinsics, settings, correspondences):
+    """Use human correspondences, retaining depth, reprojection and parallax checks."""
+    points = tuple(np.asarray([
+        [pair[camera]["x_px"], pair[camera]["y_px"]] for pair in correspondences
+    ], dtype=np.float64) for camera in ("top", "side"))
+    manual_settings = {**settings, "minimum_stereo_inliers": 8}
+    diagnostics = {}
+    best = _stereo_landmarks(top, side, intrinsics, manual_settings,
+                             diagnostics=diagnostics, manual_points=points)
+    if best is None:
+        raise ValueError(
+            f"人工配對未通過幾何檢查：{diagnostics.get('rejection_reason') or '配對不足'}。"
+            "請修正對應位置，至少保留 8 組有效配對。"
+        )
+    poses, quality = _stereo_pose_result(best, manual_settings)
+    quality.update(estimation_source="manual_correspondences", manual_correspondence_count=len(correspondences))
+    return poses, quality
+
+
+def _stereo_pose_result(best, settings):
     side_center = np.linalg.inv(best["poses"]["side"])[:3, 3]
     estimated_side_height_mm = float(side_center[2])
     estimated_side_horizontal_distance_mm = float(np.linalg.norm(side_center[:2]))

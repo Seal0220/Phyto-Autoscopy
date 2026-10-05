@@ -15,6 +15,7 @@ def _probe(tmp_path, decoder=None):
     probe.cache_root = tmp_path / "derived"
     probe._temporary_cache = None
     probe._gpu_decoder = decoder
+    probe._gpu_initialized = True
     probe._decode_params = None
     probe._gpu_failures = {}
     probe.gpu_decoded = probe.cpu_decoded = probe.converted = probe.conversion_failed = 0

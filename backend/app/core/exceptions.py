@@ -42,12 +42,20 @@ class AnalysisError(PhytoAutoscopyError):
     error_code = "analysis_error"
 
 
+class AnalysisReviewRequiredError(AnalysisError):
+    error_code = "analysis_review_required"
+
+
 class CalibrationError(PhytoAutoscopyError):
     error_code = "calibration_error"
 
 
 class OperationCancelledError(PhytoAutoscopyError):
     error_code = "operation_cancelled"
+
+
+class AnalysisPausedError(OperationCancelledError):
+    error_code = "analysis_paused"
 
 
 def public_error_detail(exc: BaseException) -> str:

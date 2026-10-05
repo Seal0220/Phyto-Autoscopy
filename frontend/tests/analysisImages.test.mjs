@@ -9,6 +9,8 @@ import {
   analysisImageGroups,
   analysisRunDisplay,
   normalizeAnalysisProgress,
+  analysisRunActionAvailability,
+  analysisInputCount,
 } from "../src/features/AnalysisRun/lib/analysisRunUtils.js";
 
 test("analysis images preserve encoded IDs and Windows artifact paths through the BFF", () => {
@@ -20,6 +22,31 @@ test("analysis images preserve encoded IDs and Windows artifact paths through th
     analysisArtifactUrl("analysis-1", "rounds\\mode 1\\preview.png"),
     "/api/analysis/analysis-1/artifacts/rounds/mode%201/preview.png",
   );
+});
+
+test("analysis pause controls wait for saving and preserve checkpoint progress", () => {
+  for (const status of ["validating", "processing", "reconstructing"]) {
+    assert.equal(analysisRunActionAvailability(status).pause, true);
+  }
+  assert.equal(analysisRunActionAvailability("pausing").pause, false);
+  assert.equal(analysisRunActionAvailability("pausing").resume, false);
+  assert.equal(analysisRunActionAvailability("paused").resume, true);
+  const checkpoints = { completed_steps: 42, recent_steps: [{ stage: "undistorting_images", backend: "cuda", item: "view-1" }] };
+  const progress = normalizeAnalysisProgress({ status: "paused", checkpoints });
+  assert.deepEqual(progress.checkpoints, checkpoints);
+  assert.equal(analysisRunDisplay(progress).status.label, "已暫停");
+  assert.equal(analysisInputCount({ parameters: { input_count: 1000 } }), 1000);
+  const display = analysisRunDisplay({
+    image_probe_backends: { cpu: 2, remap_gpu: 2, remap_cpu: 0, reused: 10 },
+  });
+  assert.equal(display.probeNote, "GPU 去畸變 2 張 · CPU 去畸變 0 張 · 沿用已完成影像 10 張");
+  assert.equal(analysisRunDisplay({
+    image_probe_backends: { remap_gpu: 0, remap_cpu: 0, reused: 55, reused_gpu: 55, reused_cpu: 0 },
+  }).probeNote, "GPU 去畸變 55 張 · CPU 去畸變 0 張 · 沿用已完成影像 55 張");
+  assert.equal(analysisRunDisplay({ image_probe_backends: { workers: 16 } }).probeNote, "自動並行 16 執行緒");
+  assert.equal(analysisRunDisplay({
+    image_probe_backends: { workers: 32, worker_limit: 128, tuning: 1 },
+  }).probeNote, "自動並行 32 執行緒（試速中，上限 128）");
 });
 
 test("round gallery keeps each snapshot's three views together", () => {

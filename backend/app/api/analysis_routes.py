@@ -21,11 +21,19 @@ from app.models.analysis_models import (
     TipLandmark,
     TipObservation2D,
     TipTrajectoryPoint,
+    StereoPoseReviewRequest,
 )
 from app.security.auth import Principal, get_request_principal
 
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+
+
+def _action_response(run: AnalysisRun) -> AnalysisRun:
+    """Keep control requests small even for runs with hundreds of MB of inputs."""
+    parameters = {key: value for key, value in run.parameters.items() if key not in {"input_manifest", "source_manifest"}}
+    parameters["input_count"] = len(run.parameters.get("input_manifest", []))
+    return run.model_copy(update={"parameters": parameters, "camera_pose_results": [], "pose_quality": {}})
 
 
 @router.get("/sources", response_model=list[AnalysisSourceSummary])
@@ -283,7 +291,7 @@ def validate_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
-    return context.analysis_service.validate(analysis_id)
+    return _action_response(context.analysis_service.validate(analysis_id))
 
 
 @router.post("/{analysis_id}/start", response_model=AnalysisRun)
@@ -291,7 +299,7 @@ def start_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
-    return context.analysis_service.start(analysis_id)
+    return _action_response(context.analysis_service.start(analysis_id))
 
 
 @router.post("/{analysis_id}/cancel", response_model=AnalysisRun)
@@ -311,7 +319,21 @@ def retry_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
-    return context.analysis_service.retry(analysis_id)
+    return _action_response(context.analysis_service.retry(analysis_id))
+
+
+@router.get("/{analysis_id}/stereo-review")
+def get_stereo_review(analysis_id: str, context: AppContext = Depends(get_context)) -> dict:
+    return context.analysis_service.get_stereo_review(analysis_id)
+
+
+@router.post("/{analysis_id}/stereo-review", response_model=AnalysisRun)
+def submit_stereo_review(
+    analysis_id: str, request: StereoPoseReviewRequest,
+    context: AppContext = Depends(get_context),
+    principal: Principal = Depends(get_request_principal),
+) -> AnalysisRun:
+    return _action_response(context.analysis_service.submit_stereo_review(analysis_id, request, principal.actor))
 
 
 @router.post("/{analysis_id}/resume", response_model=AnalysisRun)
@@ -319,7 +341,15 @@ def resume_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
-    return context.analysis_service.resume(analysis_id)
+    return _action_response(context.analysis_service.resume(analysis_id))
+
+
+@router.post("/{analysis_id}/pause", response_model=AnalysisRun)
+def pause_analysis_run(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> AnalysisRun:
+    return _action_response(context.analysis_service.pause(analysis_id))
 
 
 @router.post("/{analysis_id}/reset", response_model=AnalysisRun)

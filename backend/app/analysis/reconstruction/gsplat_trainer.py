@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from app.analysis.image_probe import read_analysis_image
+from app.analysis.checkpoints import step_signature
 
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.reconstruction.backend import CancelCheck, ProgressCallback
@@ -223,6 +224,11 @@ def _checkpoint(
     splats: Any,
     center_world_mm: np.ndarray,
     world_scale_mm: float,
+    optimizers: Any = None,
+    scheduler: Any = None,
+    strategy_state: Any = None,
+    signature: str = "",
+    losses: list[float] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -233,6 +239,14 @@ def _checkpoint(
             "center_world_mm": center_world_mm.tolist(),
             "world_scale_mm": world_scale_mm,
             "coordinate_space": "metric_world_mm",
+            "format_version": 2,
+            "signature": signature,
+            "optimizers": {name: optimizer.state_dict() for name, optimizer in (optimizers or {}).items()},
+            "scheduler": scheduler.state_dict() if scheduler is not None else None,
+            "strategy_state": strategy_state,
+            "torch_rng_state": torch.get_rng_state(),
+            "cuda_rng_states": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+            "losses": losses or [],
         },
         temporary,
     )
@@ -291,6 +305,20 @@ def train_gsplat_model(
 
     device = torch.device("cuda:0")
     torch.manual_seed(42)
+    # Recovery is always available, including when optional diagnostic export
+    # was disabled. Legacy weights-only checkpoints cannot restore Adam state.
+    checkpoint_path = output_dir / "checkpoint" / "latest.pt"
+    signature = step_signature({
+        "parameters": dict(parameters), "center": center_world_mm.tolist(), "scale": world_scale_mm,
+        "views": [{"id": view.view_id, "hash": view.source_sha256,
+                   "pose": view.world_to_camera_matrix.tolist(), "K": view.camera_matrix.tolist()}
+                  for view in dataset.views],
+    })
+    saved = None
+    if checkpoint_path.is_file():
+        candidate = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        if candidate.get("format_version") == 2 and candidate.get("signature") == signature:
+            saved = candidate
     numpy_scales = _initial_scales(positions)
     point_count = len(positions)
     sh0 = ((colors - 0.5) / _SH_C0)[:, None, :]
@@ -314,6 +342,10 @@ def train_gsplat_model(
             torch.zeros((point_count, 3, 3), dtype=torch.float32)
         ),
     }).to(device)
+    if saved is not None:
+        splats = torch.nn.ParameterDict({
+            name: torch.nn.Parameter(value.to(device)) for name, value in saved["splats"].items()
+        })
     learning_rates = {
         "means": 1.6e-4,
         "scales": 5e-3,
@@ -340,6 +372,13 @@ def train_gsplat_model(
     strategy.reset_every = max(500, maximum_steps // 10)
     strategy.check_sanity(splats, optimizers)
     strategy_state = strategy.initialize_state(scene_scale=1.0)
+    if saved is not None:
+        for name, optimizer in optimizers.items():
+            optimizer.load_state_dict(saved["optimizers"][name])
+        scheduler.load_state_dict(saved["scheduler"])
+        strategy_state = saved["strategy_state"]
+        torch.set_rng_state(saved["torch_rng_state"].cpu())
+        torch.cuda.set_rng_state_all([state.cpu() for state in saved["cuda_rng_states"]])
 
     tensors = []
     for view in views:
@@ -357,16 +396,33 @@ def train_gsplat_model(
             "viewmat": torch.from_numpy(view.world_to_camera).to(device)[None],
         })
 
-    checkpoint_path = (
-        output_dir / "checkpoint" / "latest.pt"
-        if bool(parameters.get("save_checkpoint", True))
-        else None
-    )
-    losses: list[float] = []
+    losses: list[float] = list(saved.get("losses", [])) if saved is not None else []
     started = time.monotonic()
-    completed_steps = 0
+    completed_steps = int(saved["step"]) if saved is not None else 0
+    resumed_from_step = completed_steps
+    iteration_path = output_dir / "training_steps.csv"
+    if iteration_path.is_file():
+        # A forced shutdown may leave iteration records newer than the latest
+        # tensor snapshot. Discard those records before replaying those steps.
+        retained = []
+        if saved is not None:
+            for row in iteration_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    if int(row.split(",", 1)[0]) <= completed_steps:
+                        retained.append(row)
+                except ValueError:
+                    continue
+        iteration_path.write_text("".join(f"{row}\n" for row in retained), encoding="utf-8")
     report_every = max(10, maximum_steps // 200)
     checkpoint_every = max(500, maximum_steps // 10)
+
+    def persist_checkpoint() -> None:
+        _checkpoint(
+            checkpoint_path, torch=torch, step=completed_steps, splats=splats,
+            center_world_mm=center_world_mm, world_scale_mm=world_scale_mm,
+            optimizers=optimizers, scheduler=scheduler, strategy_state=strategy_state,
+            signature=signature, losses=losses,
+        )
 
     def check_cancellation_with_checkpoint() -> None:
         if cancel_check is None:
@@ -375,17 +431,10 @@ def train_gsplat_model(
             cancel_check()
         except BaseException:
             if checkpoint_path is not None and completed_steps > 0:
-                _checkpoint(
-                    checkpoint_path,
-                    torch=torch,
-                    step=completed_steps,
-                    splats=splats,
-                    center_world_mm=center_world_mm,
-                    world_scale_mm=world_scale_mm,
-                )
+                persist_checkpoint()
             raise
 
-    for step in range(maximum_steps):
+    for step in range(completed_steps, maximum_steps):
         check_cancellation_with_checkpoint()
         item = tensors[step % len(tensors)]
         pixels = item["pixels"][None]
@@ -453,20 +502,17 @@ def train_gsplat_model(
         )
         completed_steps = step + 1
         losses.append(float(loss.detach().cpu()))
+        # One record per completed optimizer iteration. Large tensor snapshots
+        # are periodic and also written immediately on cooperative pause.
+        with iteration_path.open("a", encoding="utf-8") as iteration_log:
+            iteration_log.write(f"{completed_steps},{losses[-1]:.9g},cuda\n")
         if len(losses) > 100:
             losses.pop(0)
         if checkpoint_path is not None and (
             completed_steps % checkpoint_every == 0
             or completed_steps == maximum_steps
         ):
-            _checkpoint(
-                checkpoint_path,
-                torch=torch,
-                step=completed_steps,
-                splats=splats,
-                center_world_mm=center_world_mm,
-                world_scale_mm=world_scale_mm,
-            )
+            persist_checkpoint()
         if progress_callback is not None and (
             completed_steps % report_every == 0
             or completed_steps == maximum_steps
@@ -479,14 +525,7 @@ def train_gsplat_model(
                 )
             except BaseException:
                 if checkpoint_path is not None:
-                    _checkpoint(
-                        checkpoint_path,
-                        torch=torch,
-                        step=completed_steps,
-                        splats=splats,
-                        center_world_mm=center_world_mm,
-                        world_scale_mm=world_scale_mm,
-                    )
+                    persist_checkpoint()
                 raise
 
     duration = time.monotonic() - started
@@ -505,6 +544,7 @@ def train_gsplat_model(
         ),
         "world_center_mm": center_world_mm.tolist(),
         "internal_world_scale_mm": world_scale_mm,
+        "resumed_from_step": resumed_from_step,
     }
     write_json_atomic(output_dir / "training_metrics.json", metrics)
     return GsplatTrainingResult(

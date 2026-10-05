@@ -40,6 +40,7 @@ export default function Analysis() {
     "validating",
     "processing",
     "reconstructing",
+    "pausing",
   ].includes(run.status)).length;
   const attentionRunCount = runs.filter((run) => [
     "draft",
