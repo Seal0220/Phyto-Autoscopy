@@ -22,7 +22,7 @@ from app.analysis.reconstruction.dataset_adapter import _sha256
 from app.analysis.reconstruction.plant_isolation import foreground_point_selection
 
 
-PLANT_TRAINING_VERSION = "plant_silhouette_v1"
+PLANT_TRAINING_VERSION = "plant_pot_surface_v3"
 
 
 _SH_C0 = 0.28209479177387814
@@ -46,6 +46,7 @@ class _TrainingView:
     camera_matrix: np.ndarray
     world_to_camera: np.ndarray
     plant_mask: np.ndarray | None = None
+    crop_box: tuple[int, int, int, int] | None = None
 
 
 @dataclass(slots=True)
@@ -80,57 +81,54 @@ def _load_training_views(
     for source in dataset.views:
         image = _read_image(source.image_path, cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        width = max(1, source.image_width // image_factor)
-        height = max(1, source.image_height // image_factor)
-        if (image.shape[1], image.shape[0]) != (width, height):
-            image = cv2.resize(
-                image,
-                (width, height),
-                interpolation=cv2.INTER_AREA,
-            )
-        image_float = image.astype(np.float32) / 255.0
-
+        if image.shape[:2] != (source.image_height, source.image_width):
+            raise GsplatTrainingError("模型訓練影像尺寸與相機內參不一致。")
         valid_mask = None
         if source.valid_mask_path is not None:
             mask = _read_image(source.valid_mask_path, cv2.IMREAD_GRAYSCALE)
-            if (mask.shape[1], mask.shape[0]) != (width, height):
-                mask = cv2.resize(
-                    mask,
-                    (width, height),
-                    interpolation=cv2.INTER_NEAREST,
-                )
+            if mask.shape != image.shape[:2]:
+                raise GsplatTrainingError("有效像素遮罩尺寸與訓練影像不一致。")
             valid_mask = mask > 0
-
-        loss_weight = (
-            valid_mask.astype(np.float32)
-            if valid_mask is not None
-            else np.ones((height, width), dtype=np.float32)
-        )
         plant_pixels = None
+        x0, y0, x1, y1 = 0, 0, source.image_width, source.image_height
         if use_plant_mask_in_loss:
-            if source.plant_mask_path is None:
-                raise GsplatTrainingError("植物模型訓練缺少植物遮罩。")
-            plant_mask = _read_image(
-                source.plant_mask_path,
-                cv2.IMREAD_GRAYSCALE,
-            )
-            if (plant_mask.shape[1], plant_mask.shape[0]) != (width, height):
-                plant_mask = cv2.resize(
-                    plant_mask,
-                    (width, height),
-                    interpolation=cv2.INTER_NEAREST,
-                )
+            foreground_path = source.foreground_mask_path or source.plant_mask_path
+            if foreground_path is None:
+                raise GsplatTrainingError("植物模型訓練缺少前景遮罩。")
+            plant_mask = _read_image(foreground_path, cv2.IMREAD_GRAYSCALE)
+            if plant_mask.shape != image.shape[:2]:
+                raise GsplatTrainingError("建模前景遮罩尺寸與訓練影像不一致。")
             plant_pixels = plant_mask > 0
             if valid_mask is not None:
                 plant_pixels &= valid_mask
             if not plant_pixels.any():
                 continue
-            loss_weight = plant_pixels.astype(np.float32)
+            yy, xx = np.where(plant_pixels)
+            padding = max(12, int(max(np.ptp(xx), np.ptp(yy)) * .15))
+            x0, x1 = max(0, int(xx.min()) - padding), min(source.image_width, int(xx.max()) + padding + 1)
+            y0, y1 = max(0, int(yy.min()) - padding), min(source.image_height, int(yy.max()) + padding + 1)
+        # Spend the preset's pixel budget on the subject. Cropping shifts the
+        # principal point; resizing scales both rows by the actual dimensions.
+        image = image[y0:y1, x0:x1]
+        crop_width, crop_height = x1 - x0, y1 - y0
+        resize_scale = min(1., max(1, source.image_width // image_factor) / crop_width,
+                           max(1, source.image_height // image_factor) / crop_height)
+        width, height = max(1, round(crop_width * resize_scale)), max(1, round(crop_height * resize_scale))
+        image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        if valid_mask is not None:
+            valid_mask = cv2.resize(valid_mask[y0:y1, x0:x1].astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST) > 0
+        if plant_pixels is not None:
+            plant_pixels = cv2.resize(plant_pixels[y0:y1, x0:x1].astype(np.uint8), (width, height), interpolation=cv2.INTER_NEAREST) > 0
+        image_float = image.astype(np.float32) / 255.0
+        loss_weight = (plant_pixels.astype(np.float32) if plant_pixels is not None else
+                       valid_mask.astype(np.float32) if valid_mask is not None else np.ones((height, width), np.float32))
+        if plant_pixels is not None:
             image_float[~plant_pixels] = 0
-
         camera_matrix = source.camera_matrix.copy()
-        camera_matrix[0, :] /= image_factor
-        camera_matrix[1, :] /= image_factor
+        camera_matrix[0, 2] -= x0
+        camera_matrix[1, 2] -= y0
+        camera_matrix[0, :] *= width / crop_width
+        camera_matrix[1, :] *= height / crop_height
         rotation = source.world_to_camera_matrix[:3, :3]
         translation_mm = source.world_to_camera_matrix[:3, 3]
         normalized_pose = np.eye(4, dtype=np.float32)
@@ -148,6 +146,7 @@ def _load_training_views(
                 camera_matrix=camera_matrix.astype(np.float32),
                 world_to_camera=normalized_pose,
                 plant_mask=plant_pixels,
+                crop_box=(x0, y0, x1, y1),
             )
         )
     if not views:
@@ -195,7 +194,7 @@ def _initial_scales(points: np.ndarray) -> np.ndarray:
     return np.log(mean_distance)[:, None].repeat(3, axis=1).astype(np.float32)
 
 
-def _ssim_loss(prediction: Any, target: Any, torch: Any) -> Any:
+def _ssim_loss(prediction: Any, target: Any, torch: Any, mask: Any = None) -> Any:
     functional = torch.nn.functional
     prediction = prediction.permute(0, 3, 1, 2)
     target = target.permute(0, 3, 1, 2)
@@ -223,7 +222,36 @@ def _ssim_loss(prediction: Any, target: Any, torch: Any) -> Any:
             * (sigma_prediction + sigma_target + c2)
         )
     )
-    return 1.0 - score.mean()
+    if mask is None:
+        return 1.0 - score.mean()
+    # Empty enclosure pixels must not dilute the structural comparison. Include
+    # windows intersecting the silhouette so its edges also contribute.
+    weights = functional.max_pool2d(mask[None, None].float(), 11, 1, 5)
+    return 1.0 - (score * weights).sum() / (weights.sum().clamp_min(1) * score.shape[1])
+
+
+def _gaussian_shape_loss(log_scales: Any, torch: Any) -> Any:
+    """Discourage needles without thickening naturally flat leaves.
+
+    The covariance eigenvalues are the squared scales. Their effective rank
+    distinguishes a disk (two substantial axes) from a needle (one), unlike a
+    longest/shortest-axis limit. Based on arxiv.org/abs/2406.11672, Eq. 10.
+    Log-space normalization keeps tiny and large Gaussians numerically stable.
+    """
+    log_probabilities = torch.log_softmax(2 * log_scales, dim=-1)
+    entropy = -(log_probabilities.exp() * log_probabilities).sum(dim=-1)
+    rank_penalty = torch.relu(-torch.log(torch.expm1(entropy) + 1e-5))
+    return rank_penalty.mean()
+
+
+def _bound_opacity_logits(opacities: Any, torch: Any) -> None:
+    # Revised splitting computes logit(1 - sqrt(1 - sigmoid(parent))).
+    # Float32 sigmoid rounds a saturated parent to exactly one (or zero),
+    # yielding infinite child logits. Keep both endpoints representable before
+    # topology changes; this does not impose a visible transparency threshold.
+    limit = math.log((1 - 1e-6) / 1e-6)
+    with torch.no_grad():
+        opacities.clamp_(min=-limit, max=limit)
 
 
 def _checkpoint(
@@ -331,6 +359,7 @@ def train_gsplat_model(
         "views": [{"id": view.view_id, "hash": view.source_sha256,
                    "pose": view.world_to_camera_matrix.tolist(), "K": view.camera_matrix.tolist(),
                    "plant_mask": _sha256(view.plant_mask_path) if foreground_only and view.plant_mask_path else None,
+                   "foreground_mask": _sha256(view.foreground_mask_path) if foreground_only and view.foreground_mask_path else None,
                    "valid_mask": _sha256(view.valid_mask_path) if view.valid_mask_path else None}
                   for view in dataset.views],
     })
@@ -385,11 +414,19 @@ def train_gsplat_model(
         optimizers["means"],
         gamma=0.01 ** (1.0 / maximum_steps),
     )
-    strategy = DefaultStrategy(verbose=False)
+    # Absolute image-plane gradients avoid cancellation across broad surfaces.
+    # gsplat recommends a higher splitting threshold with absgrad enabled.
+    strategy = DefaultStrategy(
+        verbose=False,
+        absgrad=foreground_only,
+        grow_grad2d=8e-4 if foreground_only else 2e-4,
+        revised_opacity=foreground_only,
+    )
     strategy.refine_start_iter = min(500, max(50, maximum_steps // 20))
     strategy.refine_stop_iter = int(maximum_steps * 0.75)
     strategy.refine_every = max(50, maximum_steps // 100)
     strategy.reset_every = max(500, maximum_steps // 10)
+    strategy.pause_refine_after_reset = len(views)
     strategy.check_sanity(splats, optimizers)
     strategy_state = strategy.initialize_state(scene_scale=1.0)
     if saved is not None:
@@ -413,6 +450,7 @@ def train_gsplat_model(
                 view.loss_weight,
             ).to(device),
             "plant_mask": torch.from_numpy(view.plant_mask).to(device) if view.plant_mask is not None else None,
+            "densification_gradient_scale": float(np.mean(view.loss_weight > 0)),
             "K": torch.from_numpy(view.camera_matrix).to(device)[None],
             "viewmat": torch.from_numpy(view.world_to_camera).to(device)[None],
         })
@@ -436,6 +474,8 @@ def train_gsplat_model(
         iteration_path.write_text("".join(f"{row}\n" for row in retained), encoding="utf-8")
     report_every = max(10, maximum_steps // 200)
     checkpoint_every = max(500, maximum_steps // 10)
+    shape_start = maximum_steps // 4
+    shape_ramp = max(1, maximum_steps // 20)
 
     def persist_checkpoint() -> None:
         _checkpoint(
@@ -506,7 +546,7 @@ def train_gsplat_model(
         else:
             ssim_prediction = colors_rendered
             ssim_target = pixels
-        ssim_loss = _ssim_loss(ssim_prediction, ssim_target, torch)
+        ssim_loss = _ssim_loss(ssim_prediction, ssim_target, torch, ssim_mask)
         loss = 0.8 * l1_loss + 0.2 * ssim_loss
         if plant_mask is not None:
             # RGB alone cannot distinguish empty black space from opaque black
@@ -516,6 +556,12 @@ def train_gsplat_model(
             background_mask = ~plant_mask if mask is None else mask & ~plant_mask
             background_alpha_loss = alpha[background_mask].mean() if bool(background_mask.any()) else alpha.sum() * 0
             loss = loss + .1 * (foreground_alpha_loss + background_alpha_loss)
+            # Establish the coarse shape first, then favor surface coverage.
+            # Thin leaves remain valid: the penalty only rejects covariance
+            # collapse toward a single substantial axis, rather than flatness.
+            shape_weight = .01 * min(1., max(0., (step - shape_start) / shape_ramp))
+            if shape_weight:
+                loss = loss + shape_weight * _gaussian_shape_loss(splats["scales"], torch)
         if not torch.isfinite(loss):
             raise GsplatTrainingError("模型損失出現非有限值，已停止該 Round。")
         loss.backward()
@@ -523,6 +569,13 @@ def train_gsplat_model(
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
         scheduler.step()
+        _bound_opacity_logits(splats["opacities"], torch)
+        # DefaultStrategy assumes a loss averaged over the complete image.
+        # Foreground-normalized loss otherwise magnifies its gradient by up to
+        # 200x for this recording, creating millions of unnecessary Gaussians.
+        gradient_key = strategy.key_for_gradient
+        gradient = (info[gradient_key].absgrad if strategy.absgrad else info[gradient_key].grad)
+        gradient.mul_(item["densification_gradient_scale"])
         strategy.step_post_backward(
             params=splats,
             optimizers=optimizers,
@@ -591,6 +644,12 @@ def train_gsplat_model(
         ),
         "training_version": PLANT_TRAINING_VERSION,
         "foreground_only": foreground_only,
+        "foreground_kind": "plant_and_pot" if foreground_only and any(view.foreground_mask_path is not None for view in dataset.views) else "plant" if foreground_only else "scene",
+        "training_views": [{"view_id": view.source.view_id, "crop_box": view.crop_box,
+                            "width": view.image.shape[1], "height": view.image.shape[0]} for view in views],
+        "densification_gradient_normalized": True,
+        "surface_shape_regularization": "effective_rank" if foreground_only else None,
+        "absolute_densification_gradient": bool(strategy.absgrad),
         "initial_foreground_selection": initial_foreground_quality,
         "foreground_selection": foreground_quality,
         **({"world_center_mm": center_world_mm.tolist(), "internal_world_scale_mm": world_scale_mm}

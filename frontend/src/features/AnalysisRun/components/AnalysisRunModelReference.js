@@ -1,5 +1,6 @@
 "use client";
 
+import { PiArrowCounterClockwise } from "react-icons/pi";
 import Button from "@/components/buttons/Button";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import RetryMessage from "@/components/feedback/RetryMessage";
@@ -33,6 +34,10 @@ export default function AnalysisRunModelReference({
           disabled={locked}
           onClick={model.reset}
         >
+          <PiArrowCounterClockwise
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
           重設鏡頭
         </Button>
       </SubsectionHeader>
@@ -43,7 +48,7 @@ export default function AnalysisRunModelReference({
           role="region"
           aria-label="3D模型選點，拖曳或方向鍵旋轉，右鍵拖曳或 Shift 加方向鍵平移，滾輪或加減鍵縮放，0 重設鏡頭"
           aria-busy={!model.ready && !model.error}
-          className="aspect-[4/3] max-h-[560px] min-h-64 w-full cursor-crosshair focus-visible:outline-2 focus-visible:outline-emerald-300"
+          className="relative aspect-[4/3] max-h-[560px] min-h-64 w-full cursor-crosshair focus-visible:outline-2 focus-visible:outline-emerald-300"
         />
         {!model.ready && !model.error ? (
           <p

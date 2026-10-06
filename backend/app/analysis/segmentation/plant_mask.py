@@ -49,7 +49,9 @@ def create_plant_mask(
     brightness = max(30.0, min(60.0, float(np.percentile(value[valid > 0], 75)) + 10))
     green_pixels = (
         (hue >= 20) & (hue <= 105) & (saturation >= 24)
-        & (excess_green > 4) & (green > red) & (value >= brightness)
+        # Bright leaves can clip both red and green to 255. Requiring G > R
+        # drops entire canopies despite strong excess green over blue.
+        & (excess_green > 4) & (green >= red * .9) & (value >= brightness)
     )
     seeds = green_pixels & (excess_green >= 8) & (value >= max(40, brightness)) & (valid > 0)
     # Keep white leaf highlights and pale/yellow stems connected to foliage.

@@ -194,6 +194,26 @@ def test_old_rotating_stereo_review_migrates_to_paused_model_bootstrap_without_s
         service._runner.close()
 
 
+@pytest.mark.parametrize("stale", [True, False])
+def test_stale_reference_training_pauses_for_user_rebuild_without_starting(tmp_path, stale):
+    from app.analysis.reconstruction.gsplat_trainer import PLANT_TRAINING_VERSION
+    service, state = _service(tmp_path, "needs_review")
+    state["run"] = state["run"].model_copy(update={"method_name": "rotating", "stage": "waiting_for_model_review"})
+    service.repository.list = lambda: [state["run"]]
+    context_path = tmp_path / "pose_debug/model_reference/context.json"
+    context_path.parent.mkdir(parents=True)
+    version = "plant_silhouette_v1" if stale else PLANT_TRAINING_VERSION
+    text = json.dumps({"model": {"model_quality": {"training_version": version}}})
+    context_path.write_text(text, encoding="utf-8")
+    try:
+        service.recover_interrupted_runs()
+        assert state["run"].status == ("paused" if stale else "needs_review")
+        assert not service._runner.is_active("analysis-test")
+        assert context_path.read_text(encoding="utf-8") == text
+    finally:
+        service._runner.close()
+
+
 def _manual_model_service(tmp_path, monkeypatch):
     from test_stereo_manual_review import _review_service
     service, state, _, starts = _review_service(tmp_path, monkeypatch)
@@ -326,3 +346,14 @@ def test_existing_sparse_draft_is_retained_when_opening_full_gaussian_model(tmp_
     context["model"]["gaussian_model_path"] = str(tmp_path.parent / "outside.ply")
     with pytest.raises(ValueError):
         model_review_reference(context, tmp_path)
+
+
+def test_discarded_enclosure_sfm_points_do_not_shrink_preview_subject(tmp_path, monkeypatch):
+    service, _, _, _ = _manual_model_service(tmp_path, monkeypatch)
+    context = json.loads((tmp_path / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
+    _gaussian_review_model(tmp_path, context)
+    before = model_review_reference(context, tmp_path)
+    context['reference']['points'].extend({'id': 100 + i, 'xyz': [100 + i, 100, 100], 'rgb': [255, 255, 255]} for i in range(20))
+    after = model_review_reference(context, tmp_path)
+    assert after['radius'] == before['radius']
+    assert after['center'] == before['center']

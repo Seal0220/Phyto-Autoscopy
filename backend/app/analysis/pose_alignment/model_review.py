@@ -8,7 +8,7 @@ import numpy as np
 
 
 @lru_cache(maxsize=2)
-def _gaussian_model(path: str, size: int, modified: int):
+def _gaussian_model(path: str, size: int, modified: int, include_dark_bounds: bool = False):
     """Read gsplat's world-space PLY without changing its vertex order."""
     data = Path(path).read_bytes()
     end = data.find(b"end_header\n", 0, 65536)
@@ -39,7 +39,8 @@ def _gaussian_model(path: str, size: int, modified: int):
     rgb = np.column_stack([vertices[f"f_dc_{i}"] for i in range(3)]) * .28209479177387814 + .5
     selectable = np.isfinite(xyz).all(axis=1) & np.isfinite(rgb).all(axis=1) & (opacity >= 64 / 255) & (rgb.max(axis=1) >= 30 / 255)
     foreground = selectable & (rgb.max(axis=1) >= .3)
-    visible = xyz[foreground if foreground.sum() >= 4 else selectable]
+    framing = (np.isfinite(xyz).all(axis=1) & np.isfinite(rgb).all(axis=1) & (opacity >= 64 / 255)) if include_dark_bounds else (foreground if foreground.sum() >= 4 else selectable)
+    visible = xyz[framing]
     if len(visible) < 4:
         raise ValueError("模型沒有足夠的可見參照點。")
     # Ignore distant floaters when framing the subject, while retaining the full model.
@@ -62,13 +63,10 @@ def model_review_reference(context: dict, root: Path) -> dict:
     path = Path(path_value).resolve()
     relative = path.relative_to(root.resolve()).as_posix()
     stat = path.stat()
-    vertices, _, digest, center, radius, low, high = _gaussian_model(str(path), stat.st_size, stat.st_mtime_ns)
-    tracked = np.array([point["xyz"] for point in reference["points"]], dtype=float)
-    if len(tracked) >= 4 and np.isfinite(tracked).all():
-        tracked_low, tracked_high = np.quantile(tracked, [.05, .95], axis=0)
-        low, high = np.minimum(low, tracked_low), np.maximum(high, tracked_high)
-        center = (low + high) / 2
-        radius = max(float(np.linalg.norm(high - low) / 2), 1e-6)
+    include_dark = model.get("model_quality", {}).get("foreground_kind") == "plant_and_pot"
+    vertices, _, digest, center, radius, low, high = _gaussian_model(str(path), stat.st_size, stat.st_mtime_ns, include_dark)
+    # Sparse SfM anchors also include the enclosure. Frame the visible Gaussian
+    # subject instead of widening the camera to include discarded scene points.
     signature = hashlib.sha256(f"gaussian-review-v1:{reference['signature']}:{digest}".encode()).hexdigest()
     offset = max((point["id"] for point in reference["points"]), default=-1) + 1
     first = next((view for view in reference["views"] if view.get("camera_id") == "rotating"), reference["views"][0])

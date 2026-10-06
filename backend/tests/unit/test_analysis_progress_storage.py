@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from app.database.connection import Database
 from app.database.schema import initialize_schema
-from app.models.analysis_models import AnalysisRun, AnalysisView
+from app.models.analysis_models import AnalysisRound, AnalysisRun, AnalysisView
 from app.repositories.analysis_repository import AnalysisRepository
 from app.services.analysis_service import AnalysisService
 from app.analysis.rounds.paths import round_artifact_directory, safe_artifact_name
@@ -17,6 +17,36 @@ def _run():
         created_at="2026-10-05T00:00:00+00:00", updated_at="2026-10-05T00:00:00+00:00",
         created_by="test", output_path="test", status="processing", stage="undistorting_images",
     )
+
+
+def test_round_results_sort_numbers_across_digit_boundaries(tmp_path):
+    database = Database(tmp_path / "test.sqlite3")
+    try:
+        initialize_schema(database)
+        repository = AnalysisRepository(database)
+        repository.create(_run())
+        expected_ids = ["round.01", "round.2", "round.10", "round.99", "round.100",
+                        "round.299", "round.300", "round.1000"]
+        rounds = [
+            AnalysisRound(
+                analysis_id="test", round_key=f"record:{mode_id}:{round_id}",
+                record_id="record", mode_id=mode_id, round_id=round_id,
+                status="ready",
+            )
+            for mode_id in ("mode-b", "mode-a")
+            for round_id in reversed(expected_ids)
+        ]
+        repository.replace_rounds_and_views("test", rounds, [])
+
+        ordered = repository.list_rounds("test")
+        assert [(item.mode_id, item.round_id) for item in ordered] == [
+            (mode_id, round_id)
+            for mode_id in ("mode-a", "mode-b")
+            for round_id in expected_ids
+        ]
+        assert {item.round_key for item in ordered} == {item.round_key for item in rounds}
+    finally:
+        database.close()
 
 
 def test_progress_does_not_rewrite_frozen_manifest_and_survives_reload(tmp_path):

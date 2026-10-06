@@ -529,7 +529,11 @@ class AnalysisRepository:
             """
             SELECT * FROM analysis_rounds
             WHERE analysis_id=?
-            ORDER BY mode_id, round_id
+            ORDER BY mode_id, CAST(SUBSTR(round_id, 7) AS INTEGER), round_id,
+                CASE WHEN INSTR(round_key, ':snapshot.') > 0
+                    THEN CAST(SUBSTR(round_key, INSTR(round_key, ':snapshot.') + 10) AS INTEGER)
+                    ELSE 0 END,
+                round_key
             """,
             (analysis_id,),
         )

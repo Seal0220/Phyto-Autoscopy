@@ -2297,6 +2297,20 @@ class AnalysisService:
 
     def recover_interrupted_runs(self) -> None:
         for run in self.repository.list():
+            if (run.method_name == "rotating" and run.stage == "waiting_for_model_review"
+                    and run.status in {"needs_review", "reviewing"}):
+                context_path = self._artifacts(run).root / "pose_debug/model_reference/context.json"
+                try:
+                    context = json.loads(context_path.read_text(encoding="utf-8"))
+                    version = context.get("model", {}).get("model_quality", {}).get("training_version")
+                except (OSError, ValueError, AttributeError):
+                    version = None
+                if version is not None and version != PLANT_TRAINING_VERSION:
+                    # Keep old artifacts/drafts, but require the user to resume
+                    # before rebuilding a reference with the new training rules.
+                    updated = self._set_state(run, status="paused", stage="estimating_reference_poses", clear_error=True)
+                    self._log(updated, "INFO", "參照模型訓練版本已更新，恢復分析後將重新建立模型。")
+                    continue
             if (run.method_name == "rotating" and not run.aruco_layout_snapshot
                     and run.stage in {"waiting_for_stereo_review", "estimating_stereo_pose"}
                     and run.status in {"needs_review", "reviewing", "failed"}):

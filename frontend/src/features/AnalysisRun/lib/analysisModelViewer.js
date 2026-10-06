@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { gaussianPointIndex } from "./analysisModelReferenceUtils";
+import { createModelMarkerLayer } from "./analysisModelMarkers";
 
 export function createModelViewer({
   element,
@@ -17,6 +18,7 @@ export function createModelViewer({
   renderer.setClearColor(0x07100c, 1);
   element.appendChild(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(40, 1, radius * .001, radius * 100);
+  const markers = createModelMarkerLayer({ element, camera });
   const target = new THREE.Vector3().fromArray(reference.center);
   camera.up.fromArray(reference.initial_camera.up).normalize();
   const originalPosition = new THREE.Vector3().fromArray(reference.initial_camera.position);
@@ -35,6 +37,7 @@ export function createModelViewer({
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    markers.update();
   };
   resize();
   const reset = () => {
@@ -47,6 +50,7 @@ export function createModelViewer({
     camera.up.fromArray(reference.initial_camera.up).normalize();
     camera.lookAt(target);
     controls.update();
+    markers.update();
   };
   reset();
   const viewer = new GaussianSplats3D.Viewer({
@@ -67,22 +71,11 @@ export function createModelViewer({
   });
   const observer = new ResizeObserver(() => { resize(); viewer.forceRenderNextFrame(); });
   observer.observe(element);
-  controls.addEventListener("change", () => viewer.forceRenderNextFrame());
-  const dotGeometry = new THREE.SphereGeometry(radius * .012, 16, 12);
-  const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x34d399, depthTest: false, depthWrite: false });
-  const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-  dot.renderOrder = 9999;
-  dot.visible = false;
-  scene.add(dot);
-  const markers = new THREE.Group();
-  scene.add(markers);
-  const clearMarkers = () => {
-    for (const marker of [...markers.children]) {
-      marker.material.map.dispose();
-      marker.material.dispose();
-      markers.remove(marker);
-    }
+  const cameraChanged = () => {
+    markers.update();
+    viewer.forceRenderNextFrame();
   };
+  controls.addEventListener("change", cameraChanged);
   const pointPosition = (pointId) => {
     const index = gaussianPointIndex(reference, pointId);
     if (index !== null && loaded) {
@@ -148,6 +141,7 @@ export function createModelViewer({
     camera.fov = THREE.MathUtils.clamp(camera.fov * factor, 3, 100);
     camera.updateProjectionMatrix();
     controls.update();
+    markers.update();
     viewer.forceRenderNextFrame();
   };
   const wheel = (event) => {
@@ -224,29 +218,13 @@ export function createModelViewer({
       viewer.forceRenderNextFrame();
     },
     setSelection(pointId, pointIds = [pointId]) {
-      const position = pointPosition(pointId);
-      dot.visible = loaded && Boolean(position);
-      if (dot.visible) dot.position.copy(position);
-      clearMarkers();
+      const anchors = [];
       if (loaded) pointIds.forEach((id, number) => {
         const anchor = pointPosition(id);
         if (!anchor) return;
-        const label = document.createElement("canvas");
-        label.width = 64; label.height = 64;
-        const context = label.getContext("2d");
-        context.beginPath(); context.arc(32, 32, 25, 0, Math.PI * 2);
-        context.fillStyle = id === pointId ? "#065f46" : "#17251f";
-        context.fill(); context.strokeStyle = "#6ee7b7"; context.lineWidth = 3; context.stroke();
-        context.fillStyle = "#ffffff"; context.font = "bold 28px sans-serif";
-        context.textAlign = "center"; context.textBaseline = "middle";
-        context.fillText(String(number + 1), 32, 33);
-        const texture = new THREE.CanvasTexture(label);
-        const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false }));
-        marker.position.copy(anchor);
-        marker.scale.setScalar(radius * .06);
-        marker.renderOrder = 10000;
-        markers.add(marker);
+        anchors.push({ anchor, number: number + 1, selected: id === pointId });
       });
+      markers.setMarkers(anchors);
       viewer.forceRenderNextFrame();
     },
     setDisabled(locked) {
@@ -266,13 +244,12 @@ export function createModelViewer({
       renderer.domElement.removeEventListener("pointercancel", cancel);
       renderer.domElement.removeEventListener("wheel", wheel);
       element.removeEventListener("keydown", keyboard);
+      controls.removeEventListener("change", cameraChanged);
       controls.dispose();
+      markers.dispose();
       viewer.stop();
       try { await viewer.dispose(); }
       finally {
-        dotGeometry.dispose();
-        dotMaterial.dispose();
-        clearMarkers();
         renderer.dispose();
         renderer.forceContextLoss();
         renderer.domElement.remove();

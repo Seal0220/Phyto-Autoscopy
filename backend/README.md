@@ -92,13 +92,30 @@ durable; resuming an accepted review keeps the completed reference model.
 Earlier rotating runs waiting for direct stereo matching become **paused** on
 startup, ready for the user to resume this new workflow. No work starts by itself.
 
-With plant masking enabled, gsplat trains only plant RGB and supervises foreground
-opacity plus transparent background. Illuminated green tissue seeds the mask;
-connected pale leaf highlights and stems are retained, while the dark enclosure,
-detached lamps and pot are excluded. Multi-view mask evidence filters sparse
+With plant masking enabled, reconstruction retains the plant, pot and soil and
+supervises foreground opacity plus transparent background. The visible pot rim
+seeds a bounded segmentation of the dark pot; the enclosure and detached lamps
+are excluded. A separate plant-only mask remains available for tip measurements
+and plant-only exports. Content-derived training crops preserve small subjects at
+native resolution within the preset's pixel budget, with matching principal-point
+and resize corrections. Structural loss is evaluated near the subject, and
+densification gradients are normalized for foreground coverage to avoid runaway
+growth. After coarse fitting, covariance effective-rank regularization penalizes
+needle-like Gaussians while permitting thin leaf surfaces; a longest/shortest-axis
+limit cannot distinguish these shapes. Absolute image-plane gradients with the
+corresponding splitting threshold prevent gradient cancellation across surfaces.
+Opacity logits stay within representable sigmoid endpoints before splitting, so
+saturated parents cannot create infinite child logits or an empty PLY export.
+The shape objective follows [effective-rank regularization](https://arxiv.org/abs/2406.11672),
+and densification uses [gsplat's public strategy API](https://docs.gsplat.studio/versions/1.5.3/apis/strategy.html).
+This reduces novel-view artifacts but does not supply missing camera elevations
+or recover clipped image detail. Multi-view mask evidence filters sparse
 initialization and exported Gaussians in both relative and metric coordinates.
 Mask content and the training version invalidate older tensor checkpoints and
 reference model caches. SfM may still use scene features to estimate camera poses.
+On startup, pending rotating model reviews using an older training version become
+paused without deleting their artifacts or starting work. The user resumes the
+analysis to rebuild the reference; current-version reviews remain unchanged.
 
 For **fixed** analyses, if automatic stereo pose estimation cannot find valid shared features, the
 analysis enters **等待人工雙鏡頭配對** and expands the inline human review section.

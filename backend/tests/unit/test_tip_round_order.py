@@ -34,6 +34,7 @@ def test_single_missing_tip_is_interpolated_only_with_reliable_motion() -> None:
     landmarks = [
         TipLandmark(
             analysis_id="analysis",
+            tip_id=f"tip.{index}",
             round_key=item.round_key,
             record_id="record",
             mode_id="mode",

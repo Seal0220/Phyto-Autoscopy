@@ -37,10 +37,14 @@ class PlantPointClassification:
 
 def plant_isolation_views_from_dataset(
     dataset: object,
+    *,
+    use_reconstruction_mask: bool = False,
 ) -> list[PlantIsolationView]:
     views = []
     for view in getattr(dataset, "views", ()):
         plant_mask_path = getattr(view, "plant_mask_path", None)
+        if use_reconstruction_mask:
+            plant_mask_path = getattr(view, "foreground_mask_path", None) or plant_mask_path
         if plant_mask_path is None:
             continue
         camera_matrix = np.asarray(
@@ -194,10 +198,11 @@ def foreground_point_selection(
     dataset: object,
     *,
     minimum_count: int = 4,
+    use_reconstruction_mask: bool = True,
 ) -> tuple[np.ndarray, dict]:
-    """Keep multi-view plant evidence in either relative or metric coordinates."""
+    """Keep the reconstruction subject, or the plant alone, in either frame."""
     coordinates = np.asarray(points, dtype=np.float64)
-    views = plant_isolation_views_from_dataset(dataset)
+    views = plant_isolation_views_from_dataset(dataset, use_reconstruction_mask=use_reconstruction_mask)
     support, visibility = _projection_support(coordinates, views)
     minimum_support = min(2, len(views))
     selected = (
@@ -208,6 +213,9 @@ def foreground_point_selection(
     count = int(selected.sum())
     if count < minimum_count:
         raise ValueError("多視角植物遮罩內的三維點不足，請檢查植物影像。")
+    kind = "plant_and_pot" if use_reconstruction_mask and any(
+        getattr(view, "foreground_mask_path", None) is not None for view in getattr(dataset, "views", ())
+    ) else "plant"
     return selected, {
         "input_point_count": len(coordinates),
         "plant_point_count": count,
@@ -215,7 +223,8 @@ def foreground_point_selection(
         "supporting_view_count": len(views),
         "minimum_mask_support": minimum_support,
         "minimum_visible_mask_ratio": .5,
-        "classification_evidence": "multiview_plant_mask",
+        "classification_evidence": "multiview_reconstruction_mask" if kind == "plant_and_pot" else "multiview_plant_mask",
+        "foreground_kind": kind,
     }
 
 

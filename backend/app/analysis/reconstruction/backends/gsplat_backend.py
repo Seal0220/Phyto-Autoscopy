@@ -24,6 +24,7 @@ from app.analysis.reconstruction.gsplat_trainer import (
 from app.analysis.reconstruction.plant_isolation import (
     classify_plant_points,
     plant_isolation_views_from_dataset,
+    foreground_point_selection,
 )
 from app.analysis.reconstruction.sparse_initializer import (
     initialize_sparse_geometry,
@@ -130,8 +131,14 @@ def _plant_splat_selection(
     if result.plant_splat_mask is not None:
         return result.plant_splat_mask
     if result.training.metrics.get("foreground_only"):
-        result.plant_splat_mask = np.ones(len(result.training.splats["means"]), dtype=bool)
-        result.plant_export_quality = dict(result.training.metrics.get("foreground_selection") or {})
+        if result.training.metrics.get("foreground_kind") == "plant_and_pot":
+            points = world_space_splats(result.training)["means"].detach().cpu().numpy()
+            result.plant_splat_mask, result.plant_export_quality = foreground_point_selection(
+                points, result.training.dataset, use_reconstruction_mask=False,
+            )
+        else:
+            result.plant_splat_mask = np.ones(len(result.training.splats["means"]), dtype=bool)
+            result.plant_export_quality = dict(result.training.metrics.get("foreground_selection") or {})
         return result.plant_splat_mask
 
     splats = world_space_splats(result.training)

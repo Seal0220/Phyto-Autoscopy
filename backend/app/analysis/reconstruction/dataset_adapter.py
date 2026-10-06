@@ -15,6 +15,7 @@ from app.analysis.export.json_export import write_json_atomic
 from app.analysis.image_probe import read_analysis_image
 from app.analysis.rounds.paths import safe_artifact_name
 from app.analysis.segmentation.plant_mask import create_plant_mask
+from app.analysis.segmentation.reconstruction_mask import create_reconstruction_mask
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class PreparedRoundView:
     angle_deg: float | None
     pose_source: str
     aruco_reprojection_error_px: float | None
+    foreground_mask_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +198,7 @@ def prepare_round_dataset(
     images_dir = root / "images"
     masks_dir = root / "masks"
     plant_masks_dir = root / "plant_masks"
+    foreground_masks_dir = root / "foreground_masks"
     sparse_dir = root / "sparse" / "0"
     database_path = root / "database.db"
     metadata_path = root / "phyto_metadata.json"
@@ -262,6 +265,7 @@ def prepare_round_dataset(
             _materialize_read_only_image(mask_source, mask_destination)
 
         plant_mask_destination = None
+        foreground_mask_destination = None
         if generate_plant_mask or use_plant_mask_in_loss:
             image = _read_image(destination, cv2.IMREAD_COLOR)
             valid_mask = (
@@ -283,10 +287,14 @@ def prepare_round_dataset(
                 plant_mask_destination,
                 segmentation.mask,
             )
+            foreground = create_reconstruction_mask(image, plant_mask=segmentation.mask, valid_pixel_mask=valid_mask)
+            foreground_mask_destination = foreground_masks_dir / f"{image_name}.png"
+            _write_png(foreground_mask_destination, foreground)
             plant_mask_quality[view_id] = {
                 "foreground_ratio": segmentation.foreground_ratio,
                 "component_count": segmentation.component_count,
                 "confidence": segmentation.confidence,
+                "reconstruction_foreground_ratio": float(np.count_nonzero(foreground) / foreground.size),
             }
 
         width = int(snapshot["analysis_image_width"])
@@ -318,6 +326,7 @@ def prepare_round_dataset(
                 image_path=destination,
                 valid_mask_path=mask_destination,
                 plant_mask_path=plant_mask_destination,
+                foreground_mask_path=foreground_mask_destination,
                 image_width=width,
                 image_height=height,
                 camera_matrix=camera_matrix,
@@ -363,6 +372,7 @@ def prepare_round_dataset(
         ),
         "source_images_are_read_only": True,
         "plant_mask_in_training_loss": use_plant_mask_in_loss,
+        "reconstruction_foreground": "plant_and_pot" if use_plant_mask_in_loss else "scene",
         "plant_mask_quality": plant_mask_quality,
         "views": [
             {
@@ -379,6 +389,10 @@ def prepare_round_dataset(
                     str(item.plant_mask_path.relative_to(root))
                     if item.plant_mask_path is not None
                     else None
+                ),
+                "foreground_mask": (
+                    str(item.foreground_mask_path.relative_to(root))
+                    if item.foreground_mask_path is not None else None
                 ),
                 "image_width": item.image_width,
                 "image_height": item.image_height,
