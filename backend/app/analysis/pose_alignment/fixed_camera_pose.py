@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
@@ -23,14 +23,50 @@ def _rotation_distance_deg(
     return float(math.degrees(math.acos(cosine)))
 
 
-def _reference_index(rotations: Sequence[np.ndarray]) -> int:
-    return min(
-        range(len(rotations)),
-        key=lambda index: sum(
-            _rotation_distance_deg(rotations[index], candidate)
-            for candidate in rotations
-        ),
+def _reference_index(
+    rotations: Sequence[np.ndarray],
+    *,
+    cancel_check: Callable[[], None] | None = None,
+) -> int:
+    """Find the angular medoid, weighting identical measurements once.
+
+    Registered fixed-camera poses repeat across every capture. Comparing all
+    copies to each other is quadratic in the image count without adding any
+    information. Counts retain their original influence on the angular medoid.
+    Distinct rotations are compared in bounded NumPy blocks instead of Python
+    pairs, without approximating the rotation distance or averaging matrices.
+    """
+    if cancel_check is not None:
+        cancel_check()
+    unique, first_indices, counts = np.unique(
+        np.asarray(rotations, dtype=np.float64).reshape(-1, 9),
+        axis=0,
+        return_index=True,
+        return_counts=True,
     )
+    if cancel_check is not None:
+        cancel_check()
+    if len(unique) == 1:
+        return int(first_indices[0])
+
+    # Original order preserves the first measurement when medoid scores tie.
+    order = np.argsort(first_indices)
+    unique, first_indices, counts = unique[order], first_indices[order], counts[order]
+    scores = np.zeros(len(unique), dtype=np.float64)
+    block_size = 512
+    for start in range(0, len(unique), block_size):
+        stop = start + block_size
+        for other in range(0, len(unique), block_size):
+            if cancel_check is not None:
+                cancel_check()
+            # trace(R1 @ R2.T) equals the inner product of their nine entries.
+            angles = np.einsum("ik,jk->ij", unique[start:stop], unique[other:other + block_size])
+            angles -= 1.0
+            angles *= 0.5
+            np.clip(angles, -1.0, 1.0, out=angles)
+            np.arccos(angles, out=angles)
+            scores[start:stop] += angles @ counts[other:other + block_size]
+    return int(first_indices[int(np.argmin(scores))])
 
 
 def evaluate_fixed_camera_pose_consistency(
@@ -38,6 +74,8 @@ def evaluate_fixed_camera_pose_consistency(
     *,
     translation_warning_mm: float = 5.0,
     rotation_warning_deg: float = 2.0,
+    cancel_check: Callable[[], None] | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[list[CameraPoseResult], dict[str, dict]]:
     """Compare fixed-camera measurements with a Run-level reference.
 
@@ -47,8 +85,10 @@ def evaluate_fixed_camera_pose_consistency(
 
     updates: dict[str, CameraPoseResult] = {}
     summary: dict[str, dict] = {}
-    for camera_id in FIXED_CAMERA_IDS:
-        camera_poses = [
+    if cancel_check is not None:
+        cancel_check()
+    poses_by_camera = {
+        camera_id: [
             pose
             for pose in poses
             if (
@@ -58,6 +98,15 @@ def evaluate_fixed_camera_pose_consistency(
                 and pose.translation_vector_mm is not None
             )
         ]
+        for camera_id in FIXED_CAMERA_IDS
+    }
+    total = sum(len(items) for items in poses_by_camera.values())
+    completed = 0
+    if progress_callback is not None:
+        progress_callback(completed, total)
+    for camera_id, camera_poses in poses_by_camera.items():
+        if cancel_check is not None:
+            cancel_check()
         reference_poses = [
             pose
             for pose in camera_poses
@@ -70,6 +119,9 @@ def evaluate_fixed_camera_pose_consistency(
                 "measured_pose_count": 0,
                 "warning_view_ids": [],
             }
+            completed += len(camera_poses)
+            if progress_callback is not None:
+                progress_callback(completed, total)
             continue
 
         reference_rotations = [
@@ -80,7 +132,7 @@ def evaluate_fixed_camera_pose_consistency(
             [pose.translation_vector_mm for pose in reference_poses],
             dtype=np.float64,
         ).reshape(-1, 3)
-        reference_index = _reference_index(reference_rotations)
+        reference_index = _reference_index(reference_rotations, cancel_check=cancel_check)
         reference_rotation = reference_rotations[reference_index]
         reference_translation = np.median(
             reference_translations,
@@ -90,7 +142,9 @@ def evaluate_fixed_camera_pose_consistency(
         rotation_deviations: list[float] = []
         warning_view_ids: list[str] = []
 
-        for pose in camera_poses:
+        for index, pose in enumerate(camera_poses):
+            if index % 256 == 0 and cancel_check is not None:
+                cancel_check()
             rotation = np.asarray(
                 pose.rotation_matrix,
                 dtype=np.float64,
@@ -129,6 +183,12 @@ def evaluate_fixed_camera_pose_consistency(
                     "quality_warnings": list(dict.fromkeys(warnings)),
                 }
             )
+            completed += 1
+            if completed % 256 == 0 and progress_callback is not None:
+                progress_callback(completed, total)
+
+        if progress_callback is not None:
+            progress_callback(completed, total)
 
         summary[camera_id] = {
             "status": "warning" if warning_view_ids else "stable",

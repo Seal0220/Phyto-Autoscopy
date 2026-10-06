@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import combinations, product
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -31,6 +31,7 @@ class TriangulatedTipHypothesis:
     maximum_error_px: float
     angular_spread_deg: float
     confidence: float
+    aggregation_quality: dict[str, Any] = field(default_factory=dict)
 
 
 def _project(
@@ -123,6 +124,7 @@ def _hypothesis_from_seed(
             candidate.confidence * candidate.visibility_confidence
             for _, candidate in observations
         ],
+        camera_ids=[item.camera_id for item in observation_views],
         rejection_threshold_px=rejection_threshold_px,
     )
     errors = np.asarray(refined.reprojection_errors_px, dtype=np.float64)
@@ -166,6 +168,9 @@ def _hypothesis_from_seed(
         maximum_error_px=maximum_error,
         angular_spread_deg=spread,
         confidence=confidence,
+        aggregation_quality={**refined.quality,
+                             "supporting_camera_counts": {camera: sum(view.camera_id == camera and keep for view, keep in zip(observation_views, used))
+                                                          for camera in ("top", "side", "rotating")}},
     )
 
 
@@ -187,7 +192,30 @@ def triangulate_tip_hypotheses(
     # All camera pairs can seed a hypothesis. This keeps rotating observations
     # active when one fixed-view tip is occluded instead of using them only as
     # a local verification pass after fixed stereo.
-    for first_index, second_index in combinations(range(len(usable)), 2):
+    seed_indices = []
+    for camera in dict.fromkeys(view.camera_id for view in usable):
+        indices = [i for i, view in enumerate(usable) if view.camera_id == camera]
+        limit = 8 if camera == "rotating" else 3
+        if len(indices) <= limit:
+            seed_indices.extend(indices)
+            continue
+        best = max(indices, key=lambda i: max(c.confidence * c.visibility_confidence for c in usable[i].candidates))
+        selected = [best]
+        if camera == "rotating":
+            while len(selected) < limit:
+                remaining = [i for i in indices if i not in selected]
+                selected.append(max(remaining, key=lambda i: min(np.linalg.norm(usable[i].camera_center_world_mm - usable[j].camera_center_world_mm) for j in selected)))
+        else:
+            selected.extend(i for i in (indices[0], indices[-1]) if i not in selected)
+            for index in indices:
+                if len(selected) >= limit:
+                    break
+                if index not in selected:
+                    selected.append(index)
+        seed_indices.extend(selected)
+    # Bound hypothesis generation, then fit every matching observation from
+    # every view. Adding hundreds of repeated frames no longer grows as N^3.
+    for first_index, second_index in combinations(seed_indices, 2):
         first = usable[first_index]
         second = usable[second_index]
         baseline = np.linalg.norm(

@@ -17,49 +17,6 @@ class ViewSelectionResult:
     warnings: tuple[str, ...]
 
 
-def _selection_score(
-    view: AnalysisView,
-    pose: CameraPoseResult | None,
-    quality: ViewImageQuality | None,
-) -> float:
-    score = quality.selection_score if quality is not None else 0.0
-    if pose is not None:
-        error = (
-            pose.refinement_reprojection_error_px
-            if pose.refinement_reprojection_error_px is not None
-            else pose.aruco_reprojection_error_px
-        )
-        if error is not None:
-            score -= float(error) * 0.15
-    return score
-
-
-def _best_view(
-    views: Sequence[AnalysisView],
-    poses: Mapping[str, CameraPoseResult],
-    qualities: Mapping[str, ViewImageQuality],
-) -> AnalysisView | None:
-    valid = [
-        view
-        for view in views
-        if (pose := poses.get(view.view_id)) is not None and pose.valid
-    ]
-    if not valid:
-        return None
-    return max(
-        valid,
-        key=lambda item: (
-            _selection_score(
-                item,
-                poses.get(item.view_id),
-                qualities.get(item.view_id),
-            ),
-            item.timestamp,
-            item.view_id,
-        ),
-    )
-
-
 def select_round_reconstruction_views(
     views: Sequence[AnalysisView],
     poses: Mapping[str, CameraPoseResult],
@@ -67,29 +24,16 @@ def select_round_reconstruction_views(
 ) -> ViewSelectionResult:
     selected: set[str] = set()
     warnings: list[str] = []
-    for camera_id, label in (("top", "俯視"), ("side", "側視")):
-        candidates = [view for view in views if view.camera_id == camera_id]
-        representative = _best_view(candidates, poses, qualities)
-        if representative is None:
-            warnings.append(f"找不到具有有效姿態的{label}代表影像。")
-        else:
-            selected.add(representative.view_id)
-
-    rotating_by_angle: dict[float, list[AnalysisView]] = {}
     for view in views:
-        if view.camera_id != "rotating":
+        pose = poses.get(view.view_id)
+        if pose is None or not pose.valid:
             continue
-        if view.angle_deg is None:
+        if view.camera_id == "rotating" and view.angle_deg is None and view.motor_position_deg is None:
             continue
-        rotating_by_angle.setdefault(round(float(view.angle_deg), 6), []).append(
-            view
-        )
-    for angle, candidates in sorted(rotating_by_angle.items()):
-        representative = _best_view(candidates, poses, qualities)
-        if representative is None:
-            warnings.append(f"旋臂 {angle:g}° 沒有具有有效姿態的影像。")
-        else:
-            selected.add(representative.view_id)
+        selected.add(view.view_id)
+    for camera_id, label in (("top", "俯視"), ("side", "側視")):
+        if not any(view.camera_id == camera_id and view.view_id in selected for view in views):
+            warnings.append(f"找不到具有有效姿態的{label}影像。")
 
     updated: list[AnalysisView] = []
     for view in views:
@@ -103,12 +47,8 @@ def select_round_reconstruction_views(
                     if pose is not None and pose.failure_reason
                     else "相機姿態無效。"
                 )
-            elif view.camera_id in {"top", "side"}:
-                exclusion_reason = "固定攝影機重複影像未選為代表影像。"
-            elif view.angle_deg is None:
+            elif view.angle_deg is None and view.motor_position_deg is None:
                 exclusion_reason = "旋臂影像缺少角度資料。"
-            else:
-                exclusion_reason = "相同旋臂角度已有品質較佳的代表影像。"
         updated.append(
             view.model_copy(
                 update={
@@ -121,7 +61,7 @@ def select_round_reconstruction_views(
                     ),
                     "pose_reprojection_error_px": (
                         pose.refinement_reprojection_error_px
-                        if pose.refinement_reprojection_error_px is not None
+                        if pose is not None and pose.refinement_reprojection_error_px is not None
                         else pose.aruco_reprojection_error_px
                         if pose is not None
                         else None

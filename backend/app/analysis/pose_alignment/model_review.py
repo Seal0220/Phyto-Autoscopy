@@ -3,8 +3,52 @@ from __future__ import annotations
 import hashlib
 from functools import lru_cache
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
+
+
+def prepare_reference_point_preview(reference: dict, root: Path) -> dict:
+    """Display real SfM anchors before training; the splats are point glyphs only.
+
+    Use the existing PLY viewer/anchor validation, without running a 3DGS
+    optimizer or supplying guessed poses for cameras that have not registered.
+    """
+    points = reference["points"]
+    xyz = np.asarray([point["xyz"] for point in points], dtype=np.float32)
+    if len(points) < 4 or xyz.shape != (len(points), 3) or not np.isfinite(xyz).all():
+        raise ValueError("相機對齊缺少四個有效三維參照點。")
+    rgb = np.asarray([point.get("rgb", [255, 255, 255]) for point in points], dtype=np.float32)
+    if rgb.shape != xyz.shape or not np.isfinite(rgb).all():
+        raise ValueError("三維參照點色彩無效。")
+    names = ["x", "y", "z", "nx", "ny", "nz", "f_dc_0", "f_dc_1", "f_dc_2",
+             *(f"f_rest_{i}" for i in range(9)), "opacity", "scale_0", "scale_1", "scale_2",
+             "rot_0", "rot_1", "rot_2", "rot_3"]
+    vertices = np.zeros(len(points), dtype=[(name, "<f4") for name in names])
+    for index, name in enumerate(("x", "y", "z")):
+        vertices[name] = xyz[:, index]
+        # Brighten the point glyphs for selection, preserving their exact XYZ.
+        vertices[f"f_dc_{index}"] = (np.clip(rgb[:, index] / 255., .18, 1.) - .5) / .28209479177387814
+    low, high = np.quantile(xyz, [.05, .95], axis=0)
+    size = max(float(np.linalg.norm(high - low)) * .0025, 1e-8)
+    for index in range(3):
+        vertices[f"scale_{index}"] = np.log(size)
+    vertices["opacity"], vertices["rot_0"] = 8., 1.
+    header = (f"ply\nformat binary_little_endian 1.0\ncomment SfM alignment point glyphs; not a trained 3DGS model\n"
+              f"element vertex {len(points)}\n" + "".join(f"property float {name}\n" for name in names) + "end_header\n")
+    data = header.encode("ascii") + vertices.tobytes()
+    path = root / "alignment_points.ply"
+    root.mkdir(parents=True, exist_ok=True)
+    if not path.is_file() or path.read_bytes() != data:
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(data)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {"status": "awaiting_camera_alignment", "gaussian_model_path": str(path), "preview_paths": [],
+            "model_quality": {"coordinate_unit": "relative", "representation": "sfm_points",
+                              "reference_point_count": len(points), "training_camera_counts": {}}}
 
 
 @lru_cache(maxsize=2)

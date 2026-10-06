@@ -11,7 +11,13 @@ import {
   requestAnalysisResource,
   UnknownAnalysisMutationOutcomeError,
 } from "../lib/analysisRunApiUtils";
-import { stereoPairsAfterRefresh, stereoPairsWithModelPoint, stereoReviewRequest } from "../lib/analysisStereoReviewUtils";
+import {
+  stereoPairsAfterRefresh,
+  stereoPairsWithModelPoint,
+  stereoPairsWithMovedModelPoint,
+  stereoPairsWithoutPair,
+  stereoReviewRequest,
+} from "../lib/analysisStereoReviewUtils";
 import { knownModelPoint } from "../lib/analysisModelReferenceUtils";
 
 export default function useAnalysisRunStereoReview({
@@ -83,13 +89,15 @@ export default function useAnalysisRunStereoReview({
   function changePoint(
     camera,
     point,
+    pairIndex = selected,
   ) {
-    if (saving || unknown) return;
+    if (saving || unknown || !Number.isInteger(pairIndex) || pairIndex < 0 || pairIndex >= pairs.length) return;
     setValidation(null);
     setError("");
     setPairs((previous) => previous.map(
-      (pair, index) => index === selected ? { ...pair, [camera]: point } : pair,
+      (pair, index) => index === pairIndex ? { ...pair, [camera]: point } : pair,
     ));
+    setSelected(pairIndex);
   }
 
   function addPair() {
@@ -112,14 +120,35 @@ export default function useAnalysisRunStereoReview({
     setSelected(next.selected);
   }
 
-  function removePair() {
-    if (saving || unknown) return;
+  function moveModelPoint(
+    pointId,
+    nextPointId,
+  ) {
+    if (saving || unknown || !review?.reference || !knownModelPoint(review.reference, nextPointId)) return false;
+    const next = stereoPairsWithMovedModelPoint(pairs, pointId, nextPointId);
+    if (!next) {
+      setError("此位置已有參照點，請選擇其他位置。");
+      return false;
+    }
     setValidation(null);
     setError("");
-    setPairs((previous) => previous.length > 1
-      ? previous.filter((_, index) => index !== selected)
-      : [{ top: null, side: null }]);
-    setSelected(Math.max(0, selected - 1));
+    setPairs(next.pairs);
+    setSelected(next.selected);
+    return true;
+  }
+
+  function removePair(index = selected) {
+    if (saving || unknown) return;
+    const next = stereoPairsWithoutPair(pairs, selected, index);
+    setValidation(null);
+    setError("");
+    setPairs(next.pairs);
+    setSelected(next.selected);
+  }
+
+  function removeModelPoint(pointId) {
+    const index = pairs.findIndex((pair) => pair.model_point_id === pointId);
+    if (index >= 0) removePair(index);
   }
 
   async function submit() {
@@ -191,6 +220,8 @@ export default function useAnalysisRunStereoReview({
     load,
     changePoint,
     changeModelPoint,
+    moveModelPoint,
+    removeModelPoint,
     addPair,
     removePair,
     submit,

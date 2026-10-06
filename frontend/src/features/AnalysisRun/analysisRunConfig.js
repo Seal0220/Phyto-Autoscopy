@@ -25,9 +25,12 @@ export const ANALYSIS_PROGRESS_UNITS = {
   validation_completed: "張",
   undistorting_images: "張",
   estimating_stereo_pose: "組",
+  checking_pose_consistency: "筆",
+  saving_camera_poses: "輪",
   waiting_for_stereo_review: "組",
   estimating_reference_poses: "%",
   building_reference_model: "%",
+  building_alignment_preview: "%",
   aligning_model_cameras: "組",
   waiting_for_model_review: "組",
 };

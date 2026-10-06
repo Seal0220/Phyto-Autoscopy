@@ -59,6 +59,12 @@ def initialize_sparse_geometry(
                    if image.image_id in reconstruction.reg_image_ids()}
         for view in dataset.views:
             image = by_name.get(view.image_name)
+            # PnP-aligned fixed views supervise the same relative geometry even
+            # when COLMAP could not register their tracks automatically.
+            if (dataset.coordinate_unit == "relative"
+                    and view.camera_id in {"top", "side"}
+                    and view.pose_source == "model_reference"):
+                continue
             if image is None or not np.allclose(image.cam_from_world().matrix(), view.world_to_camera_matrix[:3], atol=1e-6):
                 raise SparseInitializationError("參照模型姿態與訓練影像不一致。")
         dataset.sparse_dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +78,8 @@ def initialize_sparse_geometry(
             progress_callback("initializing_round_geometry", 1)
         return {"reconstruction_path": str(dataset.sparse_dir), "point_cloud_path": str(cloud),
                 "quality": {"point_count": reconstruction.num_points3D(), "coordinate_unit": dataset.coordinate_unit,
+                            "training_camera_counts": {camera: sum(view.camera_id == camera for view in dataset.views)
+                                                       for camera in ("top", "side", "rotating")},
                             "initialization_source": "rotating_sfm_reference", "bundle_adjustment": {"enabled": False, "status": "already_initialized"}},
                 "refined_camera_poses": []}
 

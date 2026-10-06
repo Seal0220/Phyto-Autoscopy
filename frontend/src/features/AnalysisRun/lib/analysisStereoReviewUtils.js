@@ -97,3 +97,30 @@ export function stereoPairsAfterRefresh(
   // Keep valid image marks, but never reinterpret an old Gaussian ID as a new model vertex.
   return pairs.map(({ top, side }) => ({ top, side }));
 }
+
+export function stereoPairsWithMovedModelPoint(
+  pairs,
+  pointId,
+  nextPointId,
+) {
+  const index = pairs.findIndex((pair) => pair.model_point_id === pointId);
+  if (index < 0 || !Number.isInteger(nextPointId)
+    || pairs.some((pair, number) => number !== index && pair.model_point_id === nextPointId)) return null;
+  return {
+    pairs: pairs.map((pair, number) => number === index ? { ...pair, model_point_id: nextPointId } : pair),
+    selected: index,
+  };
+}
+
+export function stereoPairsWithoutPair(
+  pairs,
+  selected,
+  index,
+) {
+  if (!Number.isInteger(index) || index < 0 || index >= pairs.length) return { pairs, selected };
+  const remaining = pairs.filter((_, number) => number !== index);
+  return {
+    pairs: remaining.length ? remaining : [{ top: null, side: null }],
+    selected: Math.max(0, selected > index ? selected - 1 : Math.min(selected, remaining.length - 1)),
+  };
+}

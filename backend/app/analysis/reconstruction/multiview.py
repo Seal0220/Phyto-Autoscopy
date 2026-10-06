@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import cos, radians, sin
 from typing import Any, Sequence
 
@@ -13,6 +13,7 @@ class MultiviewResult:
     point: np.ndarray
     reprojection_errors_px: tuple[float, ...]
     used_observations: tuple[bool, ...]
+    quality: dict[str, Any] = field(default_factory=dict)
 
 
 def _normalized_axis(axis: Sequence[float]) -> np.ndarray:
@@ -182,12 +183,55 @@ def _errors(
     return np.asarray(values, dtype=np.float64)
 
 
+def _refine_reprojection(point, projections, observations, weights, huber_delta):
+    """IRLS Gauss-Newton in pixel space, rather than averaging 3-D seeds."""
+    matrices = np.asarray(projections, dtype=np.float64)
+    pixels = np.asarray(observations, dtype=np.float64)
+
+    def evaluate(value):
+        q = matrices @ np.append(value, 1.)
+        if np.any(q[:, 2] <= 1e-9):
+            return None
+        residual = q[:, :2] / q[:, 2, None] - pixels
+        norm = np.linalg.norm(residual, axis=1)
+        cost = np.sum(weights * np.where(norm <= huber_delta, .5 * norm ** 2,
+                                        huber_delta * (norm - .5 * huber_delta)))
+        return q, residual, norm, cost
+
+    point = np.asarray(point, dtype=np.float64).copy()
+    for _ in range(15):
+        evaluation = evaluate(point)
+        if evaluation is None:
+            raise ValueError("定位點深度不足，無法穩定計算重投影。")
+        q, residual, norm, cost = evaluation
+        jacobian = (matrices[:, :2, :3] * q[:, 2, None, None] - q[:, :2, None] * matrices[:, 2, None, :3]) / q[:, 2, None, None] ** 2
+        robust_weights = weights * np.minimum(1., huber_delta / np.maximum(norm, 1e-12))
+        lhs = jacobian.reshape(-1, 3) * np.repeat(np.sqrt(robust_weights), 2)[:, None]
+        rhs = residual.ravel() * np.repeat(np.sqrt(robust_weights), 2)
+        delta, _, rank, _ = np.linalg.lstsq(lhs, -rhs, rcond=None)
+        if rank < 3:
+            raise ValueError("觀測的視角不足，無法精確定位三維點。")
+        if np.linalg.norm(delta) < 1e-8 * max(np.linalg.norm(point), 1.):
+            break
+        accepted = False
+        for factor in (1., .5, .25, .125, .0625):
+            candidate = point + factor * delta
+            evaluation = evaluate(candidate)
+            if evaluation is not None and evaluation[-1] <= cost:
+                point, accepted = candidate, True
+                break
+        if not accepted:
+            break
+    return point
+
+
 def robust_multiview_triangulate(
     projections: Sequence[np.ndarray],
     observations: Sequence[Sequence[float]],
     *,
     confidence: Sequence[float] | None = None,
     rejection_threshold_px: float = 8.0,
+    camera_ids: Sequence[str] | None = None,
 ) -> MultiviewResult:
     if len(projections) != len(observations) or len(projections) < 2:
         raise ValueError("多視角三角化至少需要兩組相同數量的投影與觀測。")
@@ -203,6 +247,14 @@ def robust_multiview_triangulate(
         raise ValueError("多視角觀測信心格式無效。")
     if not np.isfinite(rejection_threshold_px) or rejection_threshold_px <= 0:
         raise ValueError("多視角重投影門檻必須大於零。")
+    matrices = np.asarray(projections, dtype=np.float64)
+    pixels = np.asarray(observations, dtype=np.float64)
+    if matrices.shape != (len(projections), 3, 4) or pixels.shape != (len(projections), 2) or not np.isfinite(matrices).all() or not np.isfinite(pixels).all():
+        raise ValueError("多視角投影或像素座標格式無效。")
+    if camera_ids is not None and len(camera_ids) != len(projections):
+        raise ValueError("觀測鏡頭數量與投影不一致。")
+    if np.count_nonzero(weights > 0) < 2 or np.any(weights[:2] <= 0):
+        raise ValueError("多視角定位需要至少兩個具有信心的基準觀測。")
 
     # The first two observations form a measured two-view seed. Never let an
     # outlying additional view pull the initial solution away from that seed.
@@ -210,29 +262,44 @@ def robust_multiview_triangulate(
     errors = _errors(point, projections, observations)
     if not np.isfinite(errors[:2]).all():
         raise ValueError("雙鏡頭基準點位於相機後方或無法投影。")
-    used = np.ones(len(projections), dtype=bool)
+    used = (weights > 0) & (errors <= rejection_threshold_px)
+    if used.sum() < 2:
+        raise ValueError("基準觀測未通過重投影檢查。")
 
     # Extra views are admitted against the seed, then checked again after
     # refinement. A rejected view cannot alter the seeded coordinates.
-    for index in range(2, len(projections)):
-        used[index] = errors[index] <= rejection_threshold_px
-    for _ in range(max(1, len(projections) - 1)):
+    for _ in range(min(8, max(1, len(projections) - 1))):
         selected = np.flatnonzero(used)
-        point = _triangulate(
-            [projections[index] for index in selected],
-            [observations[index] for index in selected],
-            weights[selected],
+        active_weights = weights[selected].copy()
+        if camera_ids is not None:
+            # Repeated fixed frames must not outweigh a different viewpoint
+            # simply because a camera happened to record more snapshots.
+            active_cameras = np.asarray(camera_ids)[selected]
+            for camera in set(active_cameras):
+                group = active_cameras == camera
+                active_weights[group] /= int(group.sum())
+        point = _refine_reprojection(
+            point, matrices[selected], pixels[selected], active_weights,
+            huber_delta=max(1., rejection_threshold_px / 4.),
         )
         errors = _errors(point, projections, observations)
         outliers = used & (errors > rejection_threshold_px)
-        outliers[:2] = False
         if not outliers.any():
             break
+        if (used & ~outliers).sum() < 2:
+            raise ValueError("重投影內點不足，無法精確定位三維點。")
         used[outliers] = False
+    else:
+        raise ValueError("多視角定位的內點集合尚未收斂，請檢查錯配觀測。")
     return MultiviewResult(
         point=point,
         reprojection_errors_px=tuple(float(value) for value in errors),
         used_observations=tuple(bool(value) for value in used),
+        quality={"aggregation_method": "camera_balanced_huber_reprojection",
+                 "input_observation_count": len(projections), "accepted_observation_count": int(used.sum()),
+                 "rejected_observation_count": int((~used).sum()),
+                 "median_reprojection_error_px": float(np.median(errors[used])),
+                 "p95_reprojection_error_px": float(np.percentile(errors[used], 95))},
     )
 
 

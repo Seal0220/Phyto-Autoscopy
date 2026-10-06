@@ -8,6 +8,8 @@ import {
   stereoPairLabel,
   stereoPairsAfterRefresh,
   stereoPairsWithModelPoint,
+  stereoPairsWithMovedModelPoint,
+  stereoPairsWithoutPair,
   stereoReviewRequest,
   stereoValidationCount,
 } from "../src/features/AnalysisRun/lib/analysisStereoReviewUtils.js";
@@ -81,6 +83,34 @@ test("picking a new model anchor adds a pair without overwriting previous image 
   assert.equal(stereoPairsWithModelPoint(blank, 0, 102).selected, 2);
   const full = Array.from({ length: 200 }, (_, id) => ({ model_point_id: id }));
   assert.equal(stereoPairsWithModelPoint(full, 0, 201), null);
+});
+
+test("moving an existing model marker preserves its image marks and pair number", () => {
+  const pairs = [
+    { model_point_id: 100, top: { x_px: 10, y_px: 20 }, side: { x_px: 30, y_px: 40 } },
+    { model_point_id: 101, top: null, side: null },
+  ];
+  const moved = stereoPairsWithMovedModelPoint(pairs, 100, 120);
+  assert.equal(moved.selected, 0);
+  assert.equal(moved.pairs.length, 2);
+  assert.equal(moved.pairs[0].model_point_id, 120);
+  assert.equal(moved.pairs[0].top, pairs[0].top);
+  assert.equal(moved.pairs[0].side, pairs[0].side);
+  assert.equal(moved.pairs[1], pairs[1]);
+  assert.equal(pairs[0].model_point_id, 100);
+  assert.equal(stereoPairsWithMovedModelPoint(pairs, 100, 101), null);
+  assert.equal(stereoPairsWithMovedModelPoint(pairs, 999, 120), null);
+  assert.equal(stereoPairsWithMovedModelPoint(pairs, 100, NaN), null);
+});
+
+test("removing a specific group keeps the selected correspondence and one editable blank", () => {
+  const pairs = [100, 101, 102].map((model_point_id) => ({ model_point_id, top: null, side: null }));
+  assert.deepEqual(stereoPairsWithoutPair(pairs, 2, 0), { pairs: pairs.slice(1), selected: 1 });
+  assert.deepEqual(stereoPairsWithoutPair(pairs, 0, 2), { pairs: pairs.slice(0, 2), selected: 0 });
+  assert.deepEqual(stereoPairsWithoutPair(pairs, 2, 2), { pairs: pairs.slice(0, 2), selected: 1 });
+  assert.deepEqual(stereoPairsWithoutPair(pairs, 1, 1), { pairs: [pairs[0], pairs[2]], selected: 1 });
+  assert.deepEqual(stereoPairsWithoutPair([pairs[0]], 0, 0), { pairs: [{ top: null, side: null }], selected: 0 });
+  assert.deepEqual(stereoPairsWithoutPair(pairs, 1, -1), { pairs, selected: 1 });
 });
 
 test("manual point coordinates are exact for resized and fullscreen letterboxed images", () => {

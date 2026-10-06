@@ -149,6 +149,11 @@ def _load_training_views(
                 crop_box=(x0, y0, x1, y1),
             )
         )
+    required_fixed = {source.camera_id for source in dataset.views} & {"top", "side"}
+    missing_fixed = required_fixed - {view.source.camera_id for view in views}
+    if missing_fixed:
+        labels = "、".join("俯視" if camera == "top" else "側視" for camera in sorted(missing_fixed))
+        raise GsplatTrainingError(f"{labels}固定鏡頭遮罩沒有有效前景，無法加入模型訓練。")
     if not views:
         raise GsplatTrainingError("模型訓練沒有可用的植物影像。")
     return tuple(views)
@@ -645,7 +650,9 @@ def train_gsplat_model(
         "training_version": PLANT_TRAINING_VERSION,
         "foreground_only": foreground_only,
         "foreground_kind": "plant_and_pot" if foreground_only and any(view.foreground_mask_path is not None for view in dataset.views) else "plant" if foreground_only else "scene",
-        "training_views": [{"view_id": view.source.view_id, "crop_box": view.crop_box,
+        "training_camera_counts": {camera: sum(view.source.camera_id == camera for view in views)
+                                   for camera in ("top", "side", "rotating")},
+        "training_views": [{"view_id": view.source.view_id, "camera_id": view.source.camera_id, "crop_box": view.crop_box,
                             "width": view.image.shape[1], "height": view.image.shape[0]} for view in views],
         "densification_gradient_normalized": True,
         "surface_shape_regularization": "effective_rank" if foreground_only else None,

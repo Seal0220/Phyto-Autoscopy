@@ -61,18 +61,32 @@ pause; forced termination can replay iterations since the latest snapshot.
 Native extraction or triangulation calls finish their current step before a pause
 takes effect. Source identity and checkpoint outputs are checked before reuse.
 
-For **rotating** analyses without ArUco, rotating images first establish unknown
-poses with CUDA SIFT and COLMAP mapping. Motor angles and registered camera
-centres fit a rotation axis and a circular initial pose prior; position and
-orientation residuals remain in the quality report. A 3DGS reference model is
-trained in that relative coordinate frame before either fixed camera must align.
-Its existing sparse tracks initialize training directly, without a second
-extraction/matching pass. The fixed cameras then register against the reference
-through the rotating views, so direct top/side feature overlap is not required.
+For **rotating** analyses without ArUco, all valid images from the reference
+round's three cameras enter CUDA SIFT and joint COLMAP mapping. Plant/pot/soil
+feature masks exclude background equipment. Initialization requires a verified
+rotating pair with a motor baseline of 10–90 degrees; repeated fixed frames
+cannot establish depth. Motor angles and registered camera centres fit a
+rotation axis and a circular pose prior, with residuals in the quality report.
+Fixed-camera poses use MAD outlier rejection and Huber-weighted camera-centre
+and SO(3) rotation means. If both cameras register, reference 3DGS trains once
+using every valid image in the shared relative coordinate frame. Otherwise
+fixed-camera registration is retried before final reference training. If a camera
+still cannot register, a trained Gaussian alignment preview uses only the
+successfully registered views, keeping the selected training quality and the
+plant/pot foreground. It is marked `alignment_3dgs` with purpose
+`camera_alignment_preview`; it supplies identifiable landmarks for manual alignment
+and does not replace the final three-camera model. Missing camera poses are never
+invented. Preview training has a separate checkpoint and survives pause/resume.
+Sparse tracks initialize training without another extraction pass;
+top/side feature overlap is not required when they connect through rotating views.
 
-If registration needs help, **等待人工對齊模型** opens the actual Gaussian model
-in a WebGL viewer above the two images. Click the rendered model to select its
-world-space Gaussian anchor, drag to orbit, right-drag to pan, or scroll inside
+If registration needs help, **對齊相機** opens the trained alignment preview
+in a WebGL viewer above the two images. Legacy runs retain their existing
+Gaussian reference and drafts. Runs showing the older `sfm_points` glyphs can
+manually select **重建預覽**, which returns to camera review after creating the
+dense preview. Changing the preview signature hides stale Gaussian selections.
+Click a real world-space anchor to select it,
+drag to orbit, right-drag to pan, or scroll inside
 the preview to zoom. The only control button is **重設鏡頭**. Scrolling outside
 the preview moves the page; focused keyboard controls use arrows, Shift+arrows,
 +/- and 0. Select at least four
@@ -88,7 +102,24 @@ Only after registration does the measured stereo baseline set millimetre scale;
 the axis and measured top height define the world frame. Each round uses that
 rig and motor orbit as initial poses, followed by constrained refinement and its
 own model/tip analysis. SfM snapshots, reference training and registration are
-durable; resuming an accepted review keeps the completed reference model.
+durable; resuming an accepted review keeps its registered camera poses.
+The **final reference 3DGS training** runs only after both fixed cameras have registered, with
+all top and side images from the same round and the registered rotating views. Automatic and
+manual registrations both feed this step in the original SfM coordinate frame.
+Accepted camera poses and the alignment reference survive a pause; the joint model
+is published only after training completes, and each camera's actual training
+view count is recorded. Empty fixed-camera foreground masks fail explicitly
+instead of silently training a rotating-only model.
+Each subsequent round also selects every image with a valid camera pose and
+motor angle where required. Constrained bundle adjustment refines rotating
+poses while retaining the fixed-camera rig. Tip localization uses all matched
+observations in that round: a camera-balanced Huber reprojection fit reduces
+wrong matches and prevents one camera's duplicate frames from dominating.
+Round results record input/supporting camera counts, accepted/rejected
+observations and median/95th-percentile reprojection errors. This does not
+average coordinates across rounds or claim that pixel residuals alone prove
+absolute millimetre accuracy. Changed round selection/aggregation invalidates
+old round checkpoints while preserving accepted reference registration.
 Earlier rotating runs waiting for direct stereo matching become **paused** on
 startup, ready for the user to resume this new workflow. No work starts by itself.
 

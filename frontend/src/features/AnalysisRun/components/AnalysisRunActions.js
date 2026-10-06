@@ -113,6 +113,18 @@ export default function AnalysisRunActions({
           {pendingAction === "retry" ? "重試中…" : "重試"}
         </Button>
       ) : null}
+      {available.rebuildPreview ? (
+        <Button
+          disabled={locked}
+          onClick={() => onAction("retry")}
+        >
+          <FiRefreshCw
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {pendingAction === "retry" ? "準備中…" : "重建預覽"}
+        </Button>
+      ) : null}
       {available.reset ? (
         <Button
           disabled={locked}

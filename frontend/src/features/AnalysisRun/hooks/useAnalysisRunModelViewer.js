@@ -10,20 +10,22 @@ export default function useAnalysisRunModelViewer({
   pointIds,
   disabled,
   onPointChange,
+  onPointMove,
+  onPointRemove,
 }) {
   const element = useRef(null);
   const viewer = useRef(null);
-  const current = useRef({ reference, selectedPointId, pointIds, disabled, onPointChange });
+  const current = useRef({ reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState(0);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    current.current = { reference, selectedPointId, pointIds, disabled, onPointChange };
+    current.current = { reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove };
     viewer.current?.setDisabled(disabled);
     viewer.current?.setSelection(selectedPointId, pointIds);
-  }, [reference, selectedPointId, pointIds, disabled, onPointChange]);
+  }, [reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove]);
 
   useEffect(() => {
     let active = true;
@@ -43,6 +45,11 @@ export default function useAnalysisRunModelViewer({
           reference: current.current.reference,
           onPick: (pointId) => {
             if (active && !current.current.disabled) current.current.onPointChange(pointId);
+          },
+          onMove: (pointId, nextPointId) => active && !current.current.disabled
+            && current.current.onPointMove(pointId, nextPointId),
+          onRemove: (pointId) => {
+            if (active && !current.current.disabled) current.current.onPointRemove(pointId);
           },
           onNotice: (message) => { if (active) setNotice(message); },
           onProgress: (percent) => { if (active) setProgress(percent); },

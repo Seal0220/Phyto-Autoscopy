@@ -59,7 +59,8 @@ from app.analysis.pose_alignment.markerless_pose import (
     StereoPoseEstimationError,
 )
 from app.analysis.pose_alignment.model_reference import (
-    align_model_camera_poses, metric_model_registration, model_camera_pose,
+    aggregate_fixed_camera_poses, align_model_camera_poses, metric_model_registration, model_camera_pose,
+    reference_space_fixed_poses,
 )
 from app.analysis.pose_alignment.model_review import model_review_reference, model_review_objects
 from app.analysis.reconstruction.gsplat_trainer import PLANT_TRAINING_VERSION
@@ -2074,8 +2075,14 @@ class AnalysisService:
         raise AnalysisError("目前沒有可取消的分析工作。")
 
     def retry(self, analysis_id: str) -> AnalysisRun:
+        with self._lock:
+            return self._retry(analysis_id)
+
+    def _retry(self, analysis_id: str) -> AnalysisRun:
         run = self._require_run(analysis_id)
-        if run.status not in {"failed", "cancelled"}:
+        rebuild_preview = (run.method_name == "rotating" and run.stage == "waiting_for_model_review"
+                           and run.status in {"needs_review", "reviewing"})
+        if run.status not in {"failed", "cancelled"} and not rebuild_preview:
             raise AnalysisError("只有狀態為「失敗」或「已取消」的分析紀錄可以重試。")
         if self._runner.is_active(analysis_id) and not self._runner.wait_until_idle(
             analysis_id
@@ -2085,12 +2092,14 @@ class AnalysisService:
             run,
             status="processing",
             stage=(
-                "detecting_aruco"
+                "estimating_reference_poses"
+                if rebuild_preview
+                else "detecting_aruco"
                 if run.aruco_layout_snapshot
                 else "estimating_camera_poses"
             ),
             current_frame=0,
-            progress=0.0,
+            progress=.18 if rebuild_preview else 0.0,
             clear_error=True,
         )
         try:
@@ -2105,7 +2114,8 @@ class AnalysisService:
             if isinstance(error, AnalysisError):
                 raise
             raise AnalysisError(f"無法重新啟動分析背景工作：{error}") from error
-        self._log(resumed, "INFO", "分析已從既有 Round checkpoint 繼續執行。")
+        self._log(resumed, "INFO", "重新準備選點預覽，完成後仍需人工對齊相機。" if rebuild_preview
+                  else "分析已從既有 Round checkpoint 繼續執行。")
         return resumed
 
     def resume(self, analysis_id: str) -> AnalysisRun:
@@ -2683,7 +2693,7 @@ class AnalysisService:
         model_review = run.method_name == "rotating" and (self._artifacts(run).root / "pose_debug/model_reference/context.json").is_file()
         updated = self._set_state(run, status="needs_review", stage="waiting_for_model_review" if model_review else "waiting_for_stereo_review",
                                   manual_review_completed=False, clear_error=True)
-        self._log(updated, "WARNING", "雙鏡頭對齊模型需要人工確認，已保存模型與影像。" if model_review
+        self._log(updated, "WARNING", "相機對齊需要人工確認，已保存三維參照與影像。" if model_review
                   else "自動雙鏡頭配對不足，已保存影像，等待人工配對。")
         return updated
 
@@ -2784,8 +2794,7 @@ class AnalysisService:
                     registration = metric_model_registration(context["reference"], fixed, settings)
                     poses, quality = registration["poses"], registration["quality"]
                     quality["estimation_source"] = "manual_model_reference"
-                    self._save_step(run, "aligning_model_cameras", "registration", self._stereo_pose_signature(run), registration,
-                                    outputs=[root / "pose_debug/model_reference/context.json"])
+                    self._store_model_registration(run, registration)
                 else:
                     if isinstance(request, ModelPoseReviewRequest):
                         raise ValueError("目前沒有可供對齊的參照模型，請使用雙鏡頭配對。")
@@ -2817,11 +2826,131 @@ class AnalysisService:
         with StepJournal(self._artifacts(run).root) as journal:
             journal.save(stage, item, signature, payload, outputs=outputs)
 
+    def _store_model_registration(self, run, registration):
+        # Registration remains valid when joint training publishes a new PLY.
+        # Depending on context.json would invalidate the accepted manual pose.
+        payload = {key: value for key, value in registration.items() if key != "outputs"}
+        path = self._artifacts(run).root / "pose_debug/model_reference/registration.json"
+        write_json_atomic(path, payload)
+        self._save_step(run, "aligning_model_cameras", "registration",
+                        self._stereo_pose_signature(run), payload, outputs=[path])
+
+    @staticmethod
+    def _reference_model_job(run, reference, training_views, *, alignment_preview=False):
+        cameras = {view["camera_id"] for view in training_views}
+        if alignment_preview:
+            if (not cameras <= {"top", "side", "rotating"}
+                    or sum(view["camera_id"] == "rotating" for view in training_views) < 6
+                    or any(view.get("pose") is None for view in training_views)):
+                raise AnalysisError("選點預覽至少需要六張已對齊的旋臂影像。")
+        elif cameras != {"top", "side", "rotating"}:
+            raise AnalysisError("初始 3DGS 必須包含已對齊的俯視、側視與旋臂影像。")
+        return {"analysis_id": run.analysis_id, "round_key": training_views[0]["round_key"],
+                "artifact_root": run.output_path, "backend": "gsplat_3dgs",
+                "purpose": "camera_alignment_preview" if alignment_preview else "reference_model",
+                "world_coordinate_unit": "relative", "geometry_signature": reference["signature"],
+                "initial_sparse_path": reference["sparse_path"], "intrinsics_snapshot": run.intrinsics_snapshot,
+                "selected_views": training_views,
+                "camera_poses": [{"view_id": view["view_id"], "valid": True,
+                                  "pose_source": view.get("pose_source") or "sfm",
+                                  "rotation_matrix": np.asarray(view["pose"])[:3, :3].tolist(),
+                                  "translation_vector_mm": np.asarray(view["pose"])[:3, 3].tolist()}
+                                 for view in training_views],
+                "background": run.parameters.get("background", {}),
+                "parameters": {**run.parameters["reconstruction"], "use_constrained_bundle_adjustment": False,
+                               "export_gaussians": True, "export_render_preview": True}}
+
+    def _train_reference_model(self, run, job, output, cancel_event, *, item="model"):
+        self._check_cancel(cancel_event)
+        signature = step_signature({"training_version": PLANT_TRAINING_VERSION, "job": job})
+        model = self._saved_step(run, "building_reference_model", item, signature)
+        if model is None:
+            def progress(stage, value, message):
+                self._check_cancel(cancel_event)
+                self._set_state(run, stage="building_alignment_preview" if item == "alignment_preview" else "building_reference_model",
+                                current_frame=int(value * 100), total_frames=100,
+                                progress=(.26 + value * .02) if item == "joint_model" else (.22 + value * .04))
+            model = run_reconstruction_worker(job, output, cancel_event, progress_callback=progress)
+            self._check_cancel(cancel_event)
+            self._save_step(run, "building_reference_model", item, signature, model,
+                            outputs=[Path(model["gaussian_model_path"]), *map(Path, model["preview_paths"])])
+        return model, signature
+
+    def _build_alignment_preview(self, run, context, reference_root, cancel_event):
+        # A dense, trained preview makes physical landmarks identifiable before
+        # all cameras register. Never invent a pose for an unregistered camera.
+        training_views = [view for view in context["reference"]["views"] if view.get("pose") is not None]
+        job = self._reference_model_job(run, context["reference"], training_views, alignment_preview=True)
+        model, signature = self._train_reference_model(
+            run, job, reference_root / "alignment_preview", cancel_event, item="alignment_preview",
+        )
+        quality = {**model["model_quality"], "representation": "alignment_3dgs", "purpose": "camera_alignment_preview"}
+        model = {**model, "status": "awaiting_camera_alignment", "model_quality": quality}
+        model_review_reference({**context, "model": model}, self._artifacts(run).root)
+        return {**context, "model": model, "alignment_preview_signature": signature,
+                "training_camera_counts": quality.get("training_camera_counts", {})}
+
+    def _joint_reference_views(self, run, context, registration, views, undistorted_by_view):
+        root = self._artifacts(run).root
+        fixed_ids = set(context["fixed_view_ids"])
+        round_keys = {view.round_key for view in views if view.view_id in fixed_ids}
+        # Legacy contexts listed only one stereo pair. Expand that same round,
+        # preserving accepted reference coordinates and manual camera alignment.
+        fixed_views = [view for view in views if view.round_key in round_keys and view.camera_id in {"top", "side"}]
+        if {view.camera_id for view in fixed_views} != {"top", "side"}:
+            raise AnalysisError("共同建模缺少已對齊的俯視或側視影像。")
+        poses = reference_space_fixed_poses(registration)
+        training_views = [view for view in context["reference"]["views"] if view["camera_id"] == "rotating"]
+        if not training_views:
+            raise AnalysisError("共同建模缺少有效的旋臂姿態。")
+        for view in fixed_views:
+            metadata = undistorted_by_view[view.view_id]
+            image = (root / metadata["undistorted_path"]).resolve()
+            training_views.append({**view.model_dump(mode="json"), "undistorted_path": str(image),
+                                   "valid_mask_path": str((root / metadata["valid_pixel_mask_path"]).resolve()),
+                                   "undistorted_sha256": _sha256(image), "pose": poses[view.camera_id],
+                                   "pose_source": "model_reference"})
+        return training_views, fixed_views
+
+    def _build_joint_reference_model(self, run, context, registration, views, undistorted_by_view, cancel_event):
+        root = self._artifacts(run).root
+        training_views, fixed_views = self._joint_reference_views(run, context, registration, views, undistorted_by_view)
+        job = self._reference_model_job(run, context["reference"], training_views)
+        job["artifact_root"] = str(root)
+        signature = step_signature({"training_version": PLANT_TRAINING_VERSION, "job": job})
+        initial = (context["model"].get("status") in {"pending", "awaiting_camera_alignment"}
+                   or context["model"].get("model_quality", {}).get("representation") == "sfm_points")
+        if context.get("model_signature") == signature:
+            model = context["model"]
+        else:
+            self._write_processing_preview(run, fixed_views, message="本輪三鏡頭共同建模")
+            model, signature = self._train_reference_model(
+                run, job, root / "pose_debug/model_reference" / ("model" if initial else "joint_model"),
+                cancel_event, item="model" if initial else "joint_model",
+            )
+        counts = model.get("model_quality", {}).get("training_camera_counts", {})
+        if any(int(counts.get(camera, 0)) < 1 for camera in ("top", "side", "rotating")):
+            raise AnalysisError("參照模型未完整使用俯視、側視與旋臂影像，請重新建模。")
+        if context.get("model_signature") != signature:
+            updated = {**context, "model": model, "model_signature": signature, "training_camera_counts": counts,
+                       "fixed_training_view_ids": [view.view_id for view in fixed_views]}
+            # Retain the alignment PLY and legacy models for existing drafts.
+            # The final model has its own three-camera job and checkpoint.
+            if context["model"].get("model_quality", {}).get("representation") == "alignment_3dgs":
+                updated["alignment_preview"] = context["model"]
+            elif not initial:
+                updated["bootstrap_model"] = context.get("bootstrap_model", context["model"])
+            write_json_atomic(root / "pose_debug/model_reference/context.json", updated)
+            self._log(run, "INFO", f"參照模型共同訓練完成：俯視 {counts['top']} 張、側視 {counts['side']} 張、旋臂 {counts['rotating']} 張。")
+
     def _prepare_model_reference(self, run, views, undistorted_by_view, cancel_event):
         root = self._artifacts(run).root
         signature = self._stereo_pose_signature(run)
         saved = self._saved_step(run, "aligning_model_cameras", "registration", signature)
         if saved is not None:
+            context = json.loads((root / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
+            self._store_model_registration(run, saved)
+            self._build_joint_reference_model(run, context, saved, views, undistorted_by_view, cancel_event)
             return saved
         grouped = {}
         for view in views:
@@ -2838,7 +2967,7 @@ class AnalysisService:
         if not complete:
             raise AnalysisError("參照模型輪次缺少同一次擷取的俯視與側視影像。")
         fixed_pair = complete[len(complete) // 2]
-        selected = [v for v in selected_round if v.camera_id == "rotating"] + [fixed_pair["top"], fixed_pair["side"]]
+        selected = [v for v in selected_round if v.camera_id in {"top", "side", "rotating"}]
         payloads = []
         for view in selected:
             metadata = undistorted_by_view[view.view_id]
@@ -2861,46 +2990,49 @@ class AnalysisService:
         self._save_step(run, "estimating_reference_poses", "reference", reference["signature"],
                         {"backend": reference["quality"]["feature_backend"], "quality": reference["quality"]},
                         outputs=list(Path(reference["sparse_path"]).glob("*.bin")))
-        model_job = {"analysis_id": run.analysis_id, "round_key": selected[0].round_key,
-                     "artifact_root": str(root), "backend": "gsplat_3dgs",
-                     "world_coordinate_unit": "relative", "geometry_signature": reference["signature"],
-                     "initial_sparse_path": reference["sparse_path"], "intrinsics_snapshot": run.intrinsics_snapshot,
-                     "selected_views": [v for v in reference["views"] if v["camera_id"] == "rotating"],
-                     "camera_poses": [{"view_id": v["view_id"], "valid": True, "pose_source": "sfm",
-                                       "rotation_matrix": np.asarray(v["pose"])[:3, :3].tolist(),
-                                       "translation_vector_mm": np.asarray(v["pose"])[:3, 3].tolist()} for v in reference["views"] if v["camera_id"] == "rotating"],
-                     "background": run.parameters.get("background", {}),
-                     "parameters": {**run.parameters["reconstruction"], "use_constrained_bundle_adjustment": False,
-                                    "export_gaussians": True, "export_render_preview": True}}
-        model_signature = step_signature({"training_version": PLANT_TRAINING_VERSION, "job": model_job})
-        model = self._saved_step(run, "building_reference_model", "model", model_signature)
-        if model is None:
-            def model_progress(stage, value, message):
-                self._check_cancel(cancel_event)
-                self._set_state(run, stage="building_reference_model", current_frame=int(value * 100), total_frames=100,
-                                progress=.22 + value * .04)
-            model = run_reconstruction_worker(model_job, reference_root / "model", cancel_event, progress_callback=model_progress)
-            self._save_step(run, "building_reference_model", "model", model_signature, model,
-                            outputs=[Path(model["gaussian_model_path"]), *map(Path, model["preview_paths"])])
-        # The reference has been trained before either fixed camera must register.
-        context = {"reference": reference, "model": model, "model_signature": model_signature,
-                   "fixed_view_ids": [fixed_pair[c].view_id for c in ("top", "side")]}
         context_path = reference_root / "context.json"
-        if not context_path.is_file() or json.loads(context_path.read_text(encoding="utf-8")).get("model_signature") != model_signature:
-            write_json_atomic(context_path, context)
-        self._write_processing_preview(run, [fixed_pair["top"], fixed_pair["side"]], message="雙鏡頭對齊旋臂模型")
-        self._set_state(run, stage="aligning_model_cameras", current_frame=0, total_frames=2, progress=.26)
+        context = {"reference": reference, "fixed_view_ids": [fixed_pair[c].view_id for c in ("top", "side")],
+                   "model": {"status": "pending", "model_quality": {"coordinate_unit": "relative"}}}
+        if context_path.is_file():
+            previous = json.loads(context_path.read_text(encoding="utf-8"))
+            if previous["reference"]["signature"] == reference["signature"]:
+                # A previously trained reference/draft remains usable while
+                # migrating the old rotating-only workflow.
+                context = previous
+        registration = None
+        reason = None
         try:
-            aligned = run_reconstruction_worker({**sfm_job, "reference_action": "register_fixed",
-                "reference_root": str(reference_root / "sfm"), "source_signature": reference["signature"]},
-                reference_root / "alignment", cancel_event, progress_callback=progress)
-            fixed = {v["camera_id"]: v["pose"] for v in aligned["views"] if v["camera_id"] in {"top", "side"}}
-            if set(fixed) != {"top", "side"}:
-                raise ValueError("固定鏡頭尚未對齊參照模型，請選擇四個模型參照點進行人工對齊。")
-            registration = metric_model_registration(reference, fixed, run.parameters["pose_strategy"])
+            fixed, consensus = aggregate_fixed_camera_poses(reference["views"], orbit_radius=reference["orbit"]["radius"])
+            if set(fixed) == {"top", "side"}:
+                registration = metric_model_registration(reference, fixed, run.parameters["pose_strategy"])
+                registration["quality"]["fixed_pose_consensus"] = consensus
+        except ValueError as error:
+            reason = str(error)
+        self._write_processing_preview(run, [fixed_pair["top"], fixed_pair["side"]], message="對齊三鏡頭")
+        self._set_state(run, stage="aligning_model_cameras", current_frame=0, total_frames=2, progress=.22)
+        try:
+            if registration is None:
+                aligned = run_reconstruction_worker({**sfm_job, "reference_action": "register_fixed",
+                    "reference_root": str(reference_root / "sfm"), "source_signature": reference["signature"]},
+                    reference_root / "alignment", cancel_event, progress_callback=progress)
+                fixed, consensus = aggregate_fixed_camera_poses(aligned["views"], orbit_radius=reference["orbit"]["radius"])
+                if set(fixed) != {"top", "side"}:
+                    missing = "、".join({"top": "俯視", "side": "側視"}[camera] for camera in ("top", "side") if camera not in fixed)
+                    raise ValueError(f"{missing}尚未對齊，請選四組三維參照點；通過後才開始三鏡頭 3DGS 建模。")
+                registration = metric_model_registration(reference, fixed, run.parameters["pose_strategy"])
+                registration["quality"]["fixed_pose_consensus"] = consensus
         except (AnalysisError, ValueError) as error:
-            raise AnalysisReviewRequiredError(str(error)) from error
-        self._save_step(run, "aligning_model_cameras", "registration", signature, registration, outputs=[context_path])
+            reason = str(error)
+        if registration is None:
+            self._check_cancel(cancel_event)
+            if (context["model"].get("status") == "pending"
+                    or context["model"].get("model_quality", {}).get("representation") == "sfm_points"):
+                context = self._build_alignment_preview(run, context, reference_root, cancel_event)
+            write_json_atomic(context_path, context)
+            raise AnalysisReviewRequiredError(reason or "請先完成三鏡頭對齊，再開始 3DGS 建模。")
+        write_json_atomic(context_path, context)
+        self._store_model_registration(run, registration)
+        self._build_joint_reference_model(run, context, registration, views, undistorted_by_view, cancel_event)
         return registration
 
     def _run_round_preprocessing(
@@ -2983,7 +3115,7 @@ class AnalysisService:
         pose_settings = None if markerless else self._pose_settings_for_run(run)
         fixed_stereo_poses = None
         stereo_quality: dict[str, object] = {}
-        pose_signature = self._stereo_pose_signature(run)
+        pose_signature = step_signature({"rig": self._stereo_pose_signature(run), "round_pipeline_version": 2})
         model_registration = None
         if markerless and run.method_name == "rotating":
             model_registration = self._prepare_model_reference(run, views, undistorted_by_view, cancel_event)
@@ -3029,7 +3161,7 @@ class AnalysisService:
                         progress=0.18,
                     )
 
-                saved = self._saved_step(run, "estimating_stereo_pose", "rig", pose_signature)
+                saved = self._saved_step(run, "estimating_stereo_pose", "rig", self._stereo_pose_signature(run))
                 if saved is not None:
                     fixed_stereo_poses, stereo_quality = saved["poses"], saved["quality"]
                 else:
@@ -3039,7 +3171,7 @@ class AnalysisService:
                         debug_directory=artifacts.root / "pose_debug" / "stereo",
                         progress_callback=update_stereo_preview,
                     )
-                    self._save_step(run, "estimating_stereo_pose", "rig", pose_signature,
+                    self._save_step(run, "estimating_stereo_pose", "rig", self._stereo_pose_signature(run),
                                     {"poses": fixed_stereo_poses, "quality": stereo_quality})
             except StereoPoseEstimationError as error:
                 raise AnalysisReviewRequiredError(str(error)) from error
@@ -3078,9 +3210,7 @@ class AnalysisService:
                 pose_estimation_version = saved["version"]
                 failed_round_count += int(saved["failed"])
                 continue
-            if round_item.status in {"model_completed", "tip_completed"} and (
-                model_registration is None or run.pose_estimation_version == "rotating_model_reference_v1"
-            ):
+            if round_item.status in {"model_completed", "tip_completed"} and run.pose_quality.get("round_pipeline_version") == 2:
                 stored_poses.extend(
                     existing_poses_by_round.get(round_item.round_key, [])
                 )
@@ -3316,8 +3446,27 @@ class AnalysisService:
                 "quality": quality_payload, "version": pose_estimation_version, "failed": bool(failures),
             })
 
-        stored_poses, fixed_camera_consistency = (
-            evaluate_fixed_camera_pose_consistency(stored_poses)
+        last_consistency_update = float("-inf")
+
+        def update_consistency_progress(index: int, total: int) -> None:
+            nonlocal last_consistency_update
+            self._check_cancel(cancel_event)
+            now = monotonic()
+            if index != total and now - last_consistency_update < .5:
+                return
+            last_consistency_update = now
+            self._set_state(
+                run,
+                stage="checking_pose_consistency",
+                current_frame=index,
+                total_frames=total,
+                progress=0.32,
+            )
+
+        stored_poses, fixed_camera_consistency = evaluate_fixed_camera_pose_consistency(
+            stored_poses,
+            cancel_check=lambda: self._check_cancel(cancel_event),
+            progress_callback=update_consistency_progress,
         )
         final_poses_by_round: dict[
             str,
@@ -3328,11 +3477,31 @@ class AnalysisService:
                 pose.round_key,
                 [],
             ).append(pose)
-        for round_key, round_poses in final_poses_by_round.items():
+        self._set_state(
+            run,
+            stage="saving_camera_poses",
+            current_frame=0,
+            total_frames=len(final_poses_by_round),
+            progress=0.32,
+        )
+        last_export_update = float("-inf")
+        for index, (round_key, round_poses) in enumerate(final_poses_by_round.items(), start=1):
+            self._check_cancel(cancel_event)
             artifacts.write_round_camera_poses(
                 round_key,
                 round_poses,
             )
+            now = monotonic()
+            if index == len(final_poses_by_round) or now - last_export_update >= .5:
+                last_export_update = now
+                self._set_state(
+                    run,
+                    stage="saving_camera_poses",
+                    current_frame=index,
+                    total_frames=len(final_poses_by_round),
+                    progress=0.32,
+                )
+        self._check_cancel(cancel_event)
         self.repository.replace_camera_poses(run.analysis_id, stored_poses)
         self.repository.update_views(updated_views)
         pose_payload = [
@@ -3340,6 +3509,7 @@ class AnalysisService:
             for item in stored_poses
         ]
         aggregate_pose_quality = {
+            "round_pipeline_version": 2,
             "coordinate_space": "undistorted",
             "world_scale": stereo_quality if markerless else {"scale_source": "aruco"},
             "fixed_camera_consistency": fixed_camera_consistency,
@@ -3357,6 +3527,7 @@ class AnalysisService:
             updated_at=utc_now_iso(),
             failed_round_count=failed_round_count,
         )
+        self._check_cancel(cancel_event)
         artifacts.write_aggregated_pose_results(
             stored_poses,
             pose_estimation_version=pose_estimation_version,
@@ -3692,7 +3863,7 @@ class AnalysisService:
             self._write_processing_preview(
                 run,
                 self.repository.list_views(run.analysis_id, round_item.round_key),
-                message=f"{round_item.round_id} 的建模輸入（第一組擷取）",
+                message=f"{round_item.round_id} 的全部有效建模影像",
             )
             model_id = f"{run.analysis_id}:{round_item.mode_id}:{round_item.round_id}:model"
             running_model = RoundModelResult(
@@ -4406,6 +4577,7 @@ class AnalysisService:
             if run.status in {"processing", "reconstructing"}:
                 root = self._artifacts(run).root
                 signature = step_signature({
+                    "round_pipeline_version": 2,
                     "version": 3 if run.method_name == "rotating" else 2, "intrinsics": run.intrinsics_snapshot,
                     **({"training_version": PLANT_TRAINING_VERSION} if run.method_name == "rotating" else {}),
                     "pose": run.parameters.get("pose_strategy"), "aruco": run.aruco_layout_snapshot,

@@ -1,4 +1,4 @@
-"""Estimate unknown rotating poses before any fixed-camera calibration."""
+"""Align all cameras in a reference round, starting with a real motor baseline."""
 from __future__ import annotations
 
 import json
@@ -6,16 +6,75 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import cv2
 
 from app.analysis.checkpoints import StepJournal, step_signature
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.pose_alignment.model_reference import fit_motor_orbit
 from app.analysis.reconstruction.dataset_adapter import _materialize_read_only_image, _sha256
 from app.analysis.rounds.paths import safe_artifact_name
+from app.analysis.image_probe import read_analysis_image
+from app.analysis.segmentation.plant_mask import create_plant_mask
+from app.analysis.segmentation.reconstruction_mask import create_reconstruction_mask
 
 
 def reference_image_name(view: dict) -> str:
     return f"{view['camera_id']}__{safe_artifact_name(view['view_id'])}{Path(view['undistorted_path']).suffix.lower()}"
+
+
+def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], minimum_inliers: int):
+    """Repeated fixed frames have no baseline, even when they match very well."""
+    angles = {}
+    for view in views:
+        if view["camera_id"] != "rotating":
+            continue
+        angle = view.get("angle_deg")
+        if angle is None:
+            angle = view.get("motor_position_deg")
+        if angle is not None and np.isfinite(float(angle)):
+            angles[reference_image_name(view)] = float(angle)
+    with pycolmap.Database.open(database_path) as database:
+        by_id = {image.image_id: angles[image.name] for image in database.read_all_images() if image.name in angles}
+        pairs, geometries = database.read_two_view_geometries()
+        candidates = []
+        for pair, geometry in zip(pairs, geometries):
+            first, second = pycolmap.pair_id_to_image_pair(pair)
+            if first not in by_id or second not in by_id:
+                continue
+            baseline = abs((by_id[first] - by_id[second] + 180.) % 360. - 180.)
+            inliers = len(geometry.inlier_matches)
+            if 10. <= baseline <= 90. and inliers >= minimum_inliers:
+                candidates.append((inliers, baseline, first, second))
+    if not candidates:
+        return None
+    _, baseline, first, second = max(candidates)
+    return {"image_ids": [first, second], "motor_baseline_deg": baseline, "camera_id": "rotating"}
+
+
+def prepare_reference_feature_masks(views, root: Path, signature: str, *, cancel_check) -> Path:
+    """Keep plant, pot and soil tracks; moving equipment cannot anchor poses."""
+    masks = root / "feature_masks"
+    masks.mkdir(parents=True, exist_ok=True)
+    with StepJournal(root) as journal:
+        for view in views:
+            cancel_check()
+            if journal.get("reference_feature_mask", view["view_id"], signature) is not None:
+                continue
+            image = read_analysis_image(Path(view["undistorted_path"]), cv2.IMREAD_COLOR)
+            valid = read_analysis_image(Path(view["valid_mask_path"]), cv2.IMREAD_GRAYSCALE)
+            if image is None or valid is None:
+                raise ValueError("參照模型的影像或有效像素遮罩無法讀取。")
+            plant = create_plant_mask(image, valid_pixel_mask=valid)
+            foreground = create_reconstruction_mask(image, plant_mask=plant.mask, valid_pixel_mask=valid)
+            destination = masks / (reference_image_name(view) + ".png")
+            cancel_check()
+            success, encoded = cv2.imencode(".png", foreground)
+            if not success:
+                raise ValueError("參照模型特徵遮罩無法編碼。")
+            encoded.tofile(destination)
+            journal.save("reference_feature_mask", view["view_id"], signature,
+                         {"foreground_pixels": int(np.count_nonzero(foreground))}, outputs=[destination])
+    return masks
 
 
 def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dict:
@@ -25,7 +84,7 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     registering = job.get("reference_action") == "register_fixed"
     source = Path(job["reference_root"]).resolve() if registering else root
     views = job["selected_views"]
-    signature = step_signature({"version": 2, "views": views, "intrinsics": job["intrinsics_snapshot"],
+    signature = step_signature({"version": 4, "views": views, "intrinsics": job["intrinsics_snapshot"],
                                 "action": job.get("reference_action"), "settings": job["parameters"],
                                 "source_signature": job.get("source_signature")})
     with StepJournal(root) as journal:
@@ -80,6 +139,9 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
             arguments = {"database_path": database_path, "device": device}
             if stage == "extracting_features":
                 arguments.update(image_path=images, image_names=[reference_image_name(v) for v in views])
+                reader = pycolmap.ImageReaderOptions()
+                reader.mask_path = prepare_reference_feature_masks(views, source, signature, cancel_check=cancel_check)
+                arguments["reader_options"] = reader
             try:
                 operation(**arguments)
             except Exception:
@@ -92,7 +154,9 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
                 journal.save("reference_sfm", stage, signature, {"backend": backend})
             cancel_check()
     options = pycolmap.IncrementalPipelineOptions()
-    options.image_names = [reference_image_name(v) for v in views if registering or v["camera_id"] == "rotating"]
+    # All three cameras contribute tracks to the same reconstruction. Repeated
+    # fixed views still provide independent observations of the same scene.
+    options.image_names = [reference_image_name(v) for v in views]
     options.multiple_models = False
     options.min_model_size = 6
     options.ba_refine_focal_length = options.ba_refine_principal_point = options.ba_refine_extra_params = False
@@ -126,7 +190,13 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
 
     latest = sorted((p for p in snapshots.iterdir() if (p / "images.bin").is_file()), key=lambda p: p.name)
     input_path = latest[-1] if latest else source / "sparse" / "0" if registering else ""
-    progress("estimating_reference_poses", .5, "參照模型：對齊固定鏡頭" if registering else "參照模型：求旋臂初始姿態")
+    initial_pair = None
+    if not registering and not input_path:
+        initial_pair = reference_initial_pair(pycolmap, database_path, views, options.mapper.init_min_num_inliers)
+        if initial_pair is None:
+            raise ValueError("旋臂影像缺少有足夠視差的有效配對，無法建立參照模型深度。")
+        options.init_image_id1, options.init_image_id2 = initial_pair["image_ids"]
+    progress("estimating_reference_poses", .5, "參照模型：對齊固定鏡頭" if registering else "參照模型：三鏡頭共同對齊")
     models = pycolmap.incremental_mapping(database_path, images, root / "mapping", options,
         input_path=str(input_path), next_image_callback=registered_image, cancellation_token=token)
     if paused:
@@ -170,6 +240,9 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
               "views": registered_views, "orbit": orbit, "points": anchors[:8000], "sparse_path": str(sparse),
               "reference_path": str(root / "reference.json"), "point_cloud_path": str(cloud),
               "quality": {"registered_image_count": len(registered_views), "point_count": reconstruction.num_points3D(),
+                          "input_camera_counts": {camera: sum(v["camera_id"] == camera for v in views) for camera in cameras},
+                          "registered_camera_counts": {camera: sum(v["camera_id"] == camera for v in registered_views) for camera in cameras},
+                          "initial_pair": initial_pair,
                           "mean_reprojection_error_px": float(reconstruction.compute_mean_reprojection_error()),
                           "coordinate_unit": "relative", "feature_backend": backend}}
     write_json_atomic(root / "reference.json", result)

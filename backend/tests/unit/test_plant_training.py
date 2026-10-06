@@ -125,6 +125,53 @@ def test_training_uses_only_plant_rgb_and_tracks_background_opacity(tmp_path):
     assert view.image[16, 16, 1] > .5
 
 
+def test_fixed_camera_cannot_silently_disappear_from_training_with_empty_mask(tmp_path):
+    dataset = _dataset(tmp_path)
+    empty = tmp_path / "empty.png"
+    cv2.imencode(".png", np.zeros((32, 32), np.uint8))[1].tofile(empty)
+    top = replace(dataset.views[0], view_id="top", camera_id="top", plant_mask_path=empty)
+    side = replace(dataset.views[0], view_id="side", camera_id="side")
+    dataset = replace(dataset, views=(*dataset.views, top, side))
+    with pytest.raises(trainer.GsplatTrainingError, match="俯視固定鏡頭遮罩"):
+        trainer._load_training_views(dataset, image_factor=1, center_world_mm=np.zeros(3),
+                                     world_scale_mm=1, use_plant_mask_in_loss=True)
+
+
+def test_relative_sparse_seed_accepts_aligned_fixed_views_but_requires_rotating_poses(tmp_path):
+    pycolmap = pytest.importorskip("pycolmap")
+    from app.analysis.reconstruction.sparse_initializer import initialize_sparse_geometry, SparseInitializationError
+    dataset = _dataset(tmp_path)
+    rotating = tuple(replace(view, image_name=f"rotating-{index}.tiff") for index, view in enumerate(dataset.views))
+    fixed = tuple(replace(rotating[0], view_id=camera, camera_id=camera, image_name=f"{camera}.tiff",
+                          pose_source="model_reference") for camera in ("top", "side"))
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    reconstruction = pycolmap.Reconstruction()
+    reconstruction.add_camera_with_trivial_rig(pycolmap.Camera(
+        camera_id=3, model="PINHOLE", width=32, height=32, params=[16, 16, 16, 16],
+    ))
+    for index, view in enumerate(rotating, 1):
+        reconstruction.add_image_with_trivial_frame(
+            pycolmap.Image(image_id=index, camera_id=3, name=view.image_name),
+            pycolmap.Rigid3d(view.world_to_camera_matrix[:3]),
+        )
+    for point in ([0, 0, 3], [.1, 0, 3], [0, .1, 3], [.1, .1, 3]):
+        reconstruction.add_point3D(np.asarray(point, np.float64), pycolmap.Track(), np.array([80, 180, 40], np.uint8))
+    reconstruction.write(seed)
+    original = (seed / "points3D.bin").read_bytes()
+    dataset = replace(dataset, views=(*rotating, *fixed), initial_sparse_path=seed,
+                      sparse_dir=tmp_path / "sparse" / "0")
+    result = initialize_sparse_geometry(dataset, requested_device="cuda")
+    assert result["quality"]["training_camera_counts"] == {"top": 1, "side": 1, "rotating": 2}
+    assert (seed / "points3D.bin").read_bytes() == original
+    assert (dataset.sparse_dir / "points3D.bin").read_bytes() == original
+    unmatched = replace(fixed[0], camera_id="rotating", image_name="missing-rotating.tiff")
+    with pytest.raises(SparseInitializationError, match="姿態與訓練影像不一致"):
+        initialize_sparse_geometry(replace(dataset, views=(*rotating, unmatched)), requested_device="cuda")
+    with pytest.raises(SparseInitializationError, match="姿態與訓練影像不一致"):
+        initialize_sparse_geometry(replace(dataset, coordinate_unit="millimetre"), requested_device="cuda")
+
+
 @pytest.mark.parametrize("factor", [2, 8])
 def test_small_subject_crop_preserves_resolution_and_camera_projection(tmp_path, factor):
     dataset = _dataset(tmp_path)
@@ -258,6 +305,22 @@ def test_real_cuda_training_exports_only_multiview_plant_geometry(tmp_path, monk
     from app.analysis.reconstruction.native_build import configure_native_build
     configure_native_build()
     dataset = _dataset(tmp_path)
+    fixed = []
+    for camera, offset in (("top", .05), ("side", -.05)):
+        pose = np.eye(4)
+        pose[0, 3] = offset
+        fixed.append(replace(dataset.views[0], view_id=camera, camera_id=camera,
+                             world_to_camera_matrix=pose, pose_source="model_reference"))
+    dataset = replace(dataset, views=(*dataset.views, *fixed))
+    from gsplat import rendering
+    rendered_poses = []
+    original_render = rendering.rasterization
+
+    def record_render(*args, **kwargs):
+        rendered_poses.append(kwargs["viewmats"][0].detach().cpu().numpy().copy())
+        return original_render(*args, **kwargs)
+
+    monkeypatch.setattr(rendering, "rasterization", record_render)
     random = np.random.default_rng(21)
     plant = random.uniform(-.7, .7, (64, 3)).astype(np.float32)
     plant[:, 2] = 3
@@ -272,6 +335,11 @@ def test_real_cuda_training_exports_only_multiview_plant_geometry(tmp_path, monk
         "use_plant_mask": True,
     }, tmp_path / "trained")
     assert result.completed_steps == 500 and result.metrics["foreground_only"]
+    assert result.metrics["training_camera_counts"] == {"top": 1, "side": 1, "rotating": 2}
+    actual_views = trainer._load_training_views(dataset, image_factor=1, center_world_mm=result.center_world_mm,
+                                               world_scale_mm=result.world_scale_mm, use_plant_mask_in_loss=True)
+    for view in actual_views:
+        assert any(np.allclose(pose, view.world_to_camera, atol=1e-6) for pose in rendered_poses)
     assert result.metrics["initial_foreground_selection"]["background_point_count"] == 4
     exported = trainer.world_space_splats(result)["means"].detach().cpu().numpy()
     selected, _ = foreground_point_selection(exported, dataset)

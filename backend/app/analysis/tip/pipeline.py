@@ -867,6 +867,9 @@ def analyze_round_tip(
     )
     quality = {
         **optimized.quality,
+        **optimized.hypothesis.aggregation_quality,
+        "round_input_camera_counts": {camera: sum(view.camera_id == camera for view in candidate_views)
+                                      for camera in ("top", "side", "rotating")},
         "hypothesis_count": len(hypotheses),
         "mean_reprojection_error_px": actual_mean_error,
         "maximum_reprojection_error_px": actual_maximum_error,

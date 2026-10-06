@@ -14,6 +14,8 @@ export default function AnalysisRunModelReference({
   pairNumber,
   disabled,
   onPointChange,
+  onPointMove,
+  onPointRemove,
 }) {
   const model = useAnalysisRunModelViewer({
     analysisId,
@@ -22,13 +24,20 @@ export default function AnalysisRunModelReference({
     pointIds,
     disabled,
     onPointChange,
+    onPointMove,
+    onPointRemove,
   });
   const locked = disabled || !model.ready;
+  const alignmentPoints = reference.model_quality?.representation === "sfm_points";
+  const alignmentPreview = reference.model_quality?.representation === "alignment_3dgs";
   return (
     <div className="grid min-w-0 gap-3">
       <SubsectionHeader
-        title="模型選點"
-        description="點選新增參照點，拖曳旋轉，滾輪縮放。"
+        title={alignmentPoints ? "稀疏參照點" : alignmentPreview ? "對齊預覽" : "模型選點"}
+        description={alignmentPoints
+          ? "尚未建模，請按「重建預覽」取得選點模型。"
+          : alignmentPreview ? "標記相同位置，通過後建立三鏡頭模型；拖曳旋轉，滾輪縮放。"
+          : "拖動標記調整，右鍵刪除；拖曳空白旋轉，滾輪縮放。"}
       >
         <Button
           disabled={locked}
@@ -46,7 +55,7 @@ export default function AnalysisRunModelReference({
           ref={model.element}
           tabIndex={0}
           role="region"
-          aria-label="3D模型選點，拖曳或方向鍵旋轉，右鍵拖曳或 Shift 加方向鍵平移，滾輪或加減鍵縮放，0 重設鏡頭"
+          aria-label="3D模型選點，點選新增、拖動標記調整、右鍵點標記刪除；拖曳空白或方向鍵旋轉，右鍵拖曳空白平移，滾輪縮放，0 重設鏡頭"
           aria-busy={!model.ready && !model.error}
           className="relative aspect-[4/3] max-h-[560px] min-h-64 w-full cursor-crosshair focus-visible:outline-2 focus-visible:outline-emerald-300"
         />

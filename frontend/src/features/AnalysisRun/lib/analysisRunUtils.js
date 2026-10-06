@@ -186,6 +186,7 @@ export function analysisRunActionAvailability(
     pause: ACTIVE_STATUSES.has(status) && status !== "pausing",
     resume: status === "paused",
     retry: ["failed", "cancelled"].includes(status),
+    rebuildPreview: ["needs_review", "reviewing"].includes(status) && stage === "waiting_for_model_review",
     reset: ["failed", "cancelled", "paused"].includes(status),
     review: stereoReview || [
       "needs_review",

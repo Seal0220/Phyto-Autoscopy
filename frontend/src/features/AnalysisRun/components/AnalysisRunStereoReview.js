@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { PiCheck } from "react-icons/pi";
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
@@ -15,6 +16,7 @@ import {
 } from "../lib/analysisStereoReviewUtils";
 import AnalysisRunStereoReviewImage from "./AnalysisRunStereoReviewImage";
 import AnalysisRunModelReference from "./AnalysisRunModelReference";
+import AnalysisRunPairActions from "./AnalysisRunPairActions";
 
 export default function AnalysisRunStereoReview({
   analysisId,
@@ -61,10 +63,10 @@ export default function AnalysisRunStereoReview({
       ref={element}
     >
       <SubsectionHeader
-        title={modelReference ? "對齊模型" : "雙鏡頭配對"}
+        title={modelReference ? "對齊相機" : "雙鏡頭配對"}
         titleId={titleId}
         description={modelReference
-          ? "選模型上的參照點，再標記兩張影像中的同一位置，至少四組。"
+          ? "選三維參照點，再標記兩張影像中的同一位置，至少四組。"
           : "標記同一位置，可選芽尖、葉尖或莖節，盡量分散。"}
       >
         <Button
@@ -137,6 +139,8 @@ export default function AnalysisRunStereoReview({
                 pairNumber={state.selected + 1}
                 disabled={locked}
                 onPointChange={state.changeModelPoint}
+                onPointMove={state.moveModelPoint}
+                onPointRemove={state.removeModelPoint}
               />
             ) : null}
             <div className="grid min-w-0 gap-4 min-[800px]:grid-cols-2">
@@ -150,6 +154,7 @@ export default function AnalysisRunStereoReview({
                   validation={state.validation}
                   disabled={locked}
                   onPointChange={state.changePoint}
+                  onPairRemove={state.removePair}
                 />
               ))}
             </div>
@@ -164,27 +169,30 @@ export default function AnalysisRunStereoReview({
         ) : null}
       </div>
       {state.review ? (
-        <ActionRow className="w-full justify-end">
-          <Button
-            disabled={locked}
-            onClick={state.removePair}
-          >
-            刪除此組
-          </Button>
-          <Button
-            disabled={locked || state.pairs.length >= 200}
-            onClick={state.addPair}
-          >
-            新增一組
-          </Button>
-          <Button
-            variant="primary"
-            disabled={locked || incomplete || completed < state.review.minimum_pairs}
-            onClick={() => void state.submit()}
-          >
-            {state.saving ? "驗證中…" : "驗證並繼續"}
-          </Button>
-        </ActionRow>
+        <div
+          className="sticky bottom-0 z-20 grid min-w-0 rounded-xl bg-[#0e1c16]/95 px-3 pb-3 backdrop-blur-md"
+          aria-label="配對操作"
+        >
+          <ActionRow className="w-full justify-end">
+            <AnalysisRunPairActions
+              disabled={locked}
+              full={state.pairs.length >= 200}
+              onAdd={state.addPair}
+              onRemove={() => state.removePair()}
+            />
+            <Button
+              variant="primary"
+              disabled={locked || incomplete || completed < state.review.minimum_pairs}
+              onClick={() => void state.submit()}
+            >
+              <PiCheck
+                className="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {state.saving ? "驗證中…" : "驗證"}
+            </Button>
+          </ActionRow>
+        </div>
       ) : null}
     </section>
   );

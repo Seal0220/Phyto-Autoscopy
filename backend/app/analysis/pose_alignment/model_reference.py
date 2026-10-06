@@ -10,6 +10,66 @@ from app.analysis.pose_alignment.models import CameraPoseResult, PoseAlignmentRe
 from app.analysis.pose_alignment.pipeline import _quality_summary
 
 
+def aggregate_fixed_camera_poses(views: Sequence[Mapping], *, orbit_radius: float) -> tuple[dict, dict]:
+    """Estimate one physical pose per fixed camera from this round's tracks.
+
+    Camera centers are fused in world space; rotations are averaged on SO(3).
+    Median/MAD rejection and Huber weights prevent one misregistered image
+    from moving the shared camera pose. Images remain separate training views.
+    """
+    fixed, quality = {}, {}
+    for camera in ("top", "side"):
+        samples = [v for v in views if v.get("camera_id") == camera and v.get("pose") is not None]
+        if not samples:
+            continue
+        poses = np.asarray([v["pose"] for v in samples], dtype=np.float64)
+        if poses.shape[1:] != (4, 4) or not np.isfinite(poses).all():
+            raise ValueError("固定鏡頭的姿態觀測格式無效。")
+        rotations = poses[:, :3, :3]
+        if not np.allclose(rotations @ rotations.transpose(0, 2, 1), np.eye(3), atol=1e-5) or np.any(np.linalg.det(rotations) < 0):
+            raise ValueError("固定鏡頭的旋轉矩陣無效。")
+        centers = -np.einsum('nji,nj->ni', rotations, poses[:, :3, 3])
+        center = np.median(centers, axis=0)
+        distances = np.linalg.norm(rotations[:, None] - rotations[None], axis=(2, 3))
+        rotation = rotations[np.argmin(np.median(distances, axis=1))]
+        positional_floor = max(abs(float(orbit_radius)) * .002, 1e-8)
+        base_weights = np.sqrt([max(float(v.get("point_count", 1)), 1.) for v in samples])
+        base_weights /= max(float(np.median(base_weights)), 1e-12)
+        base_weights = np.clip(base_weights, .25, 4.)
+        used = np.ones(len(samples), dtype=bool)
+        for _ in range(15):
+            position_errors = np.linalg.norm(centers - center, axis=1)
+            angle_errors = np.rad2deg(np.arccos(np.clip(
+                (np.einsum('ij,nij->n', rotation, rotations) - 1.) / 2., -1., 1.,
+            )))
+            position_scale = max(float(np.median(position_errors)) + 3 * 1.4826 * float(np.median(np.abs(position_errors - np.median(position_errors)))), positional_floor)
+            angle_scale = max(float(np.median(angle_errors)) + 3 * 1.4826 * float(np.median(np.abs(angle_errors - np.median(angle_errors)))), .25)
+            used = (position_errors <= position_scale) & (angle_errors <= angle_scale)
+            if used.sum() < max(1, (len(samples) + 1) // 2):
+                raise ValueError("固定鏡頭姿態觀測不一致，請人工對齊參照模型。")
+            residual = np.maximum(position_errors / position_scale, angle_errors / angle_scale)
+            weights = base_weights * used * np.minimum(1., .5 / np.maximum(residual, 1e-12))
+            next_center = np.average(centers, axis=0, weights=weights)
+            left, _, right = np.linalg.svd(np.einsum('n,nij->ij', weights, rotations))
+            next_rotation = left @ np.diag([1., 1., np.linalg.det(left @ right)]) @ right
+            converged = np.linalg.norm(next_center - center) < positional_floor * 1e-6 and np.linalg.norm(next_rotation - rotation) < 1e-10
+            center, rotation = next_center, next_rotation
+            if converged:
+                break
+        pose = np.eye(4)
+        pose[:3, :3], pose[:3, 3] = rotation, -rotation @ center
+        fixed[camera] = pose.tolist()
+        angle_errors = np.rad2deg(np.arccos(np.clip(
+            (np.einsum('ij,nij->n', rotation, rotations) - 1.) / 2., -1., 1.,
+        )))
+        quality[camera] = {"method": "mad_huber_so3", "observation_count": len(samples),
+                           "accepted_view_ids": [str(v.get("view_id", "")) for v, keep in zip(samples, used) if keep],
+                           "rejected_view_ids": [str(v.get("view_id", "")) for v, keep in zip(samples, used) if not keep],
+                           "position_rms_relative": float(np.sqrt(np.mean(np.sum((centers[used] - center) ** 2, axis=1)))),
+                           "rotation_rms_deg": float(np.sqrt(np.mean(np.square(angle_errors[used]))))}
+    return fixed, quality
+
+
 def fit_motor_orbit(views: Sequence[Mapping]) -> dict:
     registered = [v for v in views if v.get("camera_id") == "rotating"
                   and v.get("pose") is not None and v.get("angle_deg") is not None]
@@ -162,6 +222,28 @@ def metric_model_registration(reference: Mapping, fixed: Mapping, settings: Mapp
             "reference_poses": {v["view_id"]: transform(v["pose"]) for v in reference["views"] if v.get("pose") is not None}}
 
 
+def reference_space_fixed_poses(registration: Mapping) -> dict[str, list]:
+    """Undo metric registration without moving the rotating model frame."""
+    transform = registration["quality"]["model_to_world"]
+    scale = float(transform["scale"])
+    rotation = np.asarray(transform["rotation"], dtype=np.float64)
+    translation = np.asarray(transform["translation"], dtype=np.float64)
+    if (not np.isfinite(scale) or scale <= 0 or rotation.shape != (3, 3)
+            or translation.shape != (3,) or not np.isfinite(rotation).all()
+            or not np.isfinite(translation).all()):
+        raise ValueError("固定鏡頭的模型座標轉換無效。")
+    result = {}
+    for camera in ("top", "side"):
+        metric_pose = np.asarray(registration["poses"][camera], dtype=np.float64)
+        if metric_pose.shape != (4, 4) or not np.isfinite(metric_pose).all():
+            raise ValueError(f"{camera} 固定鏡頭姿態無效。")
+        pose = np.eye(4)
+        pose[:3, :3] = metric_pose[:3, :3] @ rotation
+        pose[:3, 3] = (metric_pose[:3, 3] + metric_pose[:3, :3] @ translation) / scale
+        result[camera] = pose.tolist()
+    return result
+
+
 def align_model_camera_poses(frames: Sequence[Mapping], registration: Mapping, *, required_camera_ids: Sequence[str]) -> PoseAlignmentResult:
     orbit = registration["orbit"]
     axis, center = np.asarray(orbit["direction"]), np.asarray(orbit["center"])
@@ -192,5 +274,5 @@ def align_model_camera_poses(frames: Sequence[Mapping], registration: Mapping, *
             quality_warnings=list(orbit.get("quality_warnings", [])) if camera == "rotating" else [],
             failure_reason=None if pose is not None else "缺少模型姿態或馬達角度。"))
     quality = _quality_summary(poses, required_camera_ids, {})
-    return PoseAlignmentResult(pose_estimation_version="rotating_model_reference_v1",
+    return PoseAlignmentResult(pose_estimation_version="rotating_model_reference_v2",
         aruco_alignment_status=quality.status, camera_poses=poses, fixed_camera_poses=registration["poses"], quality=quality)
