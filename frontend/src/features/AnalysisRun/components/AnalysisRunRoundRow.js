@@ -9,6 +9,7 @@ import { ANALYSIS_MODEL_STATUS_META } from "@/features/Analysis/analysisConfig";
 import { formatNumberWithUnit } from "@/lib/formatUtils";
 
 import { analysisRoundStatus } from "../lib/analysisRunUtils";
+import AnalysisRunModelPreview from "./AnalysisRunModelPreview";
 import AnalysisRunRoundImages from "./AnalysisRunRoundImages";
 
 export default function AnalysisRunRoundRow({
@@ -33,9 +34,10 @@ export default function AnalysisRunRoundRow({
           <StatusPill tone={modelStatus.tone}>{modelStatus.label}</StatusPill>
         </span>
       )}
-      description={`${round.view_count || 0} 張影像 · 展開查看影像與結果`}
+      description={`${round.view_count || 0} 張影像 · 展開查看模型與結果`}
       onToggle={(event) => {
-        if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
+        if (event.target !== event.currentTarget) return;
+        setOpen(event.currentTarget.open);
       }}
     >
       <InformationGrid
@@ -46,7 +48,7 @@ export default function AnalysisRunRoundRow({
             label: "尖端標記信心",
             value: landmark?.valid
               ? formatNumberWithUnit(landmark.confidence * 100, "%")
-              : "不可確認",
+              : landmark ? "待補正" : "尚未處理",
             tone: landmark?.valid ? "success" : "warning",
           },
         ]}
@@ -60,12 +62,19 @@ export default function AnalysisRunRoundRow({
         </p>
       ) : null}
       {open ? (
-        <AnalysisRunRoundImages
-          analysisId={analysisId}
-          round={round}
-          model={model}
-          hasLandmark={Boolean(landmark)}
-        />
+        <>
+          <AnalysisRunRoundImages
+            analysisId={analysisId}
+            round={round}
+            hasLandmark={Boolean(landmark)}
+          />
+          {model ? (
+            <AnalysisRunModelPreview
+              analysisId={analysisId}
+              model={model}
+            />
+          ) : null}
+        </>
       ) : null}
     </DisclosurePanel>
   );

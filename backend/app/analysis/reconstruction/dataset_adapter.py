@@ -4,18 +4,28 @@ import hashlib
 import json
 import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Event
+from time import monotonic
 from typing import Any, Mapping, Sequence
 
 import cv2
 import numpy as np
 
+from app.analysis.checkpoints import StepJournal, step_signature
 from app.analysis.export.json_export import write_json_atomic
-from app.analysis.image_probe import read_analysis_image
+from app.analysis.image_probe import AnalysisImageProbe, read_analysis_image
+from app.analysis.reconstruction.backend import CancelCheck, ProgressCallback
 from app.analysis.rounds.paths import safe_artifact_name
 from app.analysis.segmentation.plant_mask import create_plant_mask
 from app.analysis.segmentation.reconstruction_mask import create_reconstruction_mask
+
+
+# Advance this version when plant/pot segmentation changes so saved masks expire.
+MASK_PREPARATION_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,9 +120,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _materialize_read_only_image(source: Path, destination: Path) -> None:
+def _materialize_read_only_image(
+    source: Path,
+    destination: Path,
+    *,
+    source_sha256: str | None = None,
+) -> None:
     if destination.exists():
-        if _sha256(destination) != _sha256(source):
+        if os.path.samefile(source, destination):
+            return
+        if _sha256(destination) != (source_sha256 or _sha256(source)):
             raise ValueError(
                 f"模型資料集中的影像內容與既有檔案衝突：{destination.name}"
             )
@@ -124,8 +141,13 @@ def _materialize_read_only_image(source: Path, destination: Path) -> None:
         shutil.copy2(source, destination)
 
 
-def _read_image(path: Path, flags: int) -> np.ndarray:
-    image = read_analysis_image(path, flags)
+def _read_image(
+    path: Path,
+    flags: int,
+    *,
+    reader: AnalysisImageProbe | None = None,
+) -> np.ndarray:
+    image = reader.read(path, flags) if reader is not None else read_analysis_image(path, flags)
     if image is None:
         raise ValueError(f"模型資料集影像無法解碼：{path.name}")
     return image
@@ -153,9 +175,145 @@ def _matrix(
     return matrix
 
 
+def automatic_dataset_workers(
+    intrinsics: Mapping,
+    *,
+    cpu_count: int | None = None,
+    available_ram: int | None = None,
+) -> int:
+    """Bound concurrent full-resolution segmentation buffers by host memory."""
+    if available_ram is None:
+        try:
+            import psutil
+
+            available_ram = int(psutil.virtual_memory().available)
+        except ImportError:
+            available_ram = 1024 ** 3
+    pixels = max((
+        int(snapshot["analysis_image_width"]) * int(snapshot["analysis_image_height"])
+        for snapshot in intrinsics.values()
+    ), default=1920 * 1080)
+    # GrabCut, component labels, color channels and native decoder buffers are
+    # considerably larger than the encoded image. Eight concurrent images gave
+    # higher measured throughput while preserving headroom for the model worker.
+    bytes_per_image = max(pixels * 160, 64 * 1024 ** 2)
+    return max(1, min(cpu_count or os.cpu_count() or 1, 8, int(available_ram * .6) // bytes_per_image))
+
+
+def _prepare_dataset_masks(
+    views: Sequence[PreparedRoundView],
+    signatures: Mapping[str, str],
+    root: Path,
+    workers: int,
+    *,
+    progress_callback: ProgressCallback | None,
+    cancel_check: CancelCheck | None,
+) -> tuple[dict[str, dict], dict[str, int | float]]:
+    """Save each mask before reporting it, with thread-owned CUDA/SQLite handles."""
+    started = monotonic()
+    results = Queue()
+    stopped = Event()
+    quality: dict[str, dict] = {}
+    completed = reused = 0
+    last_report = float("-inf")
+    # Configure WAL and create the schema before concurrent connections open.
+    with StepJournal(root):
+        pass
+
+    def check_cancel() -> None:
+        if cancel_check is not None:
+            cancel_check()
+        if stopped.is_set():
+            raise InterruptedError("建模影像前處理已停止。")
+
+    def process_batch(batch: Sequence[PreparedRoundView]) -> None:
+        valid_masks: dict[str, np.ndarray] = {}
+        with (
+            StepJournal(root) as journal,
+            AnalysisImageProbe(root / "image_cache", initialize_decoder=False) as reader,
+        ):
+            for view in batch:
+                check_cancel()
+                signature = signatures[view.view_id]
+                saved = journal.get("preparing_model_images", view.view_id, signature)
+                if saved is not None:
+                    results.put((view.view_id, saved["quality"], True))
+                    continue
+                image = _read_image(view.image_path, cv2.IMREAD_COLOR, reader=reader)
+                valid = None
+                if view.valid_mask_path is not None:
+                    # Views often share one immutable valid-pixel mask. Cache
+                    # that mask inside this thread without sharing CUDA handles.
+                    stat = view.valid_mask_path.stat()
+                    mask_key = str((stat.st_dev, stat.st_ino or str(view.valid_mask_path.resolve()), stat.st_size, stat.st_mtime_ns))
+                    if mask_key not in valid_masks:
+                        valid_masks[mask_key] = _read_image(view.valid_mask_path, cv2.IMREAD_GRAYSCALE, reader=reader)
+                    valid = valid_masks[mask_key]
+                check_cancel()
+                segmentation = create_plant_mask(image, valid_pixel_mask=valid)
+                check_cancel()
+                foreground = create_reconstruction_mask(image, plant_mask=segmentation.mask, valid_pixel_mask=valid)
+                check_cancel()
+                _write_png(view.plant_mask_path, segmentation.mask)
+                _write_png(view.foreground_mask_path, foreground)
+                mask_quality = {
+                    "foreground_ratio": segmentation.foreground_ratio,
+                    "component_count": segmentation.component_count,
+                    "confidence": segmentation.confidence,
+                    "reconstruction_foreground_ratio": float(np.count_nonzero(foreground) / foreground.size),
+                }
+                journal.save(
+                    "preparing_model_images", view.view_id, signature,
+                    {"quality": mask_quality},
+                    outputs=[view.plant_mask_path, view.foreground_mask_path],
+                )
+                results.put((view.view_id, mask_quality, False))
+
+    def report() -> None:
+        nonlocal last_report
+        now = monotonic()
+        if progress_callback is not None and (completed == len(views) or now - last_report >= .5):
+            last_report = now
+            progress_callback(
+                "selecting_reconstruction_views", .01 * completed / max(len(views), 1),
+                f"建模影像 {completed}/{len(views)} 張 · 並行 {workers} 執行緒 · 沿用遮罩 {reused} 張",
+            )
+
+    report()
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="model-image") as executor:
+        pending = {executor.submit(process_batch, views[index::workers]) for index in range(workers)}
+        try:
+            while pending:
+                check_cancel()
+                finished, pending = wait(pending, timeout=.1, return_when=FIRST_COMPLETED)
+                while True:
+                    try:
+                        view_id, mask_quality, was_reused = results.get_nowait()
+                    except Empty:
+                        break
+                    quality[view_id] = mask_quality
+                    completed += 1
+                    reused += int(was_reused)
+                report()
+                for future in finished:
+                    future.result()
+        finally:
+            stopped.set()
+            for future in pending:
+                future.cancel()
+    return quality, {
+        "workers": workers, "image_count": completed, "reused_masks": reused,
+        "generated_masks": completed - reused, "duration_seconds": monotonic() - started,
+    }
+
+
 def prepare_round_dataset(
     job: Mapping[str, Any],
     output_dir: Path,
+    *,
+    progress_callback: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+    maximum_workers: int | None = None,
 ) -> PreparedRoundDataset:
     analysis_id = str(job.get("analysis_id") or "").strip()
     round_key = str(job.get("round_key") or "").strip()
@@ -209,8 +367,11 @@ def prepare_round_dataset(
 
     prepared_views: list[PreparedRoundView] = []
     plant_mask_quality: dict[str, dict[str, float | int]] = {}
+    mask_signatures: dict[str, str] = {}
     seen_names: set[str] = set()
     for raw_view in raw_views:
+        if cancel_check is not None:
+            cancel_check()
         if not isinstance(raw_view, Mapping):
             raise ValueError("重建 View 格式無效。")
         view_id = str(raw_view.get("view_id") or "").strip()
@@ -245,10 +406,11 @@ def prepare_round_dataset(
             raise ValueError(f"模型資料集影像名稱重複：{image_name}")
         seen_names.add(image_name)
         destination = images_dir / image_name
-        _materialize_read_only_image(source, destination)
+        _materialize_read_only_image(source, destination, source_sha256=source_hash)
 
         mask_source_text = str(raw_view.get("valid_mask_path") or "").strip()
         mask_destination = None
+        mask_hash = None
         if mask_source_text:
             mask_source = Path(mask_source_text).resolve()
             if artifact_root is not None:
@@ -262,40 +424,18 @@ def prepare_round_dataset(
                 raise ValueError(f"View {view_id} 的有效像素遮罩不存在。")
             # PyCOLMAP expects ``<image-name>.png`` under its mask root.
             mask_destination = masks_dir / f"{image_name}.png"
-            _materialize_read_only_image(mask_source, mask_destination)
+            mask_hash = _sha256(mask_source)
+            _materialize_read_only_image(mask_source, mask_destination, source_sha256=mask_hash)
 
         plant_mask_destination = None
         foreground_mask_destination = None
         if generate_plant_mask or use_plant_mask_in_loss:
-            image = _read_image(destination, cv2.IMREAD_COLOR)
-            valid_mask = (
-                _read_image(
-                    mask_destination,
-                    cv2.IMREAD_GRAYSCALE,
-                )
-                if mask_destination is not None
-                else None
-            )
-            segmentation = create_plant_mask(
-                image,
-                valid_pixel_mask=valid_mask,
-            )
-            plant_mask_destination = (
-                plant_masks_dir / f"{image_name}.png"
-            )
-            _write_png(
-                plant_mask_destination,
-                segmentation.mask,
-            )
-            foreground = create_reconstruction_mask(image, plant_mask=segmentation.mask, valid_pixel_mask=valid_mask)
+            plant_mask_destination = plant_masks_dir / f"{image_name}.png"
             foreground_mask_destination = foreground_masks_dir / f"{image_name}.png"
-            _write_png(foreground_mask_destination, foreground)
-            plant_mask_quality[view_id] = {
-                "foreground_ratio": segmentation.foreground_ratio,
-                "component_count": segmentation.component_count,
-                "confidence": segmentation.confidence,
-                "reconstruction_foreground_ratio": float(np.count_nonzero(foreground) / foreground.size),
-            }
+            mask_signatures[view_id] = step_signature({
+                "version": MASK_PREPARATION_VERSION, "source_sha256": source_hash,
+                "valid_mask_sha256": mask_hash,
+            })
 
         width = int(snapshot["analysis_image_width"])
         height = int(snapshot["analysis_image_height"])
@@ -357,6 +497,16 @@ def prepare_round_dataset(
     if missing:
         raise ValueError("模型資料集缺少必要視角：" + "、".join(sorted(missing)))
 
+    preparation = {}
+    if mask_signatures:
+        if maximum_workers is not None and maximum_workers < 1:
+            raise ValueError("建模影像執行緒數至少為 1。")
+        workers = min(len(prepared_views), automatic_dataset_workers(intrinsics), maximum_workers or 8)
+        plant_mask_quality, preparation = _prepare_dataset_masks(
+            prepared_views, mask_signatures, root, workers,
+            progress_callback=progress_callback, cancel_check=cancel_check,
+        )
+
     metadata = {
         "schema_version": "1.0",
         "analysis_id": analysis_id,
@@ -374,6 +524,7 @@ def prepare_round_dataset(
         "plant_mask_in_training_loss": use_plant_mask_in_loss,
         "reconstruction_foreground": "plant_and_pot" if use_plant_mask_in_loss else "scene",
         "plant_mask_quality": plant_mask_quality,
+        "preparation": preparation,
         "views": [
             {
                 "view_id": item.view_id,

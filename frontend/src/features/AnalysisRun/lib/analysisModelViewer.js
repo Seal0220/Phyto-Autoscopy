@@ -147,7 +147,7 @@ export function createModelViewer({
   const up = (event) => {
     const click = gesture && !gesture.moved && event.button === 0;
     gesture = null;
-    if (!click || disabled || !loaded) return;
+    if (!click || disabled || !loaded || !onPick) return;
     if (!viewer.splatMesh.getSplatTree()) { onNotice("選點準備中，請稍候。"); return; }
     const hit = pickPoint(event.clientX, event.clientY);
     if (hit) {

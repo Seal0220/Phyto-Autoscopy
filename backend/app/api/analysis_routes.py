@@ -111,7 +111,10 @@ def get_active_analysis_progress(
 def get_analysis_run(
     analysis_id: str,
     context: AppContext = Depends(get_context),
+    summary: bool = False,
 ) -> AnalysisRun:
+    if summary:
+        return context.analysis_service.get_result_summary(analysis_id)
     return context.analysis_service.get_run(analysis_id)
 
 
@@ -144,6 +147,15 @@ def list_analysis_round_models(
     context: AppContext = Depends(get_context),
 ) -> list[RoundModelResult]:
     return context.analysis_service.list_round_models(analysis_id)
+
+
+@router.get("/{analysis_id}/round-model-preview", response_model=dict)
+def get_analysis_round_model_preview(
+    analysis_id: str,
+    round_key: str,
+    context: AppContext = Depends(get_context),
+) -> dict:
+    return context.analysis_service.get_round_model_preview(analysis_id, round_key)
 
 
 @router.get(

@@ -168,9 +168,16 @@ def _hypothesis_from_seed(
         maximum_error_px=maximum_error,
         angular_spread_deg=spread,
         confidence=confidence,
-        aggregation_quality={**refined.quality,
-                             "supporting_camera_counts": {camera: sum(view.camera_id == camera and keep for view, keep in zip(observation_views, used))
-                                                          for camera in ("top", "side", "rotating")}},
+        aggregation_quality={
+            **refined.quality,
+            "supporting_camera_counts": {
+                camera: sum(
+                    view.camera_id == camera and bool(keep)
+                    for view, keep in zip(observation_views, used)
+                )
+                for camera in ("top", "side", "rotating")
+            },
+        },
     )
 
 
@@ -241,6 +248,7 @@ def triangulate_tip_hypotheses(
             hypotheses.append(hypothesis)
     hypotheses.sort(
         key=lambda item: (
+            -sum(count > 0 for count in item.aggregation_quality["supporting_camera_counts"].values()),
             -sum(item.used_observations),
             -item.confidence,
             item.mean_error_px,

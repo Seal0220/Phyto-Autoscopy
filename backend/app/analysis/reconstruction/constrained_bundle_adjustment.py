@@ -66,6 +66,10 @@ def refine_sparse_camera_poses(
         )
 
     candidate = pycolmap.Reconstruction(reconstruction)
+    # COLMAP stores point errors separately from the poses and coordinates.
+    # Recompute them before and after solving instead of reading stale values.
+    candidate.update_point_3d_errors()
+    initial_reprojection_error = float(candidate.compute_mean_reprojection_error())
     config = pycolmap.BundleAdjustmentConfig()
     view_by_image_id = {
         image_id: view
@@ -144,6 +148,18 @@ def refine_sparse_camera_poses(
     sparse_backend = str(_summary_value(solver_summary, "sparse_linear_algebra_library_type", ""))
     if int(candidate.num_points3D()) < 4:
         raise RuntimeError("姿態精修使稀疏三維點不足，已保留原始相機姿態。")
+    candidate.update_point_3d_errors()
+    final_reprojection_error = float(candidate.compute_mean_reprojection_error())
+    if not all(math.isfinite(value) and value >= 0 for value in (
+        initial_reprojection_error, final_reprojection_error,
+    )):
+        raise RuntimeError("姿態精修的重投影誤差無效，已保留原始相機姿態。")
+    # Allow solver roundoff on an already near-perfect synthetic scene.
+    if final_reprojection_error > initial_reprojection_error * 1.001 + 1e-3:
+        raise RuntimeError(
+            f"姿態精修增加了重投影誤差（{initial_reprojection_error:.4f} → "
+            f"{final_reprojection_error:.4f} 像素），已保留原始相機姿態。"
+        )
     refined_camera_poses: list[dict[str, Any]] = []
     accepted_matrices: dict[int, np.ndarray] = {}
     maximum_translation = 0.0
@@ -218,12 +234,8 @@ def refine_sparse_camera_poses(
         "rotating_position_priors": len(pose_priors),
         "maximum_translation_change_mm": maximum_translation,
         "maximum_rotation_change_deg": maximum_rotation,
-        "initial_reprojection_error_px": float(
-            reconstruction.compute_mean_reprojection_error()
-        ),
-        "final_reprojection_error_px": float(
-            candidate.compute_mean_reprojection_error()
-        ),
+        "initial_reprojection_error_px": initial_reprojection_error,
+        "final_reprojection_error_px": final_reprojection_error,
         "successful_steps": int(
             _summary_value(solver_summary, "num_successful_steps", 0) or 0
         ),
@@ -234,11 +246,6 @@ def refine_sparse_camera_poses(
             _summary_value(summary, "termination_type", "unknown")
         ),
     }
-    if not all(math.isfinite(quality[key]) for key in (
-        "initial_reprojection_error_px",
-        "final_reprojection_error_px",
-    )):
-        raise RuntimeError("姿態精修的重投影誤差無效，已保留原始相機姿態。")
     # Commit only after every camera and metric has passed validation.
     for image_id, refined_matrix in accepted_matrices.items():
         view_by_image_id[image_id].world_to_camera_matrix[:] = refined_matrix

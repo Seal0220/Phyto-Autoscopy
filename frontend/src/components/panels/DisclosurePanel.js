@@ -8,7 +8,7 @@ export default function DisclosurePanel({
 }) {
   return (
     <details
-      className="group min-w-0 rounded-xl border border-white/15 bg-black/15"
+      className="min-w-0 rounded-xl border border-white/15 bg-black/15 [&[open]>summary>svg]:rotate-180"
       onToggle={onToggle}
     >
       <summary className="grid min-h-12 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 focus-visible:outline-2 focus-visible:outline-emerald-300 [&::-webkit-details-marker]:hidden">
@@ -21,7 +21,7 @@ export default function DisclosurePanel({
           ) : null}
         </span>
         <FiChevronDown
-          className="size-4 shrink-0 text-neutral-300 transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none"
+          className="size-4 shrink-0 text-neutral-300 transition-transform duration-150 motion-reduce:transition-none"
           aria-hidden="true"
         />
       </summary>

@@ -13,6 +13,9 @@ from app.analysis.checkpoints import StepJournal, step_signature
 from app.analysis.segmentation.plant_mask import create_plant_mask
 
 
+TIP_CANDIDATE_VERSION = 2
+
+
 @dataclass(frozen=True, slots=True)
 class TipCandidate2D:
     candidate_id: str
@@ -216,7 +219,7 @@ def detect_tip_candidates(
         return _detect_tip_candidates(image_path, valid_mask_path=valid_mask_path,
                                       candidate_prefix=candidate_prefix, maximum_candidates=maximum_candidates)
     paths = [image_path, *([valid_mask_path] if valid_mask_path is not None else [])]
-    signature = step_signature({"version": 1, "count": maximum_candidates,
+    signature = step_signature({"version": TIP_CANDIDATE_VERSION, "count": maximum_candidates,
                                 "inputs": [(str(path), path.stat().st_size, path.stat().st_mtime_ns) for path in paths]})
     with StepJournal(checkpoint_root) as journal:
         saved = journal.get("detecting_tip_candidates", candidate_prefix, signature)
@@ -246,6 +249,7 @@ def detect_tip_candidates(
 
 
 __all__ = [
+    "TIP_CANDIDATE_VERSION",
     "TipCandidate2D",
     "TipCandidateDetection",
     "detect_tip_candidates",

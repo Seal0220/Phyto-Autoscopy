@@ -27,6 +27,15 @@ const EMPTY_DATA = {
   quality: {},
 };
 
+const LIVE_STATUSES = new Set([
+  "processing",
+  "reconstructing",
+  "pausing",
+  "paused",
+  "needs_review",
+  "reviewing",
+]);
+
 export default function useFormalTrajectoryResults({
   analysisId,
 }) {
@@ -38,15 +47,18 @@ export default function useFormalTrajectoryResults({
   const mountedRef = useRef(false);
   const loadControllerRef = useRef(null);
   const exportControllerRef = useRef(null);
+  const statusRef = useRef("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     abortRequest(
       loadControllerRef.current,
       "已由新的正式分析結果讀取取代。",
     );
     const controller = new AbortController();
     loadControllerRef.current = controller;
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     setLoadError("");
     try {
       const payload = await loadFormalTrajectoryResults(
@@ -54,7 +66,10 @@ export default function useFormalTrajectoryResults({
         controller.signal,
       );
       if (mountedRef.current && !controller.signal.aborted
-        && loadControllerRef.current === controller) setData(payload);
+        && loadControllerRef.current === controller) {
+        statusRef.current = payload.run?.status || "";
+        setData(payload);
+      }
     } catch (error) {
       if (error?.name !== "AbortError" && !controller.signal.aborted
         && mountedRef.current && loadControllerRef.current === controller) {
@@ -74,8 +89,15 @@ export default function useFormalTrajectoryResults({
   useEffect(() => {
     mountedRef.current = true;
     void load();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible"
+        && !loadControllerRef.current && LIVE_STATUSES.has(statusRef.current)) {
+        void load({ silent: true });
+      }
+    }, 5_000);
     return () => {
       mountedRef.current = false;
+      window.clearInterval(interval);
       abortRequest(loadControllerRef.current, "分析結果頁面已關閉。");
       abortRequest(exportControllerRef.current, "分析結果頁面已關閉。");
     };

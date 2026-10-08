@@ -55,6 +55,7 @@ export default function useAnalysisRun({
   const pollingRef = useRef(false);
   const runStatusRef = useRef("");
   const lastTerminalProgressRef = useRef("");
+  const lastRoundProgressRef = useRef("");
   const {
     snapshot,
     socketError,
@@ -127,6 +128,13 @@ export default function useAnalysisRun({
       }
     } else {
       lastTerminalProgressRef.current = "";
+      const roundKey = next.round_key
+        ? `${next.round_key}:${next.round_progress === 1 ? "completed" : "processing"}`
+        : "";
+      if (roundKey && lastRoundProgressRef.current !== roundKey) {
+        lastRoundProgressRef.current = roundKey;
+        void load({ silent: true });
+      }
     }
   }, [analysisId, load]);
 

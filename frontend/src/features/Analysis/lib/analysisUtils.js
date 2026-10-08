@@ -321,7 +321,6 @@ export function createInitialAnalysisSetup(recordId = "") {
     parameters: {
       ...ANALYSIS_PARAMETER_DEFAULTS,
     },
-    manualReviewRequired: true,
   };
 }
 
@@ -654,9 +653,7 @@ export function buildAnalysisCreatePayload(setup) {
         use_skeleton_refinement: buildsRoundModels
           && Boolean(parameters.useSkeletonRefinement),
         use_temporal_prior: Boolean(parameters.useTemporalPrior),
-        wait_for_low_confidence_review: Boolean(
-          parameters.waitForLowConfidenceReview,
-        ),
+        wait_for_low_confidence_review: false,
         export_all_2d_candidates: Boolean(parameters.exportAll2dCandidates),
         save_reprojection_overlays: Boolean(
           parameters.saveReprojectionOverlays,
@@ -680,7 +677,7 @@ export function buildAnalysisCreatePayload(setup) {
           && Boolean(parameters.saveCheckpoints),
       },
     },
-    manual_review_required: Boolean(setup.manualReviewRequired),
+    manual_review_required: false,
   };
 }
 

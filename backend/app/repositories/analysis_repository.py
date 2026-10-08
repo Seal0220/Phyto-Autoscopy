@@ -179,6 +179,26 @@ class AnalysisRepository:
         )
         return self._run_from_row(row) if row else None
 
+    def get_result_summary(self, analysis_id: str) -> AnalysisRun | None:
+        """Live result metadata without loading image/pose manifests."""
+        row = self.database.fetchone(
+            """
+            SELECT analysis_id, record_id, method_name, method_version, git_commit,
+                created_at, updated_at, created_by, output_path, status, stage,
+                current_frame, total_frames, progress, manual_review_completed,
+                last_error, reconstruction_backend, reconstruction_backend_version,
+                average_reprojection_error_px, round_count, completed_round_count,
+                failed_round_count, tip_marker_count, trajectory_status,
+                '{}' AS parameters_json, '{}' AS intrinsics_snapshot_json,
+                '{}' AS aruco_layout_snapshot_json, '[]' AS camera_pose_results_json,
+                json_object('world_scale', json_extract(pose_quality_json, '$.world_scale')) AS pose_quality_json,
+                '{}' AS reconstruction_environment_json
+            FROM analysis_runs WHERE analysis_id=? AND method_name IN (?, ?)
+            """,
+            (analysis_id, *SUPPORTED_ANALYSIS_METHODS),
+        )
+        return self._run_from_row(row) if row else None
+
     def update_state(
         self,
         analysis_id: str,
@@ -638,12 +658,17 @@ class AnalysisRepository:
         self,
         analysis_id: str,
         poses: Iterable[CameraPoseResult],
+        *,
+        round_key: str | None = None,
     ) -> None:
         records = list(poses)
+        if any(item.analysis_id != analysis_id or (round_key is not None and item.round_key != round_key) for item in records):
+            raise ValueError("相機姿態不屬於指定的分析或輪次。")
         with self.database.transaction() as connection:
             connection.execute(
-                "DELETE FROM analysis_camera_poses WHERE analysis_id=?",
-                (analysis_id,),
+                "DELETE FROM analysis_camera_poses WHERE analysis_id=?"
+                + (" AND round_key=?" if round_key is not None else ""),
+                (analysis_id, round_key) if round_key is not None else (analysis_id,),
             )
             connection.executemany(
                 """

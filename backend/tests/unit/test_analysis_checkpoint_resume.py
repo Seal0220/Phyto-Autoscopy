@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from threading import Barrier, Event, RLock
 from collections import Counter
@@ -19,7 +20,7 @@ from app.analysis.intrinsics.undistortion_pipeline import (
 )
 from app.analysis.intrinsics import undistortion_pipeline
 from app.core.exceptions import AnalysisPausedError
-from app.models.analysis_models import AnalysisRun, AnalysisView
+from app.models.analysis_models import AnalysisRound, AnalysisRun, AnalysisView
 from app.services.analysis_service import AnalysisService
 
 
@@ -182,57 +183,15 @@ def _service(tmp_path, status="processing"):
         state["run"] = state["run"].model_copy(update=changes)
 
     service._require_run = get
-    service.repository = SimpleNamespace(update_state=update)
+    service.repository = SimpleNamespace(
+        update_state=update,
+        list_rounds=lambda _: [AnalysisRound(analysis_id="analysis-test", round_key="record:mode:round.01",
+                                            record_id="record", mode_id="mode", round_id="round.01", status="ready_tip_only")],
+        list_views=lambda *args: [],
+        list_tip_landmarks=lambda _: [],
+    )
     service._runner = AnalysisJobManager(service._run_job)
     return service, state
-
-
-def test_pause_resume_skips_finished_phase_and_keeps_latest_progress(tmp_path):
-    service, state = _service(tmp_path)
-    entered = Event()
-    calls = []
-    steps = []
-
-    def preprocessing(run, event):
-        calls.append("preprocessing")
-        for name in ("undistortion_manifest.json", "camera_poses.json", "pose_quality.json"):
-            (tmp_path / name).write_text("[]", encoding="utf-8")
-        return service._set_state(run, stage="estimating_camera_poses", current_frame=8, total_frames=10, progress=.3)
-
-    def models(run, event):
-        calls.append("models")
-        if len(calls) == 2:
-            steps.extend(range(7))
-            # A completed round's bundle adjustment rewrites these exports.
-            # Resuming another round must retain that refinement.
-            (tmp_path / "camera_poses.json").write_text("[\"refined\"]", encoding="utf-8")
-            (tmp_path / "pose_quality.json").write_text("[\"refined\"]", encoding="utf-8")
-            entered.set()
-            assert event.wait(5)
-            service._check_cancel(event)
-        steps.extend(range(7, 10))
-        return run
-
-    service._run_round_preprocessing = preprocessing
-    service._run_round_models = models
-    service._run_tip_markers = lambda run, event: service._set_state(run, status="completed", progress=1)
-    try:
-        service._runner.start("analysis-test")
-        assert entered.wait(5)
-        requested = service.pause("analysis-test")
-        assert requested.status == "pausing"
-        assert requested.current_frame == 8
-        assert service._runner.wait_until_idle("analysis-test", timeout=5)
-        assert state["run"].status == "paused"
-        assert service.get_progress("analysis-test").status == "paused"
-        service.resume("analysis-test")
-        assert service._runner.wait_until_idle("analysis-test", timeout=5)
-        assert state["run"].status == "completed"
-        assert calls == ["preprocessing", "models", "models"]
-        assert steps == list(range(10))
-        assert (tmp_path / "camera_poses.json").read_text() == '["refined"]'
-    finally:
-        service._runner.close()
 
 
 def test_live_state_updates_do_not_load_large_manifests(tmp_path):
@@ -243,6 +202,26 @@ def test_live_state_updates_do_not_load_large_manifests(tmp_path):
         assert state["loads"] == 0
         assert service.get_progress("analysis-test").current_frame == 29
         assert state["loads"] == 0
+    finally:
+        service._runner.close()
+
+
+def test_paused_round_progress_restores_once_after_backend_restart(tmp_path, monkeypatch):
+    service, state = _service(tmp_path, status="paused")
+    saved = {
+        "analysis_id": "analysis-test", "round_key": "record:mode:round.02",
+        "round_id": "round.02", "current_round": 2, "total_rounds": 3, "round_progress": .4,
+    }
+    (tmp_path / "progress.json").write_text(json.dumps(saved), encoding="utf-8")
+    try:
+        assert service._progress_for_run(state["run"]).current_round == 2
+
+        def no_disk_reads(*args, **kwargs):
+            pytest.fail("restored progress must be cached")
+
+        monkeypatch.setattr(Path, "read_text", no_disk_reads)
+        progress = service._progress_for_run(state["run"])
+        assert progress.round_progress == .4 and progress.total_rounds == 3
     finally:
         service._runner.close()
 

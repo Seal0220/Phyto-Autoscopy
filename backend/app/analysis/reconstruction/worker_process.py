@@ -136,7 +136,7 @@ def execute_job(
 
     try:
         progress("selecting_reconstruction_views", 0.0, "正在建立本輪唯讀模型資料集。")
-        dataset = backend.prepare_dataset(job, output_dir)
+        dataset = backend.prepare_dataset(job, output_dir, progress_callback=progress, cancel_check=check_cancel)
         check_cancel()
         progress("extracting_features", 0.01, "正在建立本輪稀疏幾何。")
         training_result = backend.train(

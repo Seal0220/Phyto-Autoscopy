@@ -111,7 +111,7 @@ export async function loadAnalysisRunBundle(
     }),
   ]);
 
-  const [rounds, models, landmarks, trajectory] = await Promise.all([
+  const [rounds, models, landmarks, trajectory, corrections] = await Promise.all([
     requestAnalysisResource(analysisPath(analysisId, "/rounds"), {
       signal,
     }),
@@ -124,7 +124,16 @@ export async function loadAnalysisRunBundle(
     requestAnalysisResource(analysisPath(analysisId, "/tip-trajectory"), {
       signal,
     }),
+    requestAnalysisResource(analysisPath(analysisId, "/tip-corrections"), {
+      signal,
+    }),
   ]);
+  const resolved = new Map(
+    (Array.isArray(landmarks) ? landmarks : []).map((item) => [item.round_key, item]),
+  );
+  for (const correction of Array.isArray(corrections) ? corrections : []) {
+    resolved.set(correction.round_key, correction.corrected_tip);
+  }
 
   return {
     run,
@@ -132,7 +141,7 @@ export async function loadAnalysisRunBundle(
     formalData: {
       rounds: Array.isArray(rounds) ? rounds : [],
       models: Array.isArray(models) ? models : [],
-      landmarks: Array.isArray(landmarks) ? landmarks : [],
+      landmarks: [...resolved.values()],
       trajectory: Array.isArray(trajectory) ? trajectory : [],
     },
   };

@@ -181,6 +181,14 @@ class AnalysisArtifacts:
             },
         )
 
+    def write_single_round_index(self, item: AnalysisRound, views: Iterable[AnalysisView]) -> None:
+        directory = round_artifact_directory(self.root, item.round_key)
+        write_json_atomic(directory / "round.json", item.model_dump(mode="json"))
+        write_json_atomic(directory / "views.json", [view.model_dump(mode="json") for view in views])
+
+    def undistortion_manifest_path(self, round_key: str) -> Path:
+        return round_artifact_directory(self.root, round_key) / "undistortion" / "manifest.json"
+
     def write_round_camera_poses(
         self,
         round_key: str,
@@ -208,14 +216,25 @@ class AnalysisArtifacts:
             payload,
         )
 
-    def read_undistortion_manifest(self) -> list[dict]:
-        path = self.root / "undistortion_manifest.json"
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        views = payload.get("views") if isinstance(payload, dict) else None
-        if not isinstance(views, list):
-            raise ValueError("去畸變影像清單的視角資料必須是陣列。")
-        return [item for item in views if isinstance(item, dict)]
+    def read_undistortion_manifest(self, round_key: str | None = None) -> list[dict]:
+        legacy = self.root / "undistortion_manifest.json"
+        scoped = self.undistortion_manifest_path(round_key) if round_key is not None else None
+        paths = ([scoped] if scoped is not None and scoped.is_file() else [legacy] if legacy.is_file() else [])
+        if round_key is None:
+            paths.extend(sorted((self.root / "rounds").rglob("undistortion/manifest.json")))
+        if not paths:
+            raise FileNotFoundError(scoped or legacy)
+        results = {}
+        for path in paths:
+            with path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            views = payload.get("views") if isinstance(payload, dict) else None
+            if not isinstance(views, list):
+                raise ValueError("去畸變影像清單的視角資料必須是陣列。")
+            for item in views:
+                if isinstance(item, dict) and (round_key is None or item.get("round_key") == round_key):
+                    results[item["view_id"]] = item
+        return list(results.values())
 
     def write_round_model_result(self, item: RoundModelResult) -> None:
         directory = round_artifact_directory(self.root, item.round_key)

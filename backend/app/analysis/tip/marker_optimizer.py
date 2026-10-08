@@ -30,8 +30,13 @@ def optimize_tip_marker(
 ) -> OptimizedTipMarker:
     if not hypotheses:
         raise ValueError("沒有可用的多視角尖端標記假設。")
+    camera_counts = [
+        sum(count > 0 for count in hypothesis.aggregation_quality.get("supporting_camera_counts", {}).values())
+        for hypothesis in hypotheses
+    ]
+    maximum_camera_count = max(camera_counts)
     best = None
-    for hypothesis in hypotheses:
+    for hypothesis, camera_count in zip(hypotheses, camera_counts):
         endpoint = None
         endpoint_distance = None
         if skeleton_endpoints:
@@ -60,18 +65,23 @@ def optimize_tip_marker(
             else 0.0
         )
         visibility_cost = 1.0 - hypothesis.confidence
+        # Repeated frames from one camera cannot replace an independent camera
+        # agreeing on the same point. Keep geometry, model and temporal costs
+        # active, and allow two-camera estimates when another view is occluded.
+        camera_coverage_cost = 0.12 * (maximum_camera_count - camera_count)
         cost = (
             0.48 * reprojection_cost
             + 0.23 * endpoint_cost
             + 0.13 * main_axis_cost
             + 0.06 * temporal_cost
             + 0.10 * visibility_cost
+            + camera_coverage_cost
         )
-        candidate = (cost, hypothesis, endpoint, endpoint_distance, temporal_distance)
+        candidate = (cost, hypothesis, endpoint, endpoint_distance, temporal_distance, camera_count, camera_coverage_cost)
         if best is None or candidate[0] < best[0]:
             best = candidate
     assert best is not None
-    cost, hypothesis, endpoint, endpoint_distance, temporal_distance = best
+    cost, hypothesis, endpoint, endpoint_distance, temporal_distance, camera_count, camera_coverage_cost = best
     position = hypothesis.point_world_mm.copy()
     if endpoint is not None and endpoint_distance is not None and endpoint_distance <= 20.0:
         blend = float(np.clip(hypothesis.confidence, 0.45, 0.9))
@@ -113,6 +123,8 @@ def optimize_tip_marker(
             "angular_spread_deg": hypothesis.angular_spread_deg,
             "supporting_view_count": int(sum(hypothesis.used_observations)),
             "selected_endpoint_id": endpoint.endpoint_id if endpoint else None,
+            "supporting_camera_count": camera_count,
+            "camera_coverage_cost": camera_coverage_cost,
         },
     )
 

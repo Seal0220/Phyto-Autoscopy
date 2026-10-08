@@ -151,12 +151,7 @@ export default function AnalysisNew({
         <AnalysisSetupReconstructionStep
           method={setup.method}
           parameters={setup.parameters}
-          manualReviewRequired={setup.manualReviewRequired}
           onChange={updateParameter}
-          onManualReviewChange={(value) => updateSetup(
-            "manualReviewRequired",
-            value,
-          )}
         />
       );
     }

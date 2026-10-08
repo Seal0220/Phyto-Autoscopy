@@ -5,6 +5,7 @@ import {
   analysisInputCount,
   analysisRunActionAvailability,
   analysisRunActionRequest,
+  analysisRoundStatus,
   analysisRunDisplay,
   isValidAnalysisId,
   normalizeAnalysisProgress,
@@ -52,6 +53,26 @@ test("pose finalization shows its own stage and completed work units", () => {
   assert.equal(saving.progressNote, "10 / 363 輪");
 });
 
+test("round progress shows the round while results are available during processing", () => {
+  const progress = normalizeAnalysisProgress({
+    status: "processing",
+    stage: "undistorting_images",
+    round_key: "record:mode:round.99",
+    round_id: "round.99",
+    current_round: 99,
+    total_rounds: 363,
+    round_progress: .12,
+    current_frame: 70,
+    total_frames: 213,
+  });
+  assert.equal(progress.round_progress, .12);
+  assert.equal(analysisRunDisplay(progress).progressNote, "第 99 / 363 輪（round.99） · 70 / 213 張");
+  assert.equal(analysisRunActionAvailability("processing", "undistorting_images", true).results, true);
+  assert.equal(analysisRunActionAvailability("paused", "reconstructing_round_model", true).results, true);
+  assert.equal(analysisRunActionAvailability("processing", "undistorting_images").results, false);
+  assert.equal(analysisRunActionAvailability("processing", "undistorting_images", true).export, false);
+});
+
 test("analysis run actions follow lifecycle status", () => {
   assert.equal(analysisRunActionAvailability("draft").validate, true);
   assert.equal(analysisRunActionAvailability("ready").start, true);
@@ -66,6 +87,12 @@ test("analysis run actions follow lifecycle status", () => {
   assert.equal(analysisRunActionAvailability("completed").skipReview, false);
   assert.equal(analysisRunActionAvailability("completed").results, true);
   assert.equal(analysisRunActionAvailability("completed").export, true);
+  const partial = analysisRunActionAvailability("partially_completed", "completed");
+  assert.equal(partial.review, true);
+  assert.equal(partial.skipReview, false);
+  assert.equal(partial.results, true);
+  assert.equal(partial.export, true);
+  assert.equal(analysisRoundStatus("tip_invalid").label, "尖端待補正");
 });
 
 test("skip-review action reconstructs with an explicit incomplete-review flag", () => {

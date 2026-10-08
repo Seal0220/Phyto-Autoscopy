@@ -47,6 +47,12 @@ function readySetup() {
     aruco_readiness: { ready: true },
     backend_readiness: { available: true },
   };
+  Object.assign(setup.parameters, {
+    baselineMm: "300",
+    topHeightMm: "500",
+    sideHeightMm: "200",
+    sideHorizontalDistanceMm: "300",
+  });
   return setup;
 }
 
@@ -109,6 +115,8 @@ test("建立 payload 不包含舊影格範圍、偏移或 ROI", () => {
   assert.equal(payload.camera_sources.top.enabled, true);
   assert.equal(payload.camera_sources.side.enabled, true);
   assert.equal(payload.camera_sources.rotating.enabled, true);
+  assert.equal(payload.manual_review_required, false);
+  assert.equal(payload.parameters.tip_analysis.wait_for_low_confidence_review, false);
   for (const forbidden of [
     "start_frame",
     "end_frame",

@@ -199,8 +199,13 @@ def test_reference_joint_training_adds_both_fixed_cameras_and_reuses_completed_m
     try:
         first = service._prepare_model_reference(state["run"], views, manifest, Event())
         second = service._prepare_model_reference(state["run"], views, manifest, Event())
+        next_round_views = [view.model_copy(update={
+            "round_key": "record:mode:round.02", "view_id": view.view_id + "-round2",
+        }) for view in views]
+        next_round = service._prepare_model_reference(state["run"], next_round_views, {}, Event())
         assert calls == ["rotating", "register_fixed", "3dgs"]
         assert first["quality"] == second["quality"]
+        assert next_round["quality"] == first["quality"]
         assert first["quality"]["scale_source"] == "model_reference_and_measured_stereo_baseline"
         context = json.loads((tmp_path / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
         assert context["training_camera_counts"] == {"top": 1, "side": 1, "rotating": 12}
@@ -378,6 +383,34 @@ def test_reference_training_refuses_missing_camera(tmp_path):
     try:
         with pytest.raises(AnalysisError, match="初始 3DGS"):
             service._reference_model_job(state["run"], reference, reference["views"])
+    finally:
+        service._runner.close()
+
+
+def test_new_mask_version_rebuilds_cached_reference_model_without_resetting_camera_alignment(tmp_path, monkeypatch):
+    from app.services import analysis_service
+    service, state, reference, _, _ = _reference_service_fixture(tmp_path)
+    reference["sparse_path"] = str(tmp_path / "sparse")
+    training_views = [{**view, "round_key": "record:mode:round.01"} for view in reference["views"]]
+    output = tmp_path / "model"
+    calls = []
+
+    def worker(job, destination, event, **kwargs):
+        calls.append(job["mask_preparation_version"])
+        return _reference_model_result(job, destination)
+
+    monkeypatch.setattr(analysis_service, "run_reconstruction_worker", worker)
+    try:
+        pose_signature = service._stereo_pose_signature(state["run"])
+        job = service._reference_model_job(state["run"], reference, training_views, alignment_preview=True)
+        _, original_signature = service._train_reference_model(state["run"], job, output, Event())
+        service._train_reference_model(state["run"], job, output, Event())
+        monkeypatch.setattr(analysis_service, "MASK_PREPARATION_VERSION", job["mask_preparation_version"] + 1)
+        updated_job = service._reference_model_job(state["run"], reference, training_views, alignment_preview=True)
+        _, updated_signature = service._train_reference_model(state["run"], updated_job, output, Event())
+        assert calls == [job["mask_preparation_version"], updated_job["mask_preparation_version"]]
+        assert updated_signature != original_signature
+        assert service._stereo_pose_signature(state["run"]) == pose_signature
     finally:
         service._runner.close()
 

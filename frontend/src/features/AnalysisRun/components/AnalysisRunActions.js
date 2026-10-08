@@ -28,8 +28,9 @@ export default function AnalysisRunActions({
   status,
   stage,
   stereoReview,
+  hasResults,
 }) {
-  const available = analysisRunActionAvailability(status, stage);
+  const available = analysisRunActionAvailability(status, stage, hasResults);
   let skipReviewLabel = "略過人工確認並完成";
   if (pendingAction === "reconstruct_without_review") {
     skipReviewLabel = "完成分析中…";

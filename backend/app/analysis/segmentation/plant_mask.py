@@ -54,6 +54,10 @@ def create_plant_mask(
         & (excess_green > 4) & (green >= red * .9) & (value >= brightness)
     )
     seeds = green_pixels & (excess_green >= 8) & (value >= max(40, brightness)) & (valid > 0)
+    # Green-tinted lamp halos and enclosure reflections can contain far more
+    # weak green pixels than the small plant. Anchor components in chromatic
+    # foliage, while still growing through connected pale leaves and stems.
+    tissue_seeds = seeds & (saturation >= 60) & (excess_green >= 24) & (hue <= 85)
     # Keep white leaf highlights and pale/yellow stems connected to foliage.
     # Detached lamps and the red/brown pot cannot seed a plant component.
     highlights = (saturation < 48) & (value >= max(80, brightness + 20))
@@ -66,7 +70,7 @@ def create_plant_mask(
     )
     combined[valid == 0] = 0
     count, labels, statistics, _ = cv2.connectedComponentsWithStats(combined, connectivity=8)
-    seed_counts = np.bincount(labels[seeds], minlength=count)
+    seed_counts = np.bincount(labels[tissue_seeds], minlength=count)
     minimum_area = max(12, round(width * height * 0.00001))
     retained = (statistics[:, cv2.CC_STAT_AREA] >= minimum_area) & (seed_counts >= 3)
     retained[0] = False

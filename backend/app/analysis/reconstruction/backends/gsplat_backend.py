@@ -223,9 +223,12 @@ class GsplatBackend:
         self,
         job: Mapping[str, Any],
         output_dir: Path,
+        *,
+        progress_callback: ProgressCallback | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> PreparedRoundDataset:
         self._cancel_event.clear()
-        return prepare_round_dataset(job, output_dir)
+        return prepare_round_dataset(job, output_dir, progress_callback=progress_callback, cancel_check=cancel_check)
 
     def train(
         self,

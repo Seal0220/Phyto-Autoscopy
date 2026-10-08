@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import pytest
 
-from app.analysis.image_probe import AnalysisImageProbe
+from app.analysis.image_probe import AnalysisImageProbe, FrozenImageProbe
 
 
 def _probe(tmp_path, decoder=None):
@@ -20,6 +20,24 @@ def _probe(tmp_path, decoder=None):
     probe._gpu_failures = {}
     probe.gpu_decoded = probe.cpu_decoded = probe.converted = probe.conversion_failed = 0
     return probe
+
+
+def test_frozen_validation_reads_only_identities_and_defers_pixels(tmp_path, monkeypatch):
+    import hashlib
+    source = tmp_path / "source.png"
+    cv2.imencode(".png", np.zeros((20, 30, 3), np.uint8))[1].tofile(source)
+    stat = source.stat()
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    probe = FrozenImageProbe([{"absolute_path": str(source), "size_bytes": stat.st_size,
+                               "modified_ns": stat.st_mtime_ns, "sha256": digest, "resolution": [30, 20]}])
+    monkeypatch.setattr(np, "fromfile", lambda *args, **kwargs: pytest.fail("Validation decoded a future round"))
+    monkeypatch.setattr(AnalysisImageProbe, "prepare", lambda *args, **kwargs: pytest.fail("Validation converted a future round"))
+    assert probe(source) == (30, 20)
+    assert probe.hashes == {str(source): digest}
+    assert probe.backend_counts["converted"] == 0
+    source.write_bytes(b"changed")
+    with pytest.raises(ValueError):
+        probe(source)
 
 
 @pytest.mark.parametrize(("dtype", "channels"), [(np.uint8, 1), (np.uint8, 3), (np.uint8, 4), (np.uint16, 1), (np.uint16, 3)])

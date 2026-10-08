@@ -39,6 +39,7 @@ from app.models.analysis_models import (
 
 CancelCheck = Callable[[], None]
 StageCallback = Callable[[str, float], None]
+TIP_ANALYSIS_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -917,4 +918,4 @@ def analyze_round_tip(
     )
 
 
-__all__ = ["RoundTipAnalysisResult", "analyze_round_tip"]
+__all__ = ["RoundTipAnalysisResult", "TIP_ANALYSIS_VERSION", "analyze_round_tip"]

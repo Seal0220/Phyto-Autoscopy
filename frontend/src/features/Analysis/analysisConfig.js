@@ -222,7 +222,6 @@ export const ANALYSIS_PARAMETER_DEFAULTS = {
   maximumTipReprojectionError: "5",
   useSkeletonRefinement: true,
   useTemporalPrior: true,
-  waitForLowConfidenceReview: true,
   exportAll2dCandidates: false,
   saveReprojectionOverlays: true,
   saveGaussianModel: true,

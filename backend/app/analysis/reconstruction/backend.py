@@ -43,6 +43,9 @@ class ReconstructionBackend(Protocol):
         self,
         job: Mapping[str, Any],
         output_dir: Path,
+        *,
+        progress_callback: ProgressCallback | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> object:
         ...
 

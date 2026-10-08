@@ -22,7 +22,6 @@ import AnalysisRunImage from "./AnalysisRunImage";
 export default function AnalysisRunRoundImages({
   analysisId,
   round,
-  model,
   hasLandmark,
 }) {
   const [views, setViews] = useState([]);
@@ -108,7 +107,7 @@ export default function AnalysisRunRoundImages({
               </Button>
             </div>
           </div>
-          <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-2 min-[1180px]:grid-cols-3">
+          <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-3">
             {group.views.map((view) => (
               <AnalysisRunImage
                 key={`${view.view_id}:${space}`}
@@ -120,18 +119,6 @@ export default function AnalysisRunRoundImages({
           </div>
         </>
       ) : !loading && !error ? <p>此輪沒有來源影像。</p> : null}
-      {model?.preview_paths?.length ? (
-        <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-2">
-          {model.preview_paths.map((path, index) => (
-            <AnalysisRunImage
-              key={path}
-              analysisId={analysisId}
-              artifactPath={path}
-              label={`模型預覽 ${index + 1}`}
-            />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

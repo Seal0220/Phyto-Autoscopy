@@ -119,7 +119,7 @@ class AnalysisCreateRequest(BaseModel):
         }
     )
     parameters: dict[str, Any] = Field(default_factory=dict)
-    manual_review_required: bool = True
+    manual_review_required: bool = False
 
     @model_validator(mode="after")
     def validate_sources(self) -> "AnalysisCreateRequest":
@@ -577,6 +577,11 @@ class AnalysisProgress(BaseModel):
     processing_preview: AnalysisProcessingPreview | None = None
     image_probe_backends: dict[str, int] = Field(default_factory=dict)
     checkpoints: dict[str, Any] = Field(default_factory=dict)
+    round_key: str | None = None
+    round_id: str | None = None
+    current_round: int = 0
+    total_rounds: int = 0
+    round_progress: float = 0.0
 
     @field_validator("progress")
     @classmethod

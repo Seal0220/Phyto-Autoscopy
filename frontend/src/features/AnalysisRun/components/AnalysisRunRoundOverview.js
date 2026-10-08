@@ -28,7 +28,7 @@ export default function AnalysisRunRoundOverview({
       </SubsectionHeader>
 
       {rounds.length ? (
-        <div className="grid max-h-[34rem] gap-2 overflow-y-auto overscroll-contain pr-1">
+        <div className="grid min-w-0 gap-2">
           {rounds.map((item) => (
             <AnalysisRunRoundRow
               key={item.round_key}

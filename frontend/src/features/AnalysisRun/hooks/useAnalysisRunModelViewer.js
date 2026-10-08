@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { analysisArtifactUrl } from "@/lib/analysisImageUtils";
 
+const EMPTY_POINT_IDS = [];
+
 export default function useAnalysisRunModelViewer({
   analysisId,
   reference,
   selectedPointId,
-  pointIds,
+  pointIds = EMPTY_POINT_IDS,
   disabled,
   onPointChange,
   onPointMove,
@@ -43,13 +45,13 @@ export default function useAnalysisRunModelViewer({
         instance = createModelViewer({
           element: element.current,
           reference: current.current.reference,
-          onPick: (pointId) => {
-            if (active && !current.current.disabled) current.current.onPointChange(pointId);
-          },
+          onPick: current.current.onPointChange ? (pointId) => {
+            if (active && !current.current.disabled) current.current.onPointChange?.(pointId);
+          } : undefined,
           onMove: (pointId, nextPointId) => active && !current.current.disabled
-            && current.current.onPointMove(pointId, nextPointId),
+            && current.current.onPointMove?.(pointId, nextPointId),
           onRemove: (pointId) => {
-            if (active && !current.current.disabled) current.current.onPointRemove(pointId);
+            if (active && !current.current.disabled) current.current.onPointRemove?.(pointId);
           },
           onNotice: (message) => { if (active) setNotice(message); },
           onProgress: (percent) => { if (active) setProgress(percent); },

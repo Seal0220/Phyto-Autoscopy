@@ -89,7 +89,7 @@ function analysisMetadata(
         value: `${run.round_count || rounds.length} 輪`,
       },
       {
-        label: "完成輪次",
+        label: "完整結果",
         value: `${run.completed_round_count || 0} 輪`,
       },
       {
@@ -147,7 +147,7 @@ function analysisMetadata(
       },
       {
         label: "人工確認",
-        value: run.manual_review_completed ? "已完成" : "尚未完成",
+        value: run.manual_review_completed ? "已確認" : "可選擇補正",
       },
     ],
   };

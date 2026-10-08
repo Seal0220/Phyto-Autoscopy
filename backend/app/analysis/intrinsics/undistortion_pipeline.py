@@ -163,9 +163,9 @@ class UndistortionProcessor:
                 "remap_cpu": self.cache.backend_counts["cpu"], "reused": self.reused,
                 "reused_gpu": self.reused_gpu, "reused_cpu": self.reused_cpu}
 
-    def manifest(self, views):
+    def manifest(self, views, *, manifest_path: Path | None = None):
         results = [self.results[view.view_id] for view in views]
-        write_json_atomic(self.root / "undistortion_manifest.json",
+        write_json_atomic(manifest_path or self.root / "undistortion_manifest.json",
                           {"coordinate_space": "undistorted", "views": results})
         return results
 
@@ -432,6 +432,7 @@ def undistort_analysis_views(
     source_manifest: Sequence[dict] = (),
     maximum_workers: int | None = None,
     backend_callback: Callable[[dict[str, int]], None] | None = None,
+    manifest_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     with ParallelUndistortionProcessor(views, intrinsics_snapshot, output_root,
                                       cancel_check=cancel_check, source_manifest=source_manifest,
@@ -446,4 +447,4 @@ def undistort_analysis_views(
                 backend_callback(processor.backend_counts)
             if progress_callback:
                 progress_callback(index, len(views))
-        return processor.manifest(views)
+        return processor.manifest(views, manifest_path=manifest_path)

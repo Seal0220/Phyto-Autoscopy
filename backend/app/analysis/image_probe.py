@@ -16,6 +16,39 @@ from app.analysis.gpu_operations import convert_color
 logger = logging.getLogger(__name__)
 
 
+class FrozenImageProbe:
+    """Validate previously decoded inputs without preprocessing future rounds.
+
+    Creation already saved full decode results and SHA-256. Validation checks
+    file identities and record metadata; the round processor checks the bytes
+    against that frozen hash immediately before TIFF conversion/undistortion.
+    """
+
+    def __init__(self, source_manifest, *, cancel_check=None):
+        self.expected = {str(Path(item["absolute_path"]).resolve()): item for item in source_manifest}
+        self.cancel_check = cancel_check
+        self.hashes: dict[str, str] = {}
+
+    def __call__(self, path: Path) -> tuple[int, int]:
+        if self.cancel_check is not None:
+            self.cancel_check()
+        expected = self.expected.get(str(path.resolve()))
+        if expected is None:
+            raise ValueError("影像不在固化的輸入清單中。")
+        stat = path.stat()
+        if (stat.st_size, stat.st_mtime_ns) != (expected["size_bytes"], expected["modified_ns"]):
+            raise ValueError("分析輸入在建立後已變更。")
+        resolution = expected.get("resolution")
+        if not expected.get("sha256") or not isinstance(resolution, (list, tuple)) or len(resolution) != 2:
+            raise ValueError("固化的輸入缺少影像尺寸或 SHA-256。")
+        self.hashes[str(path)] = expected["sha256"]
+        return int(resolution[0]), int(resolution[1])
+
+    @property
+    def backend_counts(self) -> dict[str, int]:
+        return {"gpu": 0, "cpu": 0, "converted": 0, "verified": len(self.hashes)}
+
+
 def probe_image_cpu(path: Path) -> tuple[int, int] | None:
     """Fully decode an image, not just its header, before accepting it."""
     try:

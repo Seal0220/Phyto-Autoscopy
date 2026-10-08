@@ -125,6 +125,33 @@ def model_review_reference(context: dict, root: Path) -> dict:
     return payload
 
 
+def model_preview_reference(path: Path, root: Path, pose: np.ndarray | None = None) -> dict:
+    """Frame an existing round Gaussian model without creating review artifacts."""
+    path = path.resolve()
+    relative = path.relative_to(root.resolve()).as_posix()
+    stat = path.stat()
+    vertices, _, digest, center, radius, *_ = _gaussian_model(
+        str(path), stat.st_size, stat.st_mtime_ns, include_dark_bounds=True,
+    )
+    position = center + np.array([0., -3., 1.5]) * radius
+    up = np.array([0., 0., 1.])
+    if pose is not None:
+        pose = np.asarray(pose, dtype=float)
+        if pose.shape == (4, 4) and np.isfinite(pose).all():
+            camera_center = -pose[:3, :3].T @ pose[:3, 3]
+            camera_up = -pose[1, :3]
+            if np.linalg.norm(camera_center - center) > radius * .05 and np.linalg.norm(camera_up) > 1e-8:
+                position, up = camera_center, camera_up
+    camera = {"position": position.tolist(), "up": up.tolist()}
+    signature = hashlib.sha256(f"gaussian-preview-v1:{relative}:{digest}:{camera}".encode()).hexdigest()
+    return {
+        "signature": signature, "gaussian_path": relative, "gaussian_sha256": digest,
+        "gaussian_count": len(vertices), "gaussian_point_offset": 0, "points": [],
+        # Leave room for translucent pot walls outside the opaque framing points.
+        "center": center.tolist(), "radius": radius * 1.2, "initial_camera": camera,
+    }
+
+
 def model_review_objects(context: dict, root: Path, reference: dict, point_ids: list[int]) -> list[list[float]]:
     """Resolve only server-owned anchors. Client coordinates are never trusted."""
     anchors = {point["id"]: point["xyz"] for point in context["reference"]["points"]}

@@ -408,8 +408,8 @@ export default function AnalysisSetupSummaryStep({
               value: setup.parameters.exportTrajectoryCsv ? "建立" : "不建立",
             },
             {
-              label: "人工確認",
-              value: setup.manualReviewRequired ? "需要" : "不等待",
+              label: "尖端校正",
+              value: "完成後選擇補正",
             },
           ]}
           columns={4}

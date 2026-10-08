@@ -165,7 +165,7 @@ export default function FormalTrajectoryViewer({
               </Button>
               <Button
                 variant="primary"
-                disabled={exportPending || !run}
+                disabled={exportPending || !["completed", "partially_completed"].includes(run?.status)}
                 onClick={() => void downloadExport()}
               >
                 <FiDownload
@@ -187,6 +187,11 @@ export default function FormalTrajectoryViewer({
 
           {run ? (
             <>
+              {["processing", "reconstructing", "pausing", "paused"].includes(run.status) ? (
+                <p className="text-xs font-semibold text-neutral-400">
+                  每輪完成後更新模型與尖端軌跡。
+                </p>
+              ) : null}
               <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-5">
                 <StatusCard
                   title="分析輪次"

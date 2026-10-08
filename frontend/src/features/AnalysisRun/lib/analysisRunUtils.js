@@ -1,4 +1,5 @@
 import {
+  ANALYSIS_CAMERA_LABELS,
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STATUS_META,
 } from "../../Analysis/analysisConfig.js";
@@ -49,8 +50,8 @@ const ROUND_STATUS_META = {
     tone: "warning",
   },
   tip_invalid: {
-    label: "尖端不可確認",
-    tone: "offline",
+    label: "尖端待補正",
+    tone: "warning",
   },
   failed: {
     label: "處理失敗",
@@ -107,6 +108,11 @@ export function normalizeAnalysisProgress(payload) {
     current_frame: Math.max(0, finiteNumber(payload?.current_frame)),
     total_frames: Math.max(0, finiteNumber(payload?.total_frames)),
     progress: Math.min(1, Math.max(0, finiteNumber(payload?.progress))),
+    round_key: text(payload?.round_key),
+    round_id: text(payload?.round_id),
+    current_round: Math.max(0, finiteNumber(payload?.current_round)),
+    total_rounds: Math.max(0, finiteNumber(payload?.total_rounds)),
+    round_progress: Math.min(1, Math.max(0, finiteNumber(payload?.round_progress))),
     last_error: text(payload?.last_error),
     processing_preview: payload?.processing_preview
       && typeof payload.processing_preview === "object"
@@ -128,6 +134,15 @@ export function analysisImageGroups(views) {
     const key = view.snapshot_id || view.timestamp || view.view_id;
     if (!groups.has(key)) groups.set(key, { key, views: [] });
     groups.get(key).views.push(view);
+  }
+  const cameraOrder = Object.keys(ANALYSIS_CAMERA_LABELS);
+  for (const group of groups.values()) {
+    group.views.sort((first, second) => {
+      const firstIndex = cameraOrder.indexOf(first.camera_id);
+      const secondIndex = cameraOrder.indexOf(second.camera_id);
+      return (firstIndex < 0 ? cameraOrder.length : firstIndex)
+        - (secondIndex < 0 ? cameraOrder.length : secondIndex);
+    });
   }
   return [...groups.values()];
 }
@@ -154,6 +169,12 @@ export function analysisRunDisplay(run) {
       ? `GPU 去畸變 ${finiteNumber(probeCounts.remap_gpu) + finiteNumber(probeCounts.reused_gpu)} 張 · CPU 去畸變 ${finiteNumber(probeCounts.remap_cpu) + finiteNumber(probeCounts.reused_cpu)} 張 · 沿用已完成影像 ${finiteNumber(probeCounts.reused)} 張`
       : `轉檔 ${finiteNumber(probeCounts.converted)} 張 · GPU ${finiteNumber(probeCounts.gpu)} 張 · CPU 回退 ${finiteNumber(probeCounts.cpu)} 張`
     : "";
+  const roundNote = finiteNumber(run?.total_rounds) > 0
+    ? `第 ${finiteNumber(run.current_round)} / ${finiteNumber(run.total_rounds)} 輪${run.round_id ? `（${run.round_id}）` : ""}`
+    : "";
+  const stepNote = finiteNumber(run?.total_frames) > 0
+    ? `${finiteNumber(run.current_frame)} / ${finiteNumber(run.total_frames)} ${ANALYSIS_PROGRESS_UNITS[run.stage] || "輪"}`
+    : "準備中…";
 
   return {
     status,
@@ -161,11 +182,7 @@ export function analysisRunDisplay(run) {
     progressTitle: validating
       ? "驗證進度"
       : "分析進度",
-    progressNote: finiteNumber(run?.total_frames) > 0
-      ? `${finiteNumber(run?.current_frame)} / ${finiteNumber(run?.total_frames)} ${
-        ANALYSIS_PROGRESS_UNITS[run?.stage] || "輪"
-      }`
-      : "準備中…",
+    progressNote: [roundNote, stepNote].filter(Boolean).join(" · "),
     stage: ANALYSIS_STAGE_LABELS[run?.stage]
       || (run?.stage ? "未知階段" : "尚未開始"),
     progressPercent: Math.round(
@@ -177,6 +194,7 @@ export function analysisRunDisplay(run) {
 export function analysisRunActionAvailability(
   status,
   stage,
+  hasResults = false,
 ) {
   const stereoReview = needsStereoPoseReview({ status, stage });
   return {
@@ -195,7 +213,7 @@ export function analysisRunActionAvailability(
       "partially_completed",
     ].includes(status),
     skipReview: !stereoReview && ["needs_review", "reviewing"].includes(status),
-    results: ["completed", "partially_completed"].includes(status),
+    results: hasResults || ["completed", "partially_completed"].includes(status),
     export: ["completed", "partially_completed"].includes(status),
   };
 }

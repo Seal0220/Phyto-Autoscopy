@@ -25,7 +25,6 @@ const BACKGROUND_TOGGLES = [
 const TIP_TOGGLES = [
   ["useSkeletonRefinement", "使用植物骨架精修", "以主生長軸與骨架端點約束三維尖端標記。"],
   ["useTemporalPrior", "使用上一輪弱時序先驗", "只協助排除不合理跳點，不強迫尖端停留在舊位置。"],
-  ["waitForLowConfidenceReview", "低信心時等待人工確認", "保留自動結果並進入尖端標記人工確認流程。"],
   ["exportAll2dCandidates", "輸出全部二維候選", "保存各去畸變影像中的候選與排除原因。"],
   ["saveReprojectionOverlays", "保存重投影疊圖", "保存尖端標記投影回各相機影像的診斷結果。"],
 ];
@@ -44,7 +43,6 @@ const OUTPUT_TOGGLES = [
 
 const FIXED_TIP_TOGGLE_KEYS = new Set([
   "useTemporalPrior",
-  "waitForLowConfidenceReview",
   "exportAll2dCandidates",
   "saveReprojectionOverlays",
 ]);
@@ -90,9 +88,7 @@ function ToggleCollection({
 export default function AnalysisSetupReconstructionStep({
   method,
   parameters,
-  manualReviewRequired,
   onChange,
-  onManualReviewChange,
 }) {
   const selectedMethod = ANALYSIS_METHODS[method];
   const buildsRoundModels = method === "rotating";
@@ -426,12 +422,6 @@ export default function AnalysisSetupReconstructionStep({
             required
           />
         </div>
-        <ToggleRow
-          checked={manualReviewRequired}
-          label="執行人工確認"
-          description="低信心尖端標記與失敗輪次保留原始結果，等待操作人員確認。"
-          onClick={() => onManualReviewChange(!manualReviewRequired)}
-        />
         <DisclosurePanel
           title="尖端分析進階選項"
           description="骨架、時序先驗與診斷資料。"

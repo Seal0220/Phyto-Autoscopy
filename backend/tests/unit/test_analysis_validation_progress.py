@@ -103,19 +103,18 @@ def test_validation_cache_is_removed_on_success_and_failure(fails, tmp_path):
 
 
 @pytest.mark.parametrize("pause_during_runtime", [False, True])
-def test_validation_connects_gpu_probe_all_stages_and_completed_counts(monkeypatch, tmp_path, pause_during_runtime):
+def test_validation_checks_frozen_inputs_and_defers_round_processing(monkeypatch, tmp_path, pause_during_runtime):
     service, run = _service(tmp_path), _run()
     run.parameters["pose_strategy"] = {"baseline_mm": 100, "top_height_mm": 200}
     events, persisted = [], []
-    probe = SimpleNamespace(backend_counts={"gpu": 65, "cpu": 0, "converted": 65}, close=lambda: None,
-                            hashes={}, results={}, manifest=lambda views: [], prefetch=lambda paths: None)
-    monkeypatch.setattr(analysis_service, "UndistortionProcessor", lambda *args, **kwargs: probe)
+    probe = SimpleNamespace(backend_counts={"gpu": 0, "cpu": 0, "converted": 0, "verified": 65}, hashes={})
+    monkeypatch.setattr(analysis_service, "FrozenImageProbe", lambda *args, **kwargs: probe)
     service.progress_callback = events.append
     artifacts = SimpleNamespace(root=tmp_path, write_parameters=persisted.append)
     service._artifacts = lambda _: artifacts
 
     def validate(current, *, progress_callback, image_probe):
-        assert callable(image_probe)
+        assert image_probe is probe
         progress_callback(65, 65)
         return SimpleNamespace(camera_resolutions={camera: (1280, 960) for camera in ("top", "side", "rotating")})
 
@@ -144,7 +143,7 @@ def test_validation_connects_gpu_probe_all_stages_and_completed_counts(monkeypat
         assert not persisted
         return
     completed = service._validate_round_analysis(run, cancellation)
-    assert [event.stage for event in events] == ["undistorting_images", "verifying_input_files", "verifying_input_files", "checking_reconstruction_environment"]
+    assert [event.stage for event in events] == ["validating_images", "verifying_input_files", "verifying_input_files", "checking_reconstruction_environment"]
     assert [event.progress for event in events] == [.45, .45, .95, .95]
     assert completed.status == "ready"
     assert completed.stage == "validation_completed"

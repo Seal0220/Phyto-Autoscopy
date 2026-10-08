@@ -89,6 +89,10 @@ export default function AnalysisRun({
     && progress?.analysis_id
     && progress.analysis_id === run.analysis_id,
   );
+  const hasResults = Boolean(
+    formalData?.models?.some((item) => item.status === "completed")
+    || formalData?.landmarks?.length > 0,
+  );
   const effectiveRun = run
     ? {
       ...run,
@@ -113,6 +117,11 @@ export default function AnalysisRun({
         ? progress.last_error
         : run.last_error,
       image_probe_backends: hasMatchingProgress ? progress.image_probe_backends : undefined,
+      round_key: hasMatchingProgress ? progress.round_key : undefined,
+      round_id: hasMatchingProgress ? progress.round_id : undefined,
+      current_round: hasMatchingProgress ? progress.current_round : 0,
+      total_rounds: hasMatchingProgress ? progress.total_rounds : 0,
+      round_progress: hasMatchingProgress ? progress.round_progress : 0,
     }
     : null;
   const display = analysisRunDisplay(effectiveRun);
@@ -202,9 +211,12 @@ export default function AnalysisRun({
                     note={[display.progressNote, display.probeNote].filter(Boolean).join(" · ")}
                   />
                   <StatusCard
-                    title="人工檢查"
-                    content={effectiveRun.manual_review_completed ? "已完成" : "未完成"}
-                    note={effectiveRun.status === "needs_review" ? "等待修正" : "分析紀錄"}
+                    title="人工校正"
+                    content={stereoReview
+                      ? "待對齊"
+                      : effectiveRun.manual_review_completed ? "已確認" : "可選擇補正"
+                    }
+                    note={stereoReview ? "對齊後繼續建模" : "不影響各輪處理"}
                   />
                 </div>
 
@@ -245,6 +257,7 @@ export default function AnalysisRun({
                   pendingAction={pendingAction}
                   status={effectiveRun.status}
                   stage={effectiveRun.stage}
+                  hasResults={hasResults}
                   stereoReview={stereoReview}
                   onAction={(action) => void performAction(action)}
                   onExport={() => void downloadExport()}
@@ -300,7 +313,7 @@ export default function AnalysisRun({
                 />
 
                 {effectiveRun.camera_pose_results?.length > 0 ? (
-                  <DisclosurePanel title="相機姿態與品質">
+                  <DisclosurePanel title={effectiveRun.pose_quality?.scope_round_key ? "本輪姿態與品質" : "相機姿態與品質"}>
                     <AnalysisRunPoseQuality
                       poses={effectiveRun.camera_pose_results}
                       quality={effectiveRun.pose_quality}

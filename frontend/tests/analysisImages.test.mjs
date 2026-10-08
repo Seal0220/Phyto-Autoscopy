@@ -62,6 +62,17 @@ test("round gallery keeps each snapshot's three views together", () => {
   assert.deepEqual(analysisImageGroups(null), []);
 });
 
+test("round camera images use top, side, rotating order without mutating the API response", () => {
+  const views = ["rotating", "side", "top"].map((camera) => ({
+    view_id: camera,
+    camera_id: camera,
+    snapshot_id: "snapshot.01",
+  }));
+  assert.deepEqual(analysisImageGroups(views)[0].views.map((view) => view.camera_id), ["top", "side", "rotating"]);
+  assert.deepEqual(views.map((view) => view.camera_id), ["rotating", "side", "top"]);
+  assert.deepEqual(analysisImageGroups(views.slice(0, 2))[0].views.map((view) => view.camera_id), ["side", "rotating"]);
+});
+
 test("socket progress retains failure images and identifies stereo stage", () => {
   const preview = { views: [{ view_id: "top-1" }], diagnostics: { matched_features: 3 } };
   const progress = normalizeAnalysisProgress({

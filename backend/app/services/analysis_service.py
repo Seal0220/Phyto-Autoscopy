@@ -27,9 +27,8 @@ from app.analysis.intrinsics import (
     build_intrinsics_snapshot,
     undistort_analysis_views,
 )
-from app.analysis.image_probe import AnalysisImageProbe
+from app.analysis.image_probe import AnalysisImageProbe, FrozenImageProbe
 from app.analysis.checkpoints import StepJournal, checkpoint_summary, step_signature
-from app.analysis.intrinsics.undistortion_pipeline import ParallelUndistortionProcessor as UndistortionProcessor
 from app.analysis.rounds import (
     RoundGroupingResult,
     evaluate_round_quality,
@@ -62,8 +61,9 @@ from app.analysis.pose_alignment.model_reference import (
     aggregate_fixed_camera_poses, align_model_camera_poses, metric_model_registration, model_camera_pose,
     reference_space_fixed_poses,
 )
-from app.analysis.pose_alignment.model_review import model_review_reference, model_review_objects
+from app.analysis.pose_alignment.model_review import model_preview_reference, model_review_reference, model_review_objects
 from app.analysis.reconstruction.gsplat_trainer import PLANT_TRAINING_VERSION
+from app.analysis.reconstruction.dataset_adapter import MASK_PREPARATION_VERSION
 from app.analysis.run_metadata import (
     next_dated_identifier,
     repository_commit,
@@ -78,7 +78,8 @@ from app.analysis.record_validator import (
     CaptureRecordValidator,
     ImageProbe,
 )
-from app.analysis.tip.pipeline import analyze_round_tip
+from app.analysis.tip.pipeline import TIP_ANALYSIS_VERSION, analyze_round_tip
+from app.analysis.tip.candidate_detector import TIP_CANDIDATE_VERSION
 from app.analysis.tip.trajectory_linker import (
     link_tip_trajectory,
     order_analysis_rounds,
@@ -264,6 +265,9 @@ class AnalysisService:
         self._validation_progress: dict[str, AnalysisProgress] = {}
         self._validation_progress_times: dict[str, float] = {}
         self._live_progress: dict[str, AnalysisProgress] = {}
+        self._round_progress: dict[str, dict[str, Any]] = {}
+        self._restored_round_progress: dict[str, dict[str, Any]] = {}
+        self._finalizing_analyses: set[str] = set()
         self._validator = CaptureRecordValidator()
         self._reconstruction_backends = ReconstructionBackendRegistry()
         self._runner = AnalysisJobManager(
@@ -975,7 +979,7 @@ class AnalysisService:
                 "maximum_reprojection_error_px": 5.0,
                 "use_skeleton_refinement": True,
                 "use_temporal_prior": True,
-                "wait_for_low_confidence_review": True,
+                "wait_for_low_confidence_review": False,
                 "export_all_2d_candidates": False,
                 "save_reprojection_overlays": True,
             },
@@ -1145,8 +1149,14 @@ class AnalysisService:
     def get_run(self, analysis_id: str) -> AnalysisRun:
         return self._require_run(analysis_id)
 
+    def get_result_summary(self, analysis_id: str) -> AnalysisRun:
+        run = self.repository.get_result_summary(analysis_id)
+        if run is None:
+            raise AnalysisError(f"找不到分析紀錄：{analysis_id}")
+        return run
+
     def list_rounds(self, analysis_id: str):
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_rounds(analysis_id)
 
     def list_views(
@@ -1154,15 +1164,46 @@ class AnalysisService:
         analysis_id: str,
         round_key: str | None = None,
     ):
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_views(analysis_id, round_key)
 
     def list_round_models(self, analysis_id: str) -> list[RoundModelResult]:
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_round_models(analysis_id)
 
+    def get_round_model_preview(self, analysis_id: str, round_key: str) -> dict[str, Any]:
+        run = self._require_image_context(analysis_id)
+        model = next((item for item in self.repository.list_round_models(analysis_id)
+                      if item.round_key == round_key), None)
+        if model is None or model.status != "completed":
+            raise AnalysisError("此輪模型尚未完成。")
+        retains_pot = (
+            model.model_quality.get("foreground_only")
+            and model.model_quality.get("foreground_kind") == "plant_and_pot"
+        )
+        model_path = (
+            model.model_path or model.plant_model_path
+            if retains_pot
+            else model.plant_model_path or model.model_path
+        )
+        if not model_path:
+            raise AnalysisError("此輪尚未輸出可預覽的 Gaussian 模型。")
+        path = self.get_artifact_path(analysis_id, model_path)
+        poses = [item for item in self.repository.list_camera_poses(analysis_id, round_key)
+                 if item.valid and item.rotation_matrix is not None and item.translation_vector_mm is not None]
+        first = next((item for item in poses if item.camera_id == "rotating"), poses[0] if poses else None)
+        pose = None
+        if first is not None:
+            pose = np.eye(4)
+            pose[:3, :3] = first.rotation_matrix
+            pose[:3, 3] = first.translation_vector_mm
+        try:
+            return model_preview_reference(path, self._artifacts(run).root, pose)
+        except (OSError, ValueError) as error:
+            raise AnalysisError("此輪模型無法預覽，請確認模型輸出完整。") from error
+
     def list_tip_landmarks(self, analysis_id: str) -> list[TipLandmark]:
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_tip_landmarks(analysis_id)
 
     def list_tip_observations(
@@ -1170,7 +1211,7 @@ class AnalysisService:
         analysis_id: str,
         round_key: str | None = None,
     ):
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_tip_observations(
             analysis_id,
             round_key,
@@ -1181,7 +1222,7 @@ class AnalysisService:
         analysis_id: str,
         mode_id: str | None = None,
     ):
-        self._require_run(analysis_id)
+        self._require_image_context(analysis_id)
         return self.repository.list_tip_trajectory(
             analysis_id,
             mode_id,
@@ -1191,10 +1232,10 @@ class AnalysisService:
         self,
         analysis_id: str,
     ) -> dict[str, Any]:
-        path = self.get_artifact_path(
-            analysis_id,
-            "trajectory/trajectory_quality.json",
-        )
+        run = self._require_image_context(analysis_id)
+        path = self._artifacts(run).root / "trajectory/trajectory_quality.json"
+        if not path.is_file() and run.status not in {"completed", "partially_completed"}:
+            return {}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -1541,39 +1582,19 @@ class AnalysisService:
 
     def _validate_round_analysis(self, run: AnalysisRun, cancel_event: Event | None = None) -> AnalysisRun:
         views = self.repository.list_views(run.analysis_id)
-        image_probe = UndistortionProcessor(
-            views, run.intrinsics_snapshot, self._artifacts(run).root,
+        image_probe = FrozenImageProbe(
+            run.parameters.get("source_manifest", run.parameters.get("input_manifest", [])),
             cancel_check=(lambda: self._check_cancel(cancel_event)) if cancel_event is not None else None,
-            source_manifest=run.parameters.get("source_manifest", run.parameters.get("input_manifest", [])),
         )
-        views_by_path = {str(Path(view.absolute_path)): view for view in views}
-
-        def probe(path: Path):
-            resolution = image_probe(path)
-            view = views_by_path.get(str(path))
-            if view is not None and resolution is not None:
-                self._write_processing_preview(run, [view], message="轉檔、核對來源並套用內參去畸變")
-            return resolution
-
-        try:
-            image_probe.prefetch(
-                Path(item["absolute_path"]) for item in run.parameters.get(
-                    "source_manifest", run.parameters.get("input_manifest", []),
-                )
-            )
-            validation = self._validation_for_run(
-                run,
-                progress_callback=lambda current, total: self._update_validation_progress(
-                    run, "undistorting_images", current, total,
-                    0.45 * current / max(total, 1),
-                    image_probe_backends=image_probe.backend_counts,
-                ),
-                image_probe=probe,
-            )
-            if all(view.view_id in image_probe.results for view in views):
-                image_probe.manifest(views)
-        finally:
-            image_probe.close()
+        validation = self._validation_for_run(
+            run,
+            progress_callback=lambda current, total: self._update_validation_progress(
+                run, "validating_images", current, total,
+                0.45 * current / max(total, 1),
+                image_probe_backends=image_probe.backend_counts,
+            ),
+            image_probe=image_probe,
+        )
         if cancel_event is not None:
             self._check_cancel(cancel_event)
         errors = self._blocking_validation_messages(validation)
@@ -1811,6 +1832,7 @@ class AnalysisService:
 
     def _progress_for_run(self, run: AnalysisRun) -> AnalysisProgress:
         with self._preview_lock:
+            cached_preview = run.analysis_id in self._processing_previews
             if run.analysis_id in self._processing_previews:
                 preview = self._processing_previews[run.analysis_id]
             else:
@@ -1821,8 +1843,34 @@ class AnalysisService:
                     )
                 except (OSError, ValueError):
                     preview = None
+                self._processing_previews[run.analysis_id] = preview
+            round_progress = getattr(self, "_round_progress", {}).get(run.analysis_id, {})
+            fields = ("round_key", "round_id", "current_round", "total_rounds", "round_progress")
+            if run.analysis_id in getattr(self, "_finalizing_analyses", set()) or run.status in {
+                "validating", "ready", "completed", "partially_completed",
+            }:
+                round_progress = {}
+            elif not round_progress:
+                live = self._live_progress.get(run.analysis_id)
+                if live is not None:
+                    round_progress = {key: getattr(live, key) for key in fields}
                 else:
-                    self._processing_previews[run.analysis_id] = preview
+                    if not hasattr(self, "_restored_round_progress"):
+                        self._restored_round_progress = {}
+                    if run.analysis_id not in self._restored_round_progress:
+                        saved = {}
+                        # Restore once after a backend restart. Active preview
+                        # updates and progress polling stay entirely in memory.
+                        if not cached_preview:
+                            try:
+                                path = self._artifacts(run).root / "progress.json"
+                                saved = json.loads(path.read_text(encoding="utf-8"))
+                            except (OSError, ValueError):
+                                pass
+                        self._restored_round_progress[run.analysis_id] = {
+                            key: saved[key] for key in fields if key in saved
+                        } if saved.get("analysis_id") == run.analysis_id else {}
+                    round_progress = self._restored_round_progress[run.analysis_id]
         return AnalysisProgress(
             analysis_id=run.analysis_id,
             status=run.status,
@@ -1834,6 +1882,7 @@ class AnalysisService:
             processing_preview=preview,
             image_probe_backends=run.parameters.get("validation_image_probe_backends", {}),
             checkpoints=checkpoint_summary(self._artifacts(run).root),
+            **round_progress,
         )
 
     def _emit_progress(self, run: AnalysisRun, progress: AnalysisProgress | None = None) -> None:
@@ -1860,6 +1909,12 @@ class AnalysisService:
         clear_error: bool = False,
         image_probe_backends: Mapping[str, int] | None = None,
     ) -> AnalysisRun:
+        scope = getattr(self, "_round_progress", {}).get(run.analysis_id)
+        if scope is not None and progress is not None:
+            scope["round_progress"] = min(max(progress, 0.0), 1.0)
+            progress = .98 * ((scope["current_round"] - 1) + scope["round_progress"]) / max(scope["total_rounds"], 1)
+        elif run.analysis_id in getattr(self, "_finalizing_analyses", set()) and progress is not None:
+            progress = .98 + .02 * min(max(progress, 0.0), 1.0)
         self.repository.update_state(
             run.analysis_id,
             updated_at=utc_now_iso(),
@@ -2181,8 +2236,8 @@ class AnalysisService:
                 raise AnalysisError("分析工作已在執行。")
             self._refresh_tip_correction_artifacts(run)
             resolved = self._resolved_tip_landmarks(analysis_id)
-            if not any(item.valid for item in resolved):
-                raise AnalysisError("沒有有效尖端標記，無法完成分析。")
+            if not resolved:
+                raise AnalysisError("尚無尖端分析結果可確認。")
             rounds = self.repository.list_rounds(analysis_id)
             incomplete = sum(
                 item.status not in {"tip_completed"}
@@ -2474,15 +2529,27 @@ class AnalysisService:
             resolved_landmarks,
             trajectory.quality,
         )
-        artifacts.write_run(updated)
-        self._emit_progress(updated)
+        if run.status in {"completed", "partially_completed"}:
+            # Corrections update the finished results directly; no model or
+            # automatic tip processing needs to restart.
+            self._set_state(
+                updated,
+                status="partially_completed" if failed_round_count else "completed",
+                stage="completed",
+                progress=1.0,
+                manual_review_completed=False,
+                clear_error=True,
+            )
+        else:
+            artifacts.write_run(updated)
+            self._emit_progress(updated)
 
     def list_tip_corrections(
         self,
         analysis_id: str,
         round_key: str | None = None,
     ) -> list[TipCorrection]:
-        run = self._require_run(analysis_id)
+        run = self._require_image_context(analysis_id)
         if run.method_name not in SUPPORTED_ANALYSIS_METHODS:
             return []
         return self.repository.list_tip_corrections(
@@ -2847,6 +2914,7 @@ class AnalysisService:
             raise AnalysisError("初始 3DGS 必須包含已對齊的俯視、側視與旋臂影像。")
         return {"analysis_id": run.analysis_id, "round_key": training_views[0]["round_key"],
                 "artifact_root": run.output_path, "backend": "gsplat_3dgs",
+                "mask_preparation_version": MASK_PREPARATION_VERSION,
                 "purpose": "camera_alignment_preview" if alignment_preview else "reference_model",
                 "world_coordinate_unit": "relative", "geometry_signature": reference["signature"],
                 "initial_sparse_path": reference["sparse_path"], "intrinsics_snapshot": run.intrinsics_snapshot,
@@ -2949,6 +3017,14 @@ class AnalysisService:
         saved = self._saved_step(run, "aligning_model_cameras", "registration", signature)
         if saved is not None:
             context = json.loads((root / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
+            # Later rounds share the accepted rig/axis coordinate frame; they
+            # train their own models, never retrain the first round's reference.
+            counts = context.get("model", {}).get("model_quality", {}).get("training_camera_counts", {})
+            if (not set(context["fixed_view_ids"]) & {view.view_id for view in views}
+                    and context.get("model_signature")
+                    and all(int(counts.get(camera, 0)) > 0 for camera in ("top", "side", "rotating"))
+                    and Path(context["model"].get("gaussian_model_path", "")).is_file()):
+                return saved
             self._store_model_registration(run, saved)
             self._build_joint_reference_model(run, context, saved, views, undistorted_by_view, cancel_event)
             return saved
@@ -3039,10 +3115,14 @@ class AnalysisService:
         self,
         run: AnalysisRun,
         cancel_event: Event,
+        *,
+        round_key: str | None = None,
     ) -> AnalysisRun:
         self._check_cancel(cancel_event)
         rounds = self.repository.list_rounds(run.analysis_id)
-        views = self.repository.list_views(run.analysis_id)
+        if round_key is not None:
+            rounds = [item for item in rounds if item.round_key == round_key]
+        views = self.repository.list_views(run.analysis_id, round_key) if round_key is not None else self.repository.list_views(run.analysis_id)
         if not rounds or not views:
             raise AnalysisError("分析缺少 Round／View 清單。")
         self._clear_processing_preview(run)
@@ -3091,6 +3171,7 @@ class AnalysisService:
                 progress_callback=update_undistortion,
                 backend_callback=update_image_backends,
                 source_manifest=run.parameters.get("source_manifest", run.parameters.get("input_manifest", [])),
+                **({"manifest_path": self._artifacts(run).undistortion_manifest_path(round_key)} if round_key is not None else {}),
             )
         except (OSError, TypeError, ValueError, cv2.error) as error:
             raise AnalysisError(f"分析影像去畸變失敗：{error}") from error
@@ -3191,7 +3272,7 @@ class AnalysisService:
         pose_estimation_version = run.pose_estimation_version or "unknown"
         failed_round_count = 0
         existing_poses_by_round: dict[str, list[AnalysisCameraPoseResult]] = {}
-        for pose in self.repository.list_camera_poses(run.analysis_id):
+        for pose in (self.repository.list_camera_poses(run.analysis_id, round_key) if round_key is not None else self.repository.list_camera_poses(run.analysis_id)):
             existing_poses_by_round.setdefault(pose.round_key, []).append(pose)
         previous_quality = {
             str(item.get("round_key")): item
@@ -3204,8 +3285,12 @@ class AnalysisService:
             round_views = views_by_round.get(round_item.round_key, [])
             saved = self._saved_step(run, "estimating_camera_poses", round_item.round_key, pose_signature)
             if saved is not None:
-                stored_poses.extend(AnalysisCameraPoseResult.model_validate(item) for item in saved["poses"])
-                updated_views.extend(AnalysisView.model_validate(item) for item in saved["views"])
+                # A model may have refined these poses after preprocessing was
+                # checkpointed. Prefer the committed per-round poses and views.
+                stored_poses.extend(existing_poses_by_round.get(round_item.round_key) or [AnalysisCameraPoseResult.model_validate(item) for item in saved["poses"]])
+                updated_views.extend(round_views if existing_poses_by_round.get(round_item.round_key) else [AnalysisView.model_validate(item) for item in saved["views"]])
+                if round_key is not None and round_item.status in {"ready", "cancelled"}:
+                    self.repository.update_round(round_item.model_copy(update={"status": "failed" if saved["failed"] else "preprocessed"}))
                 round_quality_payloads.append(saved["quality"])
                 pose_estimation_version = saved["version"]
                 failed_round_count += int(saved["failed"])
@@ -3485,10 +3570,10 @@ class AnalysisService:
             progress=0.32,
         )
         last_export_update = float("-inf")
-        for index, (round_key, round_poses) in enumerate(final_poses_by_round.items(), start=1):
+        for index, (pose_round_key, round_poses) in enumerate(final_poses_by_round.items(), start=1):
             self._check_cancel(cancel_event)
             artifacts.write_round_camera_poses(
-                round_key,
+                pose_round_key,
                 round_poses,
             )
             now = monotonic()
@@ -3502,7 +3587,7 @@ class AnalysisService:
                     progress=0.32,
                 )
         self._check_cancel(cancel_event)
-        self.repository.replace_camera_poses(run.analysis_id, stored_poses)
+        self.repository.replace_camera_poses(run.analysis_id, stored_poses, **({"round_key": round_key} if round_key is not None else {}))
         self.repository.update_views(updated_views)
         pose_payload = [
             item.model_dump(mode="json")
@@ -3514,6 +3599,7 @@ class AnalysisService:
             "world_scale": stereo_quality if markerless else {"scale_source": "aruco"},
             "fixed_camera_consistency": fixed_camera_consistency,
             "rounds": round_quality_payloads,
+            **({"scope_round_key": round_key} if round_key is not None else {}),
         }
         self.repository.update_pose_alignment(
             run.analysis_id,
@@ -3522,6 +3608,11 @@ class AnalysisService:
             pose_quality=aggregate_pose_quality,
             updated_at=utc_now_iso(),
         )
+        if round_key is not None:
+            updated = self._require_run(run.analysis_id)
+            current_round = next(item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == round_key)
+            artifacts.write_single_round_index(current_round, updated_views)
+            return updated
         self.repository.update_state(
             run.analysis_id,
             updated_at=utc_now_iso(),
@@ -3551,7 +3642,7 @@ class AnalysisService:
     ) -> dict[str, Any]:
         artifacts = self._artifacts(run)
         try:
-            undistorted_items = artifacts.read_undistortion_manifest()
+            undistorted_items = artifacts.read_undistortion_manifest(round_key)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise AnalysisError("分析的去畸變影像清單遺失或格式無效。") from error
         undistorted_by_view = {
@@ -3657,6 +3748,8 @@ class AnalysisService:
         round_key: str,
         refined_payloads: object,
         bundle_adjustment_quality: object,
+        *,
+        round_scoped: bool = False,
     ) -> None:
         if not isinstance(refined_payloads, list):
             raise AnalysisError("模型工作回傳的姿態精修結果格式無效。")
@@ -3665,7 +3758,7 @@ class AnalysisService:
             if isinstance(bundle_adjustment_quality, Mapping)
             else {}
         )
-        all_poses = self.repository.list_camera_poses(run.analysis_id)
+        all_poses = self.repository.list_camera_poses(run.analysis_id, round_key) if round_scoped else self.repository.list_camera_poses(run.analysis_id)
         pose_by_view = {
             item.view_id: item
             for item in all_poses
@@ -3729,6 +3822,7 @@ class AnalysisService:
             self.repository.replace_camera_poses(
                 run.analysis_id,
                 updated_poses,
+                **({"round_key": round_key} if round_scoped else {}),
             )
             views = self.repository.list_views(
                 run.analysis_id,
@@ -3804,6 +3898,8 @@ class AnalysisService:
             round_key,
             round_quality_item,
         )
+        if round_scoped:
+            return
         artifacts.write_aggregated_pose_results(
             updated_poses,
             pose_estimation_version=(
@@ -3819,6 +3915,8 @@ class AnalysisService:
         self,
         run: AnalysisRun,
         cancel_event: Event,
+        *,
+        round_key: str | None = None,
     ) -> AnalysisRun:
         if run.method_name != "rotating":
             return run
@@ -3841,8 +3939,10 @@ class AnalysisService:
         artifacts = self._artifacts(run)
         artifacts.write_reconstruction_environment(readiness)
         rounds = self.repository.list_rounds(run.analysis_id)
-        candidates = [item for item in rounds if item.status in {"preprocessed", "reconstructing"}]
+        candidates = [item for item in rounds if item.status in {"preprocessed", "reconstructing"} and (round_key is None or item.round_key == round_key)]
         if not candidates:
+            if round_key is not None:
+                return self._require_run(run.analysis_id)
             if any(
                 item.status in {
                     "model_completed",
@@ -3856,7 +3956,7 @@ class AnalysisService:
                 return self._require_run(run.analysis_id)
             raise AnalysisError("沒有通過前處理的 Round 可建立三維模型。")
 
-        completed = sum(item.status == "model_completed" for item in rounds)
+        completed = sum(item.status == "completed" for item in self.repository.list_round_models(run.analysis_id))
         failed = sum(item.status in {"failed", "model_failed"} for item in rounds)
         for index, round_item in enumerate(candidates, start=1):
             self._check_cancel(cancel_event)
@@ -3933,6 +4033,7 @@ class AnalysisService:
                         .get("sparse_initialization", {})
                         .get("bundle_adjustment", {})
                     ),
+                    round_scoped=round_key is not None,
                 )
                 relative_path = lambda value: (
                     str(Path(value).resolve().relative_to(artifacts.root))
@@ -4113,10 +4214,11 @@ class AnalysisService:
             artifacts.write_round_model_index(
                 self.repository.list_round_models(run.analysis_id)
             )
-            artifacts.write_round_index(
-                self.repository.list_rounds(run.analysis_id),
-                self.repository.list_views(run.analysis_id),
-            )
+            if round_key is None:
+                artifacts.write_round_index(self.repository.list_rounds(run.analysis_id), self.repository.list_views(run.analysis_id))
+            else:
+                resolved = next(item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == round_key)
+                artifacts.write_single_round_index(resolved, self.repository.list_views(run.analysis_id, round_key))
 
         if completed == 0:
             self._log(
@@ -4125,22 +4227,22 @@ class AnalysisService:
                 "所有 Round 的三維模型皆建立失敗，將保留相機姿態並繼續建立尖端標記。",
             )
         updated = self._require_run(run.analysis_id)
-        artifacts.write_run(updated)
+        if round_key is None:
+            artifacts.write_run(updated)
         return updated
 
     def _run_tip_markers(
         self,
         run: AnalysisRun,
         cancel_event: Event,
+        *,
+        round_key: str | None = None,
+        finalize: bool = True,
+        process_rounds: bool = True,
     ) -> AnalysisRun:
         self._check_cancel(cancel_event)
         artifacts = self._artifacts(run)
-        try:
-            undistortion_manifest = artifacts.read_undistortion_manifest()
-        except (OSError, ValueError, json.JSONDecodeError) as error:
-            raise AnalysisError(
-                f"無法讀取去畸變影像清單：{error}"
-            ) from error
+        undistortion_manifest = []
 
         tip_settings = run.parameters.get("tip_analysis")
         if not isinstance(tip_settings, Mapping):
@@ -4171,10 +4273,10 @@ class AnalysisService:
             self.repository.list_rounds(run.analysis_id)
         )
         views_by_round: dict[str, list] = {}
-        for view in self.repository.list_views(run.analysis_id):
+        for view in (self.repository.list_views(run.analysis_id, round_key) if round_key is not None else self.repository.list_views(run.analysis_id) if process_rounds else []):
             views_by_round.setdefault(view.round_key, []).append(view)
         poses_by_round: dict[str, list[AnalysisCameraPoseResult]] = {}
-        for pose in self.repository.list_camera_poses(run.analysis_id):
+        for pose in (self.repository.list_camera_poses(run.analysis_id, round_key) if round_key is not None else self.repository.list_camera_poses(run.analysis_id) if process_rounds else []):
             poses_by_round.setdefault(pose.round_key, []).append(pose)
         models_by_round = {
             item.round_key: item
@@ -4196,8 +4298,15 @@ class AnalysisService:
         candidates = [
             item
             for item in rounds
-            if item.status in processable_statuses
+            if process_rounds and (round_key is None or item.round_key == round_key)
+            and (item.status in processable_statuses or (round_key is not None and item.status in {"failed", "incomplete"}))
         ]
+        if candidates:
+            try:
+                undistortion_manifest = artifacts.read_undistortion_manifest(round_key) if round_key is not None else artifacts.read_undistortion_manifest()
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                if any(item.status not in {"failed", "incomplete"} for item in candidates):
+                    raise AnalysisError(f"無法讀取去畸變影像清單：{error}") from error
         candidate_keys = {
             item.round_key
             for item in candidates
@@ -4249,6 +4358,7 @@ class AnalysisService:
             model_result = models_by_round.get(round_item.round_key)
             if model_result is not None and model_result.status != "completed":
                 model_result = None
+            processing_error = False
             try:
                 result = analyze_round_tip(
                     analysis_id=run.analysis_id,
@@ -4331,6 +4441,7 @@ class AnalysisService:
             except OperationCancelledError:
                 raise
             except Exception as error:
+                processing_error = True
                 reason = public_error_detail(error)
                 landmark = TipLandmark(
                     analysis_id=run.analysis_id,
@@ -4354,7 +4465,12 @@ class AnalysisService:
                 if export_tip_markers:
                     artifacts.write_tip_landmark(
                         landmark,
-                        quality={"failure_reason": reason},
+                        quality={
+                            "failure_reason": reason,
+                            "processing_error": True,
+                            "tip_analysis_version": TIP_ANALYSIS_VERSION,
+                            "error_type": type(error).__name__,
+                        },
                     )
                 else:
                     (
@@ -4368,12 +4484,15 @@ class AnalysisService:
                 self._log(
                     current,
                     "ERROR",
-                    f"{round_item.round_id} 尖端標記失敗：{reason}",
+                    f"{round_item.round_id} 尖端標記失敗：{reason}\n"
+                    + "".join(traceback.format_exception(type(error), error, error.__traceback__)),
                 )
 
             self.repository.upsert_tip_landmark(landmark)
             self._save_step(run, "triangulating_tip_marker", round_item.round_key, "",
-                            {"valid": landmark.valid, "tip_id": landmark.tip_id})
+                            {"valid": landmark.valid, "tip_id": landmark.tip_id,
+                             "processing_error": processing_error, "tip_analysis_version": TIP_ANALYSIS_VERSION,
+                             "tip_candidate_version": TIP_CANDIDATE_VERSION})
             existing_landmarks[round_item.round_key] = landmark
             if landmark.valid:
                 previous_by_mode[round_item.mode_id] = landmark
@@ -4416,9 +4535,12 @@ class AnalysisService:
             )
 
         resolved_rounds = self.repository.list_rounds(run.analysis_id)
-        resolved_landmarks = self.repository.list_tip_landmarks(
-            run.analysis_id
-        )
+        resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
+        if not finalize:
+            # Future rounds have no measurements yet. They must not appear as
+            # failures or interpolated positions in the live trajectory.
+            measured_keys = {item.round_key for item in resolved_landmarks}
+            resolved_rounds = [item for item in resolved_rounds if item.round_key in measured_keys]
         current = self._require_run(run.analysis_id)
         self._set_state(
             current,
@@ -4462,10 +4584,11 @@ class AnalysisService:
         artifacts.write_round_model_index(
             self.repository.list_round_models(run.analysis_id)
         )
-        artifacts.write_round_index(
-            resolved_rounds,
-            self.repository.list_views(run.analysis_id),
-        )
+        if finalize:
+            artifacts.write_round_index(resolved_rounds, self.repository.list_views(run.analysis_id))
+        elif round_key is not None:
+            resolved = next(item for item in resolved_rounds if item.round_key == round_key)
+            artifacts.write_single_round_index(resolved, self.repository.list_views(run.analysis_id, round_key))
         current = self._require_run(run.analysis_id)
         self._set_state(
             current,
@@ -4489,7 +4612,7 @@ class AnalysisService:
             }
             for item in resolved_rounds
         )
-        trajectory_status = "completed" if valid_count else "unavailable"
+        trajectory_status = ("completed" if finalize else "processing") if valid_count else "unavailable"
         self.repository.update_state(
             run.analysis_id,
             updated_at=utc_now_iso(),
@@ -4516,33 +4639,10 @@ class AnalysisService:
             utc_now_iso(),
         )
         current = self._require_run(run.analysis_id)
-        artifacts.write_run(current)
-        if valid_count == 0:
-            raise AnalysisError("所有 Round 都無法建立有效的三維尖端標記。")
-
-        wait_for_review = bool(
-            tip_settings.get("wait_for_low_confidence_review", True)
-        )
-        needs_review = bool(
-            run.parameters.get("manual_review_required", True)
-        ) or (
-            wait_for_review
-            and any(not item.valid for item in resolved_landmarks)
-        )
-        if needs_review:
-            completed = self._set_state(
-                current,
-                status="needs_review",
-                stage="waiting_for_review",
-                current_frame=len(resolved_rounds),
-                total_frames=len(resolved_rounds),
-                progress=0.92,
-                manual_review_completed=False,
-                clear_error=True,
-            )
-            self._log(completed, "INFO", "尖端標記已建立，等待人工確認。")
-            return completed
-
+        if not finalize:
+            return self._set_state(current, status="processing", stage="linking_tip_trajectory", progress=1.0)
+        # Finish every round even when no automatic tip is trustworthy. Keep
+        # the missing positions explicit and allow optional correction later.
         final_status = (
             "partially_completed"
             if failed_round_count > 0
@@ -4555,15 +4655,173 @@ class AnalysisService:
             current_frame=len(resolved_rounds),
             total_frames=len(resolved_rounds),
             progress=1.0,
-            manual_review_completed=True,
+            manual_review_completed=False,
             clear_error=True,
         )
         self._log(
             completed,
             "INFO",
-            f"分析完成，共建立 {valid_count} 個三維尖端標記。",
+            f"各輪處理完成，共建立 {valid_count} 個三維尖端標記；缺少的尖端可稍後人工補正。",
         )
         return completed
+
+    def _run_round_pipeline(self, run: AnalysisRun, cancel_event: Event) -> AnalysisRun:
+        """Finish and publish one round before opening the next round's images."""
+        artifacts = self._artifacts(run)
+        rounds = order_analysis_rounds(self.repository.list_rounds(run.analysis_id))
+        if not rounds:
+            raise AnalysisError("分析缺少輪次清單。")
+        if run.method_name == "rotating" and rounds[0].round_id == "round.00":
+            registration = self._saved_step(
+                run, "aligning_model_cameras", "registration", self._stereo_pose_signature(run),
+            )
+            if registration is None:
+                # Continuous snapshots contain no orbit. Complete one full
+                # round first to establish the shared rig/axis coordinates;
+                # trajectory publication still follows capture-time order.
+                reference = next((item for item in rounds if (
+                    item.round_id != "round.00" and item.status != "incomplete"
+                )), None)
+                if reference is not None:
+                    rounds = (reference, *(item for item in rounds if item.round_key != reference.round_key))
+        signature = step_signature({
+            "round_pipeline_version": 2,
+            "version": 3 if run.method_name == "rotating" else 2,
+            "training_version": PLANT_TRAINING_VERSION if run.method_name == "rotating" else None,
+            "intrinsics": run.intrinsics_snapshot, "pose": run.parameters.get("pose_strategy"),
+            "aruco": run.aruco_layout_snapshot, "reconstruction": run.parameters.get("reconstruction"),
+            "tips": run.parameters.get("tip_analysis"), "background": run.parameters.get("background"),
+            "outputs": run.parameters.get("outputs"),
+        })
+        sources = {item["absolute_path"]: item for item in run.parameters.get("source_manifest", run.parameters.get("input_manifest", []))}
+        if not hasattr(self, "_round_progress"):
+            self._round_progress = {}
+        with StepJournal(artifacts.root) as journal:
+            journal.save("control", "mode", "", {"mode": "processing"})
+            for index, initial in enumerate(rounds, start=1):
+                self._check_cancel(cancel_event)
+                current_round = next(item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == initial.round_key)
+                key = current_round.round_key
+                self._round_progress[run.analysis_id] = {
+                    "round_key": key, "round_id": current_round.round_id,
+                    "current_round": index, "total_rounds": len(rounds), "round_progress": 0.0,
+                }
+                views = self.repository.list_views(run.analysis_id, key)
+                # Check identities only for this round, including completed
+                # rounds on resume. No decoding/conversion of future rounds.
+                for view in views:
+                    self._check_cancel(cancel_event)
+                    expected = sources.get(view.absolute_path)
+                    if expected is not None:
+                        stat = Path(view.absolute_path).stat()
+                        if (stat.st_size, stat.st_mtime_ns) != (expected["size_bytes"], expected["modified_ns"]):
+                            raise AnalysisError("分析輸入在建立後已變更，無法恢復既有結果。")
+                landmark = next((item for item in self.repository.list_tip_landmarks(run.analysis_id) if item.round_key == key), None)
+                tip_checkpoint = journal.get("triangulating_tip_marker", key) or {}
+                refresh_tip = (
+                    landmark is not None
+                    and (
+                        tip_checkpoint.get("tip_candidate_version", 0) != TIP_CANDIDATE_VERSION
+                        or tip_checkpoint.get("tip_analysis_version", 0) != TIP_ANALYSIS_VERSION
+                    )
+                )
+                if (journal.get("round_pipeline", key, signature) is not None
+                        and landmark is not None and not refresh_tip):
+                    run = self._set_state(run, status="processing", stage="linking_tip_trajectory", progress=1.0)
+                    continue
+
+                run = self._set_state(run, status="processing", stage="snapshotting_intrinsics", progress=0.0, clear_error=True)
+                if current_round.status != "incomplete":
+                    prepared = journal.get("round_preprocessing", key, signature)
+                    legacy_manifest = not artifacts.undistortion_manifest_path(key).is_file()
+                    try:
+                        manifest = artifacts.read_undistortion_manifest(key)
+                    except (OSError, ValueError):
+                        manifest = []
+                    image_outputs = [
+                        artifacts.root / item[field]
+                        for item in manifest
+                        for field in ("undistorted_path", "valid_pixel_mask_path")
+                    ]
+                    complete_manifest = (
+                        {item["view_id"] for item in manifest} == {view.view_id for view in views}
+                        and all(path.is_file() for path in image_outputs)
+                    )
+                    if not complete_manifest:
+                        prepared = None
+                    # Adopt already preprocessed rounds from the former all-
+                    # rounds pipeline without discarding models or BA results.
+                    if prepared is None and legacy_manifest and current_round.status not in {"ready", "ready_tip_only", "cancelled"}:
+                        poses = self.repository.list_camera_poses(run.analysis_id, key)
+                        if poses and complete_manifest:
+                            write_json_atomic(artifacts.undistortion_manifest_path(key), {"coordinate_space": "undistorted", "views": manifest})
+                            journal.save("round_preprocessing", key, signature, {}, outputs=[
+                                artifacts.undistortion_manifest_path(key), *image_outputs,
+                            ])
+                            prepared = journal.get("round_preprocessing", key, signature)
+                    if prepared is None:
+                        run = self._run_round_preprocessing(run, cancel_event, round_key=key)
+                        image_outputs = [
+                            artifacts.root / item[field]
+                            for item in artifacts.read_undistortion_manifest(key)
+                            for field in ("undistorted_path", "valid_pixel_mask_path")
+                        ]
+                        journal.save("round_preprocessing", key, signature, {}, outputs=[
+                            artifacts.undistortion_manifest_path(key), *image_outputs,
+                        ])
+                    if current_round.status == "cancelled":
+                        self.repository.update_round(current_round.model_copy(update={"status": "preprocessed" if run.method_name == "rotating" and current_round.round_id != "round.00" else "ready_tip_only"}))
+                    self._check_cancel(cancel_event)
+                    model = next((item for item in self.repository.list_round_models(run.analysis_id) if item.round_key == key), None)
+                    if model is not None and model.status == "completed" and (not model.model_path or any(
+                        not (artifacts.root / path).is_file() for path in (model.model_path, model.plant_model_path) if path
+                    )):
+                        self.repository.update_round(current_round.model_copy(update={"status": "preprocessed", "tip_landmark_id": None}))
+                    run = self._run_round_models(run, cancel_event, round_key=key)
+                    model = next((item for item in self.repository.list_round_models(run.analysis_id) if item.round_key == key), None)
+                    model_outputs = [artifacts.root / path for path in (model.model_path, model.plant_model_path) if path] if model is not None and model.status == "completed" else []
+                    journal.save("round_model", key, signature, {"status": model.status if model is not None else "unavailable"}, outputs=model_outputs)
+                else:
+                    model_outputs = []
+                self._check_cancel(cancel_event)
+                current_round = next(item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == key)
+                landmark = next((item for item in self.repository.list_tip_landmarks(run.analysis_id) if item.round_key == key), None)
+                tip_path = round_artifact_directory(artifacts.root, key) / "tip" / "tip_marker.json"
+                if current_round.status in {"tip_completed", "tip_only", "tip_invalid"} and (
+                    refresh_tip or landmark is None or (run.parameters.get("outputs", {}).get("export_tip_markers", True) and not tip_path.is_file())
+                ):
+                    model = next((item for item in self.repository.list_round_models(run.analysis_id) if item.round_key == key), None)
+                    next_status = "ready_tip_only" if run.method_name == "fixed" or current_round.round_id == "round.00" else "model_completed" if model is not None and model.status == "completed" else "model_failed"
+                    self.repository.update_round(current_round.model_copy(update={"status": next_status}))
+                run = self._run_tip_markers(run, cancel_event, round_key=key, finalize=False)
+                # The trajectory has been persisted before marking this round
+                # complete. A pause cannot lose an already published position.
+                landmark = next((item for item in self.repository.list_tip_landmarks(run.analysis_id) if item.round_key == key), None)
+                if landmark is None:
+                    raise AnalysisError("本輪尖端結果尚未保存，無法完成輪次。")
+                tip_outputs = [tip_path] if tip_path.is_file() else []
+                journal.save("round_tip", key, signature, {
+                    "valid": landmark.valid, "tip_analysis_version": TIP_ANALYSIS_VERSION,
+                    "tip_candidate_version": TIP_CANDIDATE_VERSION,
+                }, outputs=tip_outputs)
+                journal.save("round_pipeline", key, signature, {}, outputs=[*model_outputs, *tip_outputs])
+
+        self._round_progress.pop(run.analysis_id, None)
+        if not hasattr(self, "_finalizing_analyses"):
+            self._finalizing_analyses = set()
+        self._finalizing_analyses.add(run.analysis_id)
+        self._check_cancel(cancel_event)
+        poses = self.repository.list_camera_poses(run.analysis_id)
+        poses, consistency = evaluate_fixed_camera_pose_consistency(poses, cancel_check=lambda: self._check_cancel(cancel_event))
+        quality = []
+        for item in rounds:
+            self._check_cancel(cancel_event)
+            path = round_artifact_directory(artifacts.root, item.round_key) / "quality.json"
+            if path.is_file():
+                quality.append(json.loads(path.read_text(encoding="utf-8")))
+        artifacts.write_aggregated_pose_results(poses, pose_estimation_version=run.pose_estimation_version or "unknown",
+                                                round_quality=quality, fixed_camera_consistency=consistency)
+        return self._run_tip_markers(run, cancel_event, process_rounds=False)
 
     def _run_job(self, analysis_id: str, cancel_event: Event) -> None:
         run = self._require_run(analysis_id)
@@ -4575,35 +4833,7 @@ class AnalysisService:
                 self._validate_round_analysis(run, cancel_event)
                 return
             if run.status in {"processing", "reconstructing"}:
-                root = self._artifacts(run).root
-                signature = step_signature({
-                    "round_pipeline_version": 2,
-                    "version": 3 if run.method_name == "rotating" else 2, "intrinsics": run.intrinsics_snapshot,
-                    **({"training_version": PLANT_TRAINING_VERSION} if run.method_name == "rotating" else {}),
-                    "pose": run.parameters.get("pose_strategy"), "aruco": run.aruco_layout_snapshot,
-                    "reconstruction": run.parameters.get("reconstruction"), "tips": run.parameters.get("tip_analysis"),
-                })
-                # Reusing checkpoints still checks every immutable source's identity.
-                for source in run.parameters.get("source_manifest", run.parameters.get("input_manifest", [])):
-                    self._check_cancel(cancel_event)
-                    stat = Path(source["absolute_path"]).stat()
-                    if (stat.st_size, stat.st_mtime_ns) != (source["size_bytes"], source["modified_ns"]):
-                        raise AnalysisError("分析輸入在建立後已變更，無法恢復既有結果。")
-                with StepJournal(root) as journal:
-                    journal.save("control", "mode", "", {"mode": "processing"})
-                    if journal.get("phase", "preprocessing", signature) is None:
-                        run = self._run_round_preprocessing(run, cancel_event)
-                        # Bundle adjustment updates the pose exports later. Their
-                        # changing timestamps must not invalidate preprocessing.
-                        journal.save("phase", "preprocessing", signature, {}, outputs=[
-                            root / "undistortion_manifest.json",
-                        ])
-                    self._check_cancel(cancel_event)
-                    if journal.get("phase", "models", signature) is None:
-                        run = self._run_round_models(run, cancel_event)
-                        journal.save("phase", "models", signature, {})
-                    self._check_cancel(cancel_event)
-                    self._run_tip_markers(run, cancel_event)
+                self._run_round_pipeline(run, cancel_event)
                 return
             raise AnalysisError(
                 "分析背景工作收到不支援的狀態："
@@ -4632,3 +4862,5 @@ class AnalysisService:
             with self._preview_lock:
                 self._validation_progress.pop(analysis_id, None)
                 self._validation_progress_times.pop(analysis_id, None)
+                getattr(self, "_round_progress", {}).pop(analysis_id, None)
+                getattr(self, "_finalizing_analyses", set()).discard(analysis_id)

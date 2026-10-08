@@ -15,7 +15,7 @@ export async function loadFormalTrajectoryResults(
   signal,
 ) {
   const payload = await Promise.all([
-    requestAnalysisResource(analysisPath(analysisId), {
+    requestAnalysisResource(`${analysisPath(analysisId)}?summary=true`, {
       signal,
     }),
     requestAnalysisResource(analysisPath(analysisId, "/rounds"), {

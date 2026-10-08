@@ -12,7 +12,7 @@ export async function loadFormalTipReview(
   signal,
 ) {
   const resources = await Promise.all([
-    requestAnalysisResource(analysisPath(analysisId), {
+    requestAnalysisResource(`${analysisPath(analysisId)}?summary=true`, {
       signal,
     }),
     requestAnalysisResource(analysisPath(analysisId, "/rounds"), {
