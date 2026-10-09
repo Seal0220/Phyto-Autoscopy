@@ -65,6 +65,7 @@ function initialDraft(
 
 export default function useFormalTipReview({
   analysisId,
+  initialRoundKey,
 }) {
   const [data, setData] = useState(EMPTY_DATA);
   const [selectedRoundKey, setSelectedRoundKey] = useState("");
@@ -105,8 +106,9 @@ export default function useFormalTipReview({
         ) {
           return previous;
         }
+        if (payload.rounds.some((item) => item.round_key === initialRoundKey)) return initialRoundKey;
         const attention = payload.rounds.find((item) => (
-          ["tip_invalid", "tip_only", "model_failed"].includes(item.status)
+          ["tip_invalid", "tip_only", "model_failed", "alignment_pending"].includes(item.status)
         ));
         return attention?.round_key || payload.rounds[0]?.round_key || "";
       });
@@ -126,7 +128,7 @@ export default function useFormalTipReview({
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [analysisId]);
+  }, [analysisId, initialRoundKey]);
 
   useEffect(() => {
     mountedRef.current = true;

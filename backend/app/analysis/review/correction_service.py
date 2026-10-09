@@ -101,7 +101,8 @@ def _load_skeleton_endpoints(
     artifacts_root: Path,
     model: RoundModelResult | None,
 ) -> tuple[SkeletonEndpoint, ...]:
-    if model is None or not model.skeleton_path:
+    if (model is None or model.model_quality.get("immutable_reference")
+            or model.model_quality.get("reference_only") or not model.skeleton_path):
         return ()
     root = artifacts_root.resolve()
     path = (root / model.skeleton_path).resolve()
@@ -148,7 +149,8 @@ def _distance_to_plant_model(
     model: RoundModelResult | None,
     point: np.ndarray,
 ) -> float | None:
-    if model is None or not model.plant_point_cloud_path:
+    if (model is None or model.model_quality.get("immutable_reference")
+            or model.model_quality.get("reference_only") or not model.plant_point_cloud_path):
         return None
     root = artifacts_root.resolve()
     path = (root / model.plant_point_cloud_path).resolve()
@@ -194,6 +196,41 @@ def create_tip_correction(
         if intrinsics is not None:
             projections[view_id] = _projection(pose, intrinsics)
 
+    for observation in request.observations:
+        view = view_by_id.get(observation.view_id)
+        if (view is None or not np.isfinite([observation.x_px, observation.y_px]).all()
+                or not 0 <= observation.x_px < view.image_width
+                or not 0 <= observation.y_px < view.image_height):
+            raise ValueError("人工尖端標記必須位於本輪的影像範圍內。")
+    if request.observations:
+        selected_views = [view_by_id[item.view_id] for item in request.observations]
+        if len({view.camera_id for view in selected_views}) < 2:
+            raise ValueError("請在至少兩個不同鏡頭標記同一尖端。")
+        snapshots = {view.snapshot_id or view.timestamp for view in selected_views}
+        if len(snapshots) != 1:
+            raise ValueError("請使用同一組擷取的影像標記尖端。")
+    if request.observations and any(item.view_id not in projections for item in request.observations):
+        # Save the operator's original clicks even if geometric measurement is
+        # deferred. Never manufacture millimetre coordinates from unregistered views.
+        corrected = automatic_tip.model_copy(update={
+            "tip_id": f"{automatic_tip.tip_id}:{correction_id}", "x_mm": None, "y_mm": None, "z_mm": None,
+            "valid": False, "confidence": 0, "source": "manual", "manually_corrected": True,
+            "detection_type": "invalid", "supporting_view_ids": [item.view_id for item in request.observations],
+            "visible_view_count": len(request.observations), "mean_reprojection_error_px": None,
+            "maximum_reprojection_error_px": None, "distance_to_model_mm": None,
+            "distance_to_skeleton_mm": None, "temporal_distance_mm": None,
+            "failure_reason": "人工尖端已儲存，待相機姿態可用後計算三維位置。",
+            "image_tip_confirmed": True,
+            "image_observations": [item.model_dump(mode="json") for item in request.observations],
+        })
+        return TipCorrection(
+            correction_id=correction_id, analysis_id=round_item.analysis_id, round_key=round_item.round_key,
+            operator_id=operator_id, created_at=created_at, reason=request.reason, correction_type="views",
+            pending_alignment=True, observations=request.observations, automatic_tip=automatic_tip,
+            corrected_tip=corrected, supporting_views=corrected.supporting_view_ids,
+            projected_observations=request.observations, confidence_before=automatic_tip.confidence, confidence_after=0,
+        )
+
     if request.invalid:
         corrected = automatic_tip.model_copy(
             update={
@@ -214,6 +251,7 @@ def create_tip_correction(
                 "detection_type": "invalid",
                 "manually_corrected": True,
                 "failure_reason": "manual_invalid",
+                "image_tip_confirmed": False, "image_observations": [], "tracking": {},
             }
         )
         return TipCorrection(
@@ -298,6 +336,10 @@ def create_tip_correction(
             projections,
         )
         distance_to_skeleton = optimized.distance_to_skeleton_mm
+        if (len({view_by_id[view_id].camera_id for view_id in supporting_views}) < 2
+                or len(supporting_views) != len(request.observations)
+                or after_error is None or after_error > maximum_reprojection_error_px):
+            raise ValueError("請在至少兩個不同鏡頭標記同一尖端，所有標記須通過重投影檢查。")
 
     projected = []
     for view_id, projection in projections.items():
@@ -308,6 +350,17 @@ def create_tip_correction(
                 x_px=pixel[0],
                 y_px=pixel[1],
             ))
+    if request.observations:
+        observed_errors = []
+        for observation in request.observations:
+            pose = pose_by_id[observation.view_id]
+            depth = (np.asarray(pose.rotation_matrix) @ point + np.asarray(pose.translation_vector_mm))[2]
+            pixel = _project(projections[observation.view_id], point)
+            if depth <= 0 or pixel is None:
+                raise ValueError("人工尖端必須位於所有標記鏡頭前方。")
+            observed_errors.append(float(np.linalg.norm(np.asarray(pixel) - [observation.x_px, observation.y_px])))
+        if not np.isfinite(observed_errors).all() or max(observed_errors) > maximum_reprojection_error_px:
+            raise ValueError("所有尖端標記須通過重投影檢查，請重新點選同一尖端。")
     if request.corrected_point_mm is not None:
         supporting_views = [item.view_id for item in projected]
     distance_to_model = _distance_to_plant_model(
@@ -349,13 +402,15 @@ def create_tip_correction(
             "supporting_view_ids": supporting_views,
             "visible_view_count": len(supporting_views),
             "mean_reprojection_error_px": after_error,
-            "maximum_reprojection_error_px": after_error,
+            "maximum_reprojection_error_px": max(observed_errors) if request.observations else after_error,
             "distance_to_model_mm": distance_to_model,
             "distance_to_skeleton_mm": distance_to_skeleton,
             "temporal_distance_mm": None,
             "detection_type": "manual",
             "manually_corrected": True,
             "failure_reason": None,
+            "image_tip_confirmed": bool(request.observations),
+            "image_observations": [item.model_dump(mode="json") for item in request.observations],
         }
     )
     return TipCorrection(
@@ -370,6 +425,7 @@ def create_tip_correction(
             if request.corrected_point_mm is not None
             else "views"
         ),
+        observations=request.observations,
         automatic_tip=automatic_tip,
         corrected_tip=corrected,
         supporting_views=supporting_views,

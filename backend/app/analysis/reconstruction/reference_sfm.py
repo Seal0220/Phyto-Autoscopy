@@ -1,4 +1,4 @@
-"""Align all cameras in a reference round, starting with a real motor baseline."""
+"""Align reference images with COLMAP, then calibrate the motor reference."""
 from __future__ import annotations
 
 import json
@@ -16,14 +16,21 @@ from app.analysis.rounds.paths import safe_artifact_name
 from app.analysis.image_probe import read_analysis_image
 from app.analysis.segmentation.plant_mask import create_plant_mask
 from app.analysis.segmentation.reconstruction_mask import create_reconstruction_mask
+from app.analysis.reconstruction.reference_pose_refinement import REFERENCE_GEOMETRY_VERSION, refine_reference_geometry
+from app.analysis.reconstruction.colmap_camera import colmap_pinhole_params
 
 
 def reference_image_name(view: dict) -> str:
     return f"{view['camera_id']}__{safe_artifact_name(view['view_id'])}{Path(view['undistorted_path']).suffix.lower()}"
 
 
-def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], minimum_inliers: int):
-    """Repeated fixed frames have no baseline, even when they match very well."""
+def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], minimum_inliers: int, *, cancel_check=lambda: None):
+    """Choose depth support measured from images rather than match count alone.
+
+    Motor readings only restrict the candidate search. The score uses the
+    triangulation angle estimated from calibrated image correspondences.
+    Repeated fixed frames have no depth baseline and are never seed pairs.
+    """
     angles = {}
     for view in views:
         if view["camera_id"] != "rotating":
@@ -34,7 +41,8 @@ def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], min
         if angle is not None and np.isfinite(float(angle)):
             angles[reference_image_name(view)] = float(angle)
     with pycolmap.Database.open(database_path) as database:
-        by_id = {image.image_id: angles[image.name] for image in database.read_all_images() if image.name in angles}
+        images = {image.image_id: image for image in database.read_all_images()}
+        by_id = {image_id: angles[image.name] for image_id, image in images.items() if image.name in angles}
         pairs, geometries = database.read_two_view_geometries()
         candidates = []
         for pair, geometry in zip(pairs, geometries):
@@ -44,11 +52,52 @@ def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], min
             baseline = abs((by_id[first] - by_id[second] + 180.) % 360. - 180.)
             inliers = len(geometry.inlier_matches)
             if 10. <= baseline <= 90. and inliers >= minimum_inliers:
-                candidates.append((inliers, baseline, first, second))
-    if not candidates:
-        return None
-    _, baseline, first, second = max(candidates)
-    return {"image_ids": [first, second], "motor_baseline_deg": baseline, "camera_id": "rotating"}
+                candidates.append((inliers, baseline, first, second, geometry))
+        if not candidates:
+            return None
+        # Keep adequate support and bound repeated relative-pose estimation.
+        minimum_support = max(minimum_inliers, int(max(row[0] for row in candidates) * .35))
+        candidates = sorted((row for row in candidates if row[0] >= minimum_support), reverse=True,
+                            key=lambda row: row[:4])[:64]
+        options = pycolmap.TwoViewGeometryOptions()
+        options.min_num_inliers = minimum_inliers
+        options.compute_relative_pose = True
+        options.ransac.random_seed = 0
+        best = None
+        for _, baseline, first, second, geometry in candidates:
+            cancel_check()
+            camera1 = database.read_camera(images[first].camera_id)
+            camera2 = database.read_camera(images[second].camera_id)
+            points1 = np.asarray(database.read_keypoints(first))[:, :2]
+            points2 = np.asarray(database.read_keypoints(second))[:, :2]
+            measured = pycolmap.estimate_calibrated_two_view_geometry(
+                camera1, points1, camera2, points2, geometry.inlier_matches, options,
+            )
+            triangle = float(measured.tri_angle)
+            support = len(measured.inlier_matches)
+            if measured.cam2_from_cam1 is None:
+                continue
+            rotation = measured.cam2_from_cam1.rotation.matrix()
+            rotation_angle = float(np.rad2deg(np.arccos(np.clip((np.trace(rotation) - 1) / 2, -1, 1))))
+            # A compact/near-planar subject can admit an essential-matrix
+            # branch with fictitious parallax. Metadata rejects grossly
+            # implausible branches; it never sets the reconstructed pose.
+            plausible_angle = baseline * 1.5 + 10
+            if (not np.isfinite(triangle)
+                    or triangle < np.deg2rad(4) or support < minimum_support
+                    or np.rad2deg(triangle) > plausible_angle or rotation_angle > plausible_angle
+                    or abs(measured.cam2_from_cam1.translation[2]) > .95):
+                continue
+            # Depth information grows with support and squared parallax; cap
+            # at 45 degrees so weak, extreme-baseline matches cannot dominate.
+            score = support * np.sin(min(triangle, np.pi / 4)) ** 2
+            candidate = {"image_ids": [first, second], "motor_baseline_deg": baseline,
+                         "camera_id": "rotating", "source": "calibrated_image_geometry",
+                         "triangulation_angle_deg": float(np.rad2deg(triangle)),
+                         "verified_inlier_count": support, "depth_support_score": float(score)}
+            if best is None or score > best[0]:
+                best = (score, candidate)
+    return best[1] if best else None
 
 
 def prepare_reference_feature_masks(views, root: Path, signature: str, *, cancel_check) -> Path:
@@ -84,7 +133,9 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     registering = job.get("reference_action") == "register_fixed"
     source = Path(job["reference_root"]).resolve() if registering else root
     views = job["selected_views"]
-    signature = step_signature({"version": 4, "views": views, "intrinsics": job["intrinsics_snapshot"],
+    signature = step_signature({"version": 4, "geometry_version": REFERENCE_GEOMETRY_VERSION,
+                                "refine_geometry": job.get("refine_geometry", True),
+                                "views": views, "intrinsics": job["intrinsics_snapshot"],
                                 "action": job.get("reference_action"), "settings": job["parameters"],
                                 "source_signature": job.get("source_signature")})
     with StepJournal(root) as journal:
@@ -106,7 +157,7 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
                 matrix = np.asarray(snapshot["undistorted_camera_matrix"])
                 camera = pycolmap.Camera(camera_id=cameras[camera_id], model="PINHOLE",
                     width=snapshot["analysis_image_width"], height=snapshot["analysis_image_height"],
-                    params=[matrix[0, 0], matrix[1, 1], matrix[0, 2], matrix[1, 2]], has_prior_focal_length=True)
+                    params=colmap_pinhole_params(matrix), has_prior_focal_length=True)
                 reconstruction.add_camera_with_trivial_rig(camera)
                 database.write_camera(camera, use_camera_id=True)
             for rig in reconstruction.rigs.values():
@@ -169,6 +220,7 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     options.mapper.abs_pose_max_error = float(job["parameters"].get("maximum_pnp_reprojection_error_px", 5))
     options.mapper.init_min_tri_angle = 4
     options.mapper.filter_min_tri_angle = 1
+    options.mapper.random_seed = 0
     options.fix_existing_frames = registering
     snapshots = root / "snapshots" / signature
     snapshots.mkdir(parents=True, exist_ok=True)
@@ -192,7 +244,8 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     input_path = latest[-1] if latest else source / "sparse" / "0" if registering else ""
     initial_pair = None
     if not registering and not input_path:
-        initial_pair = reference_initial_pair(pycolmap, database_path, views, options.mapper.init_min_num_inliers)
+        initial_pair = reference_initial_pair(pycolmap, database_path, views, options.mapper.init_min_num_inliers,
+                                              cancel_check=cancel_check)
         if initial_pair is None:
             raise ValueError("旋臂影像缺少有足夠視差的有效配對，無法建立參照模型深度。")
         options.init_image_id1, options.init_image_id2 = initial_pair["image_ids"]
@@ -207,7 +260,6 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     reconstruction = max(models.values(), key=lambda m: m.num_reg_images())
     sparse = root / "sparse" / "0"
     sparse.mkdir(parents=True, exist_ok=True)
-    reconstruction.write(sparse)
     by_name = {reference_image_name(v): v for v in views}
     registered_ids = set(reconstruction.reg_image_ids())
     registered_views = []
@@ -223,8 +275,33 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
         original = json.loads((source / "reference.json").read_text(encoding="utf-8"))
         orbit = original["orbit"]
         backend = original["quality"]["feature_backend"]
+        refinement_quality = original["quality"].get("geometry_refinement", {})
     else:
-        orbit = fit_motor_orbit(registered_views)
+        refinement_quality = {"status": "disabled", "reason": "immutable_reference_model"}
+        if job.get("refine_geometry", True):
+            progress("estimating_reference_poses", .92, "參照模型：影像姿態精修與角度校正")
+            refined = refine_reference_geometry(pycolmap, reconstruction, registered_views, cancel_check=cancel_check)
+            reconstruction, refinement_quality = refined.reconstruction, refined.quality
+        if refinement_quality.get("status") == "kept_original":
+            progress("estimating_reference_poses", .96, "參照模型：精修未通過，沿用已檢查的原始影像幾何")
+        images_by_name = {image.name: image for image in reconstruction.images.values()}
+        for view in registered_views:
+            image = images_by_name[view["image_name"]]
+            pose = np.eye(4)
+            pose[:3] = image.cam_from_world().matrix()
+            view.update(pose=pose.tolist(), point_count=int(image.num_points3D))
+        try:
+            orbit = fit_motor_orbit(registered_views)
+        except ValueError:
+            if job.get("refine_geometry", True):
+                raise
+            # A measurement-frame failure must not discard usable SfM geometry.
+            orbit = None
+        observed_angles = {item["view_id"]: item["image_angle_deg"] for item in (orbit or {}).get("angle_calibration", {}).get("observations", [])}
+        for view in registered_views:
+            if view["view_id"] in observed_angles:
+                view["image_angle_deg"] = observed_angles[view["view_id"]]
+    reconstruction.write(sparse)
     # Sparse tracks are identifiable physical anchors in the trained model frame.
     anchors = [{"id": int(point_id), "xyz": point.xyz.tolist(), "rgb": point.color.tolist(),
                 "error_px": float(point.error), "track_length": int(point.track.length())}
@@ -236,13 +313,19 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
     reconstruction.export_PLY(cloud)
     geometry_signature = step_signature({"inputs": signature,
         "geometry": {path.name: _sha256(path) for path in sorted(sparse.glob("*.bin"))}})
+    input_counts = {camera: sum(v["camera_id"] == camera for v in views) for camera in cameras}
+    registered_counts = {camera: sum(v["camera_id"] == camera for v in registered_views) for camera in cameras}
+    missing_cameras = [camera for camera in cameras if input_counts[camera] and not registered_counts[camera]]
     result = {"status": "completed", "signature": geometry_signature, "job_signature": signature, "coordinate_unit": "relative",
               "views": registered_views, "orbit": orbit, "points": anchors[:8000], "sparse_path": str(sparse),
               "reference_path": str(root / "reference.json"), "point_cloud_path": str(cloud),
               "quality": {"registered_image_count": len(registered_views), "point_count": reconstruction.num_points3D(),
-                          "input_camera_counts": {camera: sum(v["camera_id"] == camera for v in views) for camera in cameras},
-                          "registered_camera_counts": {camera: sum(v["camera_id"] == camera for v in registered_views) for camera in cameras},
-                          "initial_pair": initial_pair,
+                          "input_camera_counts": input_counts, "registered_camera_counts": registered_counts,
+                          "camera_registration": {"status": "partial" if missing_cameras else "complete",
+                                                  "missing_camera_ids": missing_cameras,
+                                                  "all_three_cameras_registered": all(registered_counts[camera] > 0 for camera in cameras)},
+                          "absolute_accuracy_verified": False,
+                          "initial_pair": initial_pair, "geometry_refinement": refinement_quality,
                           "mean_reprojection_error_px": float(reconstruction.compute_mean_reprojection_error()),
                           "coordinate_unit": "relative", "feature_backend": backend}}
     write_json_atomic(root / "reference.json", result)

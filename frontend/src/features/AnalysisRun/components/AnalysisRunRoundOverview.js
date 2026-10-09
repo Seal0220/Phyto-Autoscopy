@@ -7,6 +7,8 @@ import AnalysisRunRoundRow from "./AnalysisRunRoundRow";
 export default function AnalysisRunRoundOverview({
   analysisId,
   formalData,
+  busy,
+  onReloadRun,
 }) {
   const rounds = formalData?.rounds || [];
   const modelsByRound = new Map(
@@ -15,6 +17,9 @@ export default function AnalysisRunRoundOverview({
   const landmarksByRound = new Map(
     (formalData?.landmarks || []).map((item) => [item.round_key, item]),
   );
+  for (const correction of formalData?.corrections || []) {
+    if (correction.corrected_tip) landmarksByRound.set(correction.round_key, correction.corrected_tip);
+  }
 
   return (
     <InnerPanel>
@@ -36,6 +41,9 @@ export default function AnalysisRunRoundOverview({
               round={item}
               model={modelsByRound.get(item.round_key)}
               landmark={landmarksByRound.get(item.round_key)}
+              correction={(formalData?.corrections || []).filter((correction) => correction.round_key === item.round_key).at(-1)}
+              busy={busy}
+              onReloadRun={onReloadRun}
             />
           ))}
         </div>
@@ -56,8 +64,8 @@ export default function AnalysisRunRoundOverview({
             value: `${[...modelsByRound.values()].filter((item) => item.status === "completed").length} 個`,
           },
           {
-            label: "有效尖端標記",
-            value: `${[...landmarksByRound.values()].filter((item) => item.valid).length} 個`,
+            label: "尖端標記／三維量測",
+            value: `${[...landmarksByRound.values()].filter((item) => item.valid || item.image_tip_confirmed || item.manually_corrected && item.supporting_view_ids?.length >= 2).length} ／ ${[...landmarksByRound.values()].filter((item) => item.valid).length} 個`,
           },
           {
             label: "軌跡點",

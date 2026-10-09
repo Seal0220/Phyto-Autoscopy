@@ -2,32 +2,36 @@
 
 import { useEffect, useRef, useState } from "react";
 import { analysisArtifactUrl } from "@/lib/analysisImageUtils";
+import { landmarkInModelSpace } from "../lib/analysisModelCoordinateUtils";
 
 const EMPTY_POINT_IDS = [];
 
 export default function useAnalysisRunModelViewer({
   analysisId,
   reference,
+  landmark,
   selectedPointId,
   pointIds = EMPTY_POINT_IDS,
   disabled,
   onPointChange,
   onPointMove,
   onPointRemove,
+  tipPicking = false,
 }) {
   const element = useRef(null);
   const viewer = useRef(null);
-  const current = useRef({ reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove });
+  const current = useRef({ reference, landmark, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [progress, setProgress] = useState(0);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    current.current = { reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove };
+    current.current = { reference, landmark, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove };
     viewer.current?.setDisabled(disabled);
     viewer.current?.setSelection(selectedPointId, pointIds);
-  }, [reference, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove]);
+    viewer.current?.setTip(landmarkInModelSpace(landmark, reference));
+  }, [reference, landmark, selectedPointId, pointIds, disabled, onPointChange, onPointMove, onPointRemove]);
 
   useEffect(() => {
     let active = true;
@@ -45,6 +49,7 @@ export default function useAnalysisRunModelViewer({
         instance = createModelViewer({
           element: element.current,
           reference: current.current.reference,
+          tipPicking,
           onPick: current.current.onPointChange ? (pointId) => {
             if (active && !current.current.disabled) current.current.onPointChange?.(pointId);
           } : undefined,
@@ -69,6 +74,7 @@ export default function useAnalysisRunModelViewer({
         clearTimeout(timeout);
         if (!active || viewer.current !== instance) return;
         instance.setSelection(current.current.selectedPointId, current.current.pointIds);
+        instance.setTip(landmarkInModelSpace(current.current.landmark, current.current.reference));
         setReady(true);
       } catch {
         clearTimeout(timeout);
@@ -86,7 +92,7 @@ export default function useAnalysisRunModelViewer({
       if (viewer.current === instance) viewer.current = null;
       if (instance) void instance.dispose().catch(() => {});
     };
-  }, [analysisId, reference.signature, attempt]);
+  }, [analysisId, reference.signature, attempt, tipPicking]);
 
   return {
     element, ready, error, notice, progress,

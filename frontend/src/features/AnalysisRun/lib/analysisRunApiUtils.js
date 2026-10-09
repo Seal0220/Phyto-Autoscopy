@@ -143,6 +143,7 @@ export async function loadAnalysisRunBundle(
       models: Array.isArray(models) ? models : [],
       landmarks: [...resolved.values()],
       trajectory: Array.isArray(trajectory) ? trajectory : [],
+      corrections: Array.isArray(corrections) ? corrections : [],
     },
   };
 }

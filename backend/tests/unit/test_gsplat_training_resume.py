@@ -52,19 +52,8 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
     monkeypatch.setattr(trainer, "_load_training_views", lambda *args, **kwargs: (training_view,))
     settings = {"quality_preset": "preview", "training_iterations": 500, "image_factor": 1, "save_checkpoint": False,
                 "use_plant_mask": foreground_only}
-    # The foreground case resumes after the shape objective has become active.
-    # Suppress topology changes so the comparison isolates restored Adam and
-    # scheduler state, absolute gradients and the step-dependent shape weight.
-    if foreground_only:
-        from gsplat.strategy import DefaultStrategy
-        original_strategy = DefaultStrategy.__init__
-
-        def stable_strategy(self, *args, **kwargs):
-            original_strategy(self, *args, **kwargs)
-            self.grow_grad2d = float("inf")
-            self.prune_opa = 0
-
-        monkeypatch.setattr(DefaultStrategy, "__init__", stable_strategy)
+    # Foreground recovery includes real MCMC relocation/growth and its random
+    # position perturbations. The restored RNG must reproduce the same model.
     first_stop, last_stop = (150, 170) if foreground_only else (10, 20)
 
     def train_until(directory, stop):
@@ -83,6 +72,10 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
     assert paused["coordinate_space"] == ("metric_world_mm" if coordinate_unit == "millimetre" else "model_world_relative")
     assert ("center_world_mm" in paused) is (coordinate_unit == "millimetre")
     assert paused["optimizers"] and paused["scheduler"] and paused["strategy_state"]
+    assert "binoms" in paused["strategy_state"]
+    assert paused["splats"]["shN"].shape[1:] == (15, 3)
+    if foreground_only:
+        assert paused["splats"]["means"].shape[0] > 64
     with (tmp_path / "resumed" / "training_steps.csv").open("a") as handle:
         handle.write(f"{first_stop + 1},0,cuda\n{first_stop + 2},0,cuda\n")
     resumed = train_until(tmp_path / "resumed", last_stop)

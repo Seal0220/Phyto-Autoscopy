@@ -49,6 +49,7 @@ AnalysisStage = Literal[
     "building_alignment_preview",
     "aligning_model_cameras",
     "waiting_for_model_review",
+    "waiting_for_tip_seed",
     "waiting_for_stereo_review",
     "refining_camera_poses",
     "selecting_reconstruction_views",
@@ -86,6 +87,7 @@ class MarkerlessPoseSettings(BaseModel):
     top_height_mm: float = Field(gt=0, le=100000)
     side_height_mm: float | None = Field(default=None, ge=0, le=10000)
     side_horizontal_distance_mm: float | None = Field(default=None, ge=0, le=10000)
+    side_azimuth_prior_deg: float = Field(default=295.0, ge=0, lt=360)
     feature_count: int = Field(default=4000, ge=500, le=20000)
     minimum_stereo_inliers: int = Field(default=24, ge=8, le=1000)
     minimum_rotating_inliers: int = Field(default=12, ge=6, le=1000)
@@ -435,6 +437,9 @@ class TipLandmark(BaseModel):
     detection_type: str
     manually_corrected: bool = False
     failure_reason: str | None = None
+    image_tip_confirmed: bool = False
+    image_observations: list[dict[str, Any]] = Field(default_factory=list)
+    tracking: dict[str, Any] = Field(default_factory=dict)
 
 
 class TipObservation2D(BaseModel):
@@ -498,6 +503,8 @@ class TipCorrectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     round_key: str = Field(min_length=1, max_length=320)
+    model_point_id: int | None = Field(default=None, ge=0)
+    model_signature: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     observations: list[TipCorrectionObservation] = Field(
         default_factory=list,
         max_length=64,
@@ -512,6 +519,11 @@ class TipCorrectionRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_correction(self) -> "TipCorrectionRequest":
+        if self.model_point_id is not None or self.model_signature is not None:
+            if (self.model_point_id is None or self.model_signature is None
+                    or self.observations or self.corrected_point_mm is not None or self.invalid):
+                raise ValueError("模型尖端選點必須提供點編號與模型簽章，且不可同時送出其他座標。")
+            return self
         if self.invalid:
             if self.observations or self.corrected_point_mm is not None:
                 raise ValueError("無效標記不可同時提供修正座標。")
@@ -537,6 +549,13 @@ class TipCorrection(BaseModel):
     reason: str
     correction_type: Literal["views", "point", "invalid"] = "views"
     invalid: bool = False
+    pending_alignment: bool = False
+    tracking_seed_confirmed: bool = False
+    tracking_seed_quality: dict[str, Any] = Field(default_factory=dict)
+    model_point_id: int | None = None
+    model_signature: str | None = None
+    model_point_relative_xyz: list[float] | None = None
+    observations: list[TipCorrectionObservation] = Field(default_factory=list)
     automatic_tip: TipLandmark
     corrected_tip: TipLandmark
     supporting_views: list[str] = Field(default_factory=list)
@@ -582,6 +601,7 @@ class AnalysisProgress(BaseModel):
     current_round: int = 0
     total_rounds: int = 0
     round_progress: float = 0.0
+    results_revision: str | None = None
 
     @field_validator("progress")
     @classmethod

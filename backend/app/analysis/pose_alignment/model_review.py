@@ -98,7 +98,11 @@ def model_review_reference(context: dict, root: Path) -> dict:
     reference = context["reference"]
     model = context["model"]
     payload = {"signature": reference["signature"], "points": reference["points"],
-               "orbit": reference["orbit"], "model_quality": model["model_quality"]}
+               "orbit": reference["orbit"], "model_quality": {
+                   **model["model_quality"],
+                   **({"immutable_reference": True, "reference_only": True}
+                      if context.get("reference_model_policy") == "immutable_per_round_v1" else {}),
+               }}
     previews = model.get("preview_paths", [])
     payload["preview_path"] = Path(previews[0]).resolve().relative_to(root.resolve()).as_posix() if previews else None
     path_value = model.get("gaussian_model_path")
@@ -116,7 +120,7 @@ def model_review_reference(context: dict, root: Path) -> dict:
     first = next((view for view in reference["views"] if view.get("camera_id") == "rotating"), reference["views"][0])
     pose = np.asarray(first["pose"], dtype=float)
     camera_center = -pose[:3, :3].T @ pose[:3, 3]
-    up = np.asarray(reference["orbit"]["direction"], dtype=float)
+    up = np.asarray((reference.get("orbit") or {}).get("direction", -pose[1, :3]), dtype=float)
     if up @ (-pose[1, :3]) < 0:
         up = -up
     payload.update(signature=signature, gaussian_path=relative, gaussian_sha256=digest, gaussian_count=len(vertices),

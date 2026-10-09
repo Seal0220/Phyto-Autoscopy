@@ -1,3 +1,58 @@
+import { Vector3 } from "three";
+
+export function createTipMarkerLayer({ element, camera }) {
+  const layer = document.createElement("div");
+  layer.className = "pointer-events-none absolute inset-0 z-20 overflow-hidden";
+  layer.dataset.tipMarkers = "";
+  const node = document.createElement("div");
+  node.className = "absolute -translate-x-1/2 -translate-y-1/2";
+  node.setAttribute("role", "img");
+  node.hidden = true;
+  layer.appendChild(node);
+  element.appendChild(layer);
+  let anchor = null;
+
+  const update = () => {
+    if (!anchor) { node.hidden = true; return; }
+    camera.updateMatrixWorld();
+    const position = anchor.clone().project(camera);
+    const visible = element.clientWidth > 0 && element.clientHeight > 0
+      && [position.x, position.y, position.z].every(Number.isFinite)
+      && Math.abs(position.x) <= 1 && Math.abs(position.y) <= 1 && Math.abs(position.z) <= 1;
+    node.hidden = !visible;
+    if (visible) {
+      node.style.left = `${(position.x + 1) * element.clientWidth / 2}px`;
+      node.style.top = `${(1 - position.y) * element.clientHeight / 2}px`;
+    }
+  };
+  return {
+    update,
+    setTip(landmark) {
+      const xyz = [landmark?.x_mm, landmark?.y_mm, landmark?.z_mm];
+      anchor = xyz.every((value) => typeof value === "number" && Number.isFinite(value))
+        ? new Vector3(...xyz) : null;
+      const confirmed = landmark?.valid === true;
+      const label = confirmed ? "尖端（已確認）" : "尖端候選（待補正）";
+      const accent = confirmed ? "#34d399" : "#fbbf24";
+      node.setAttribute("aria-label", label);
+      node.dataset.tipStatus = confirmed ? "confirmed" : "candidate";
+      // The crosshair stays on the measured position; the offset label leaves
+      // the plant visible. DOM projection keeps it above opaque Gaussian splats.
+      node.innerHTML = `<svg width="220" height="90" viewBox="-22 -45 220 90" fill="none" aria-hidden="true" style="position:absolute;left:0;top:0;transform:translate(-22px,-45px)">
+        <circle r="9" stroke="#06100c" stroke-width="7"/>
+        <circle r="9" stroke="${accent}" stroke-width="3"/>
+        <path d="M-18 0 H-12 M12 0 H18 M0 -18 V-12 M0 12 V18 M9 -9 L28 -28 H182" stroke="#06100c" stroke-width="6"/>
+        <path d="M-18 0 H-12 M12 0 H18 M0 -18 V-12 M0 12 V18 M9 -9 L28 -28 H182" stroke="${accent}" stroke-width="2"/>
+        <circle r="2" fill="${accent}"/>
+        <rect x="27" y="-44" width="156" height="26" rx="6" fill="#06100c" stroke="${accent}"/>
+        <text x="105" y="-26" text-anchor="middle" fill="${accent}" font-size="14" font-weight="700" font-family="sans-serif">${label}</text>
+      </svg>`;
+      update();
+    },
+    dispose() { anchor = null; layer.remove(); },
+  };
+}
+
 export function createModelMarkerLayer({
   element,
   camera,
@@ -7,6 +62,7 @@ export function createModelMarkerLayer({
   onRemove,
   onDragState,
   onNotice,
+  tipPicking = false,
 }) {
   // The splat viewer renders its Gaussian pass after the Three.js scene.
   // Project real world anchors into a DOM layer so opaque splats cannot cover
@@ -153,7 +209,7 @@ export function createModelMarkerLayer({
         const { node } = marker;
         if (drag?.marker !== marker) marker.anchor = anchor;
         node.disabled = disabled;
-        node.setAttribute("aria-label", `第 ${number} 組模型參照點，拖動調整，右鍵或 Delete 刪除此組`);
+        node.setAttribute("aria-label", tipPicking ? "尖端標記，拖動調整，右鍵或 Delete 刪除尖端" : `第 ${number} 組模型參照點，拖動調整，右鍵或 Delete 刪除此組`);
         node.setAttribute("aria-pressed", String(selected));
         node.dataset.modelPoint = String(number);
         node.dataset.pointId = String(pointId);
@@ -175,7 +231,7 @@ export function createModelMarkerLayer({
           <circle r="2" fill="${accent}" stroke="#06100c" stroke-width="1"/>
           <circle cx="${badgeX}" cy="${badgeY}" r="14" fill="${selected ? "#34d399" : "#07130f"}" stroke="#06100c" stroke-width="6"/>
           <circle cx="${badgeX}" cy="${badgeY}" r="14" stroke="#ffffff" stroke-width="2"/>
-          <text x="${badgeX}" y="${badgeY + 1}" fill="${selected ? "#052e16" : "#ffffff"}" font-size="16" font-weight="800" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">${number}</text>
+          <text x="${badgeX}" y="${badgeY + 1}" fill="${selected ? "#052e16" : "#ffffff"}" font-size="16" font-weight="800" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">${tipPicking ? "尖" : number}</text>
           <circle cx="${badgeX}" cy="${badgeY}" r="16" fill="transparent" style="pointer-events:all"/>
         </svg>`;
         if (!node.parentNode) layer.appendChild(node);

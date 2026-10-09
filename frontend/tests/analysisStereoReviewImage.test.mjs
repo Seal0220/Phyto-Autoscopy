@@ -15,8 +15,8 @@ const { code } = swc.transformSync(readFileSync(filename, "utf8"), {
   module: { type: "commonjs" },
 });
 
-function fixture(disabled = false) {
-  const module = { exports: {} };
+function fixture(disabled = false, validation = null) {
+  const compiledModule = { exports: {} };
   let stateIndex = 0;
   const react = {
     useRef: (current) => ({ current }),
@@ -30,12 +30,12 @@ function fixture(disabled = false) {
     if (name.startsWith("@/components/")) return { __esModule: true, default: () => null };
     return require(name);
   }
-  vm.runInThisContext(`(function(require,module,exports){${code}\n})`)(resolve, module, module.exports);
+  vm.runInThisContext(`(function(require,module,exports){${code}\n})`)(resolve, compiledModule, compiledModule.exports);
   const calls = { change: [], remove: [] };
   const pairs = [{ top: { x_px: 100, y_px: 200 } }, { top: { x_px: 400, y_px: 300 } }];
-  const tree = module.exports.default({
+  const tree = compiledModule.exports.default({
     analysisId: "test", view: { camera_id: "top", image_width: 1280, image_height: 960, view_id: "t" },
-    pairs, selected: 0, disabled,
+    pairs, selected: 0, disabled, validation,
     onPointChange: (...values) => calls.change.push(values),
     onPairRemove: (index) => calls.remove.push(index),
   });
@@ -83,6 +83,21 @@ test("right-click removes the hit image group without placing a new point", () =
   assert.deepEqual(f.calls.remove, [1]);
   f.handlers.onContextMenu(f.event());
   assert.deepEqual(f.calls.remove, [1]);
+});
+
+test("image markers highlight the displayed camera's suspects", () => {
+  const validation = {
+    validated_stage: "reprojection", inlier_indices: [],
+    cameras: {
+      top: { status: "rejected", outlier_indices: [1], inlier_indices: [0] },
+      side: { status: "rejected", outlier_indices: [0], inlier_indices: [1] },
+    },
+  };
+  const f = fixture(false, validation);
+  const markers = f.handlers.children[1];
+  const color = (index) => markers[index].props.children.find((node) => node?.type === "circle").props.fill;
+  assert.equal(color(0), "#34d399");
+  assert.equal(color(1), "#fbbf24");
 });
 
 test("cancelling an image drag restores its original coordinate and releases capture", () => {

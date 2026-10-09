@@ -92,6 +92,7 @@ export const ANALYSIS_STATUS_META = {
 };
 
 export const ANALYSIS_STAGE_LABELS = {
+  waiting_for_tip_seed: "等待第一輪尖端標記；儲存並確認後自動繼續",
   converting_images: "轉換 TIFF 影像",
   phase: "階段完成",
   validating: "驗證輸入資料",
@@ -154,7 +155,7 @@ export const RECONSTRUCTION_QUALITY_PRESETS = {
 };
 
 export const RECONSTRUCTION_BACKEND_OPTIONS = [
-  { value: "gsplat_3dgs", label: "gsplat" },
+  { value: "gsplat_3dgs", label: "3DGS MCMC（gsplat）" },
   { value: "graphdeco_3dgs", label: "Graphdeco" },
 ];
 
@@ -164,6 +165,10 @@ export const RECONSTRUCTION_BACKEND_LABELS = {
 };
 
 export const ANALYSIS_MODEL_STATUS_META = {
+  alignment_pending: {
+    label: "待相機對齊",
+    tone: "warning",
+  },
   processing: {
     label: "建立中",
     tone: "warning",

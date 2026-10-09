@@ -125,7 +125,7 @@ def test_manual_pairing_still_rejects_invalid_geometry(monkeypatch):
         markerless_pose.estimate_manual_stereo_pose({}, {}, intrinsics, settings, invalid)
 
 
-def test_missing_stereo_geometry_enters_review_without_failing_or_running_models(tmp_path):
+def test_legacy_review_request_outside_round_pipeline_remains_reviewable(tmp_path):
     from app.analysis.artifacts import AnalysisArtifacts
 
     service, state = _service(tmp_path)
@@ -133,7 +133,7 @@ def test_missing_stereo_geometry_enters_review_without_failing_or_running_models
     service._artifacts = lambda _: artifacts
     def needs_review(*args, **kwargs):
         raise AnalysisReviewRequiredError("共同特徵配對不足")
-    service._run_round_preprocessing = needs_review
+    service._run_round_pipeline = needs_review
     service._run_round_models = lambda *args: pytest.fail("models started before pose review")
     service._record_failure = lambda *args, **kwargs: pytest.fail("review was marked failed")
     try:

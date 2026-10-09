@@ -62,7 +62,7 @@ def pipeline(tmp_path, monkeypatch):
     run = state["run"].model_copy(update={"method_name": "rotating", "record_id": None, "output_path": str(artifacts.root),
         "intrinsics_snapshot": snapshots, "round_count": 2,
         "parameters": {"source_manifest": sources, "reconstruction": {"backend": "gsplat_3dgs", "quality": "high"},
-                       "background": {}, "outputs": {}, "tip_analysis": {}, "manual_review_required": False}})
+                       "background": {}, "outputs": {}, "tip_analysis": {"tracking_mode": "legacy_candidates"}, "manual_review_required": False}})
     repository.create(run)
     repository.replace_rounds_and_views(run.analysis_id, rounds, views)
     service.repository = repository
@@ -111,7 +111,7 @@ def pipeline(tmp_path, monkeypatch):
         events.append(("tip", item.round_key))
         assert {view.camera_id for view in kwargs["views"]} == {"top", "side", "rotating"}
         if item.round_id == "round.02":
-            previous = [landmark for landmark in repository.list_tip_landmarks(item.analysis_id) if landmark.valid]
+            previous = [landmark for landmark in service._resolved_tip_landmarks(item.analysis_id) if landmark.valid]
             assert kwargs["previous_landmark"] == (previous[-1] if previous else None)
         landmark = TipLandmark(analysis_id=item.analysis_id, round_key=item.round_key, tip_id=f"{item.round_key}:tip",
                                record_id=item.record_id, mode_id=item.mode_id, round_id=item.round_id,
@@ -172,6 +172,174 @@ def test_bad_round_records_missing_tip_and_continues_other_rounds(pipeline, monk
     assert [point.valid for point in repository.list_tip_trajectory("analysis-test")] == [False, True]
     missing = json.loads((round_artifact_directory(artifacts.root, rounds[0].round_key) / "tip/tip_marker.json").read_text(encoding="utf-8"))
     assert missing["valid"] is False and missing["x_mm"] is None
+
+
+@pytest.mark.parametrize("review_required", [True, False])
+def test_alignment_failure_is_saved_per_round_and_does_not_block_following_rounds(pipeline, monkeypatch, review_required):
+    from app.core.exceptions import AnalysisError, AnalysisReviewRequiredError
+    service, repository, artifacts, events, _, _ = pipeline
+    original = service._run_round_preprocessing
+    def preprocess(run, event, *, round_key):
+        if round_key.endswith("round.01"):
+            original(run, event, round_key=round_key)
+            error = AnalysisReviewRequiredError if review_required else AnalysisError
+            raise error("影像姿態未通過檢查")
+        return original(run, event, round_key=round_key)
+    monkeypatch.setattr(service, "_run_round_preprocessing", preprocess)
+    service._run_job("analysis-test", Event())
+    rounds = repository.list_rounds("analysis-test")
+    assert [item.status for item in rounds] == ["alignment_pending" if review_required else "failed", "tip_completed"]
+    assert events == [("preprocess", rounds[0].round_key), ("preprocess", rounds[1].round_key),
+                      ("model", rounds[1].round_key), ("tip", rounds[1].round_key)]
+    assert not repository.list_camera_poses("analysis-test", rounds[0].round_key)
+    assert [point.valid for point in repository.list_tip_trajectory("analysis-test")] == [False, True]
+    run = repository.get("analysis-test")
+    assert run.status == "partially_completed" and run.failed_round_count == 1
+    path = round_artifact_directory(artifacts.root, rounds[0].round_key) / "pose_debug/stereo/manual_review.json"
+    assert json.loads(path.read_text(encoding="utf-8"))["reason"] == "影像姿態未通過檢查"
+    service._refresh_tip_correction_artifacts(run)
+    assert repository.list_rounds("analysis-test")[0].status == ("alignment_pending" if review_required else "failed")
+    events.clear()
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-09T00:00:00Z")
+    service._run_job("analysis-test", Event())
+    assert events == [], "deferred rounds must not repeat automatically on resume"
+
+
+def test_retry_deferred_round_keeps_other_round_models_and_trajectory(pipeline, monkeypatch):
+    from app.core.exceptions import AnalysisReviewRequiredError
+    service, repository, artifacts, events, _, _ = pipeline
+    original = service._run_round_preprocessing
+    def preprocess(run, event, *, round_key):
+        if round_key.endswith("round.01"):
+            raise AnalysisReviewRequiredError("待補正")
+        return original(run, event, round_key=round_key)
+    monkeypatch.setattr(service, "_run_round_preprocessing", preprocess)
+    service._run_job("analysis-test", Event())
+    rounds = repository.list_rounds("analysis-test")
+    model = next(model for model in repository.list_round_models("analysis-test") if model.round_key == rounds[1].round_key)
+    before = (artifacts.root / model.model_path).read_bytes()
+    timestamp = (artifacts.root / model.model_path).stat().st_mtime_ns
+    starts = []
+    monkeypatch.setattr(service._runner, "start", lambda key: starts.append(key) or True)
+    events.clear()
+    monkeypatch.setattr(service, "_run_round_preprocessing", original)
+    service.retry_round("analysis-test", rounds[0].round_key)
+    assert starts == ["analysis-test"]
+    service._run_job("analysis-test", Event())
+    assert events == [("preprocess", rounds[0].round_key), ("model", rounds[0].round_key), ("tip", rounds[0].round_key)]
+    assert (artifacts.root / model.model_path).read_bytes() == before
+    assert (artifacts.root / model.model_path).stat().st_mtime_ns == timestamp
+    assert repository.get("analysis-test").status == "completed"
+
+
+@pytest.mark.parametrize("remains_invalid", [False, True])
+def test_another_rounds_rig_never_replaces_independent_round_geometry(pipeline, monkeypatch, remains_invalid):
+    from app.core.exceptions import AnalysisReviewRequiredError
+    service, repository, artifacts, events, _, _ = pipeline
+    original = service._run_round_preprocessing
+    published = []
+
+    def preprocess(run, event, *, round_key):
+        if round_key.endswith("round.01") and (service._shared_rig_signature(run) is None or remains_invalid):
+            raise AnalysisReviewRequiredError("俯視尚未對齊")
+        if round_key.endswith("round.02"):
+            service._save_step(run, "aligning_model_cameras", "registration", service._stereo_pose_signature(run),
+                               {"poses": {"top": np.eye(4).tolist(), "side": np.eye(4).tolist()}, "quality": {"verified": True}})
+        return original(run, event, round_key=round_key)
+
+    monkeypatch.setattr(service, "_run_round_preprocessing", preprocess)
+    original_tip = service._run_tip_markers
+
+    def tip(run, event, **options):
+        result = original_tip(run, event, **options)
+        models = [model for model in repository.list_round_models("analysis-test") if model.status == "completed" and model.round_key.endswith("round.02")]
+        if models and not published:
+            path = artifacts.root / models[0].model_path
+            published.append((path, path.read_bytes(), path.stat().st_mtime_ns))
+        return result
+
+    monkeypatch.setattr(service, "_run_tip_markers", tip)
+    service._run_job("analysis-test", Event())
+    rounds = repository.list_rounds("analysis-test")
+    assert [item.status for item in rounds] == ["alignment_pending", "tip_completed"]
+    assert [key for kind, key in events if kind == "model"] == [rounds[1].round_key]
+    path, contents, modified = published[0]
+    assert path.read_bytes() == contents and path.stat().st_mtime_ns == modified
+    events.clear()
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-09T00:00:00Z")
+    service._run_job("analysis-test", Event())
+    assert events == [], "an unchanged rig must not retry a still-invalid round indefinitely"
+
+
+def test_user_cancellation_is_not_treated_as_a_skippable_round(pipeline, monkeypatch):
+    from app.core.exceptions import OperationCancelledError
+    service, repository, _, events, _, _ = pipeline
+    def cancelled(*args, **kwargs):
+        raise OperationCancelledError("使用者已取消")
+    monkeypatch.setattr(service, "_run_round_preprocessing", cancelled)
+    service._run_job("analysis-test", Event())
+    assert repository.get("analysis-test").status == "cancelled"
+    assert events == []
+    assert not repository.list_tip_landmarks("analysis-test")
+
+
+def test_new_reference_policy_retries_old_pending_round_once(pipeline, monkeypatch):
+    from app.core.exceptions import AnalysisReviewRequiredError
+    service, repository, artifacts, events, _, _ = pipeline
+    original = service._run_round_preprocessing
+
+    def preprocess(run, event, *, round_key):
+        if round_key.endswith("round.01"):
+            raise AnalysisReviewRequiredError("old top alignment failed")
+        return original(run, event, round_key=round_key)
+
+    monkeypatch.setattr(service, "_run_round_preprocessing", preprocess)
+    service._run_job("analysis-test", Event())
+    rounds = repository.list_rounds("analysis-test")
+    model = next(item for item in repository.list_round_models("analysis-test") if item.status == "completed")
+    path = artifacts.root / model.model_path
+    original_bytes, modified = path.read_bytes(), path.stat().st_mtime_ns
+    events.clear()
+    signature = service._round_pipeline_signature(repository.get("analysis-test"))
+    with StepJournal(artifacts.root) as journal:
+        saved = journal.get("round_skipped", rounds[0].round_key, signature)
+        journal.save("round_skipped", rounds[0].round_key, signature, {**saved, "reference_model_policy_version": 0})
+    monkeypatch.setattr(service, "_run_round_preprocessing", original)
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-09T00:00:00Z")
+    service._run_job("analysis-test", Event())
+    assert events == [(kind, rounds[0].round_key) for kind in ("preprocess", "model", "tip")]
+    assert path.read_bytes() == original_bytes and path.stat().st_mtime_ns == modified
+    events.clear()
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-09T00:00:00Z")
+    service._run_job("analysis-test", Event())
+    assert events == []
+
+
+def test_legacy_waiting_review_can_be_deferred_without_losing_its_model_or_draft(pipeline, monkeypatch):
+    service, repository, artifacts, events, _, _ = pipeline
+    rounds = repository.list_rounds("analysis-test")
+    key = rounds[0].round_key
+    context_path = artifacts.root / "pose_debug/model_reference/context.json"
+    write_json_atomic(context_path, {"reference": {"signature": "saved-reference"}, "fixed_view_ids": ["1-top", "1-side"]})
+    draft = {"request": {"correspondences": [{"model_point_id": 7, "top": {"x_px": 2, "y_px": 3}}]}, "reason": "待補正"}
+    write_json_atomic(artifacts.root / "pose_debug/stereo/manual_review.json", draft)
+    repository.update_state("analysis-test", status="needs_review", stage="waiting_for_model_review", updated_at="2026-10-09T00:00:00Z")
+    monkeypatch.setattr(service, "_stereo_review_payload", lambda _: {
+        "mode": "model_reference", "reason": "待補正", "views": [
+            view.model_dump(mode="json") for view in repository.list_views("analysis-test", key) if view.camera_id in {"top", "side"}
+        ],
+    })
+    starts = []
+    monkeypatch.setattr(service._runner, "start", lambda name: starts.append(name) or True)
+    result = service.skip_stereo_review("analysis-test")
+    assert result.status == "processing" and starts == ["analysis-test"]
+    local = round_artifact_directory(artifacts.root, key)
+    assert (local / "pose_debug/model_reference/context.json").read_bytes() == context_path.read_bytes()
+    saved = json.loads((local / "pose_debug/stereo/manual_review.json").read_text(encoding="utf-8"))
+    assert saved["request"] == draft["request"] and saved["round_key"] == key
+    service._run_job("analysis-test", Event())
+    assert events == [("preprocess", rounds[1].round_key), ("model", rounds[1].round_key), ("tip", rounds[1].round_key)]
+    assert repository.list_rounds("analysis-test")[0].status == "alignment_pending"
 
 
 @pytest.mark.parametrize("legacy_checkpoint", [False, True])
@@ -277,7 +445,7 @@ def test_legacy_review_settings_never_block_completed_rounds(pipeline, monkeypat
     run = repository.get("analysis-test")
     repository.update_parameters("analysis-test", {
         **run.parameters, "manual_review_required": True,
-        "tip_analysis": {"wait_for_low_confidence_review": True},
+        "tip_analysis": {"wait_for_low_confidence_review": True, "tracking_mode": "legacy_candidates"},
     }, run.updated_at)
 
     def detect(**kwargs):

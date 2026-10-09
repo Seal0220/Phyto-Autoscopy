@@ -8,6 +8,7 @@ import AnalysisRunModelReference from "./AnalysisRunModelReference";
 function AnalysisRunModelPreviewContent({
   analysisId,
   model,
+  landmark,
 }) {
   const preview = useAnalysisRunModelPreview({
     analysisId,
@@ -36,6 +37,7 @@ function AnalysisRunModelPreviewContent({
     <AnalysisRunModelReference
       analysisId={analysisId}
       reference={preview.reference}
+      landmark={landmark}
       readOnly
     />
   );
@@ -44,6 +46,7 @@ function AnalysisRunModelPreviewContent({
 export default function AnalysisRunModelPreview({
   analysisId,
   model,
+  landmark,
 }) {
   if (model?.status !== "completed" || !(model.plant_model_path || model.model_path)) {
     return (
@@ -57,6 +60,7 @@ export default function AnalysisRunModelPreview({
       key={`${analysisId}:${model.round_key}`}
       analysisId={analysisId}
       model={model}
+      landmark={landmark}
     />
   );
 }

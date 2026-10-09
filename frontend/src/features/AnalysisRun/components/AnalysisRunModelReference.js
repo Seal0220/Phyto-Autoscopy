@@ -9,6 +9,7 @@ import useAnalysisRunModelViewer from "../hooks/useAnalysisRunModelViewer";
 export default function AnalysisRunModelReference({
   analysisId,
   reference,
+  landmark,
   selectedPointId,
   pointIds,
   pairNumber,
@@ -17,25 +18,32 @@ export default function AnalysisRunModelReference({
   onPointMove,
   onPointRemove,
   readOnly = false,
+  tipPicking = false,
 }) {
   const model = useAnalysisRunModelViewer({
     analysisId,
     reference,
+    landmark,
     selectedPointId,
     pointIds,
     disabled,
     onPointChange: readOnly ? undefined : onPointChange,
     onPointMove,
     onPointRemove,
+    tipPicking,
   });
   const locked = disabled || !model.ready;
   const alignmentPoints = reference.model_quality?.representation === "sfm_points";
   const alignmentPreview = reference.model_quality?.representation === "alignment_3dgs";
+  const cameraCounts = reference.model_quality?.training_camera_counts;
+  const missingFixedViews = cameraCounts && (!cameraCounts.top || !cameraCounts.side);
   return (
     <div className="grid min-w-0 gap-3">
       <SubsectionHeader
-        title={readOnly ? "模型" : alignmentPoints ? "稀疏參照點" : alignmentPreview ? "對齊預覽" : "模型選點"}
-        description={readOnly ? "拖曳旋轉，滾輪縮放。" : alignmentPoints
+        title={tipPicking ? "模型尖端標記" : readOnly ? "參考模型" : alignmentPoints ? "稀疏參照點" : alignmentPreview ? "對齊預覽" : "模型選點"}
+        description={tipPicking ? "點選尖端，拖動調整，右鍵刪除標記；拖曳空白處旋轉模型。" : readOnly ? "拖曳旋轉，滾輪縮放。" : reference.model_quality?.immutable_reference
+          ? "校正只更新量測位置，參考模型保留。"
+          : alignmentPoints
           ? "尚未建模，請按「重建預覽」取得選點模型。"
           : alignmentPreview ? "標記相同位置，通過後建立三鏡頭模型；拖曳旋轉，滾輪縮放。"
           : "拖動標記調整，右鍵刪除；拖曳空白旋轉，滾輪縮放。"}
@@ -51,6 +59,11 @@ export default function AnalysisRunModelReference({
           重設鏡頭
         </Button>
       </SubsectionHeader>
+      {missingFixedViews ? (
+        <p className="m-0 text-sm font-semibold text-amber-200" role="status">
+          參考模型參與訓練：俯視 {cameraCounts.top || 0} 張、側視 {cameraCounts.side || 0} 張、旋臂 {cameraCounts.rotating || 0} 張。缺少的鏡頭未納入此模型；影像尖端標記與追蹤仍可使用，三維毫米位置須另通過量測校正。
+        </p>
+      ) : null}
       <div className="relative min-w-0 overflow-hidden rounded-xl border border-white/15 bg-black/30">
         <div
           ref={model.element}
@@ -85,7 +98,9 @@ export default function AnalysisRunModelReference({
           className="text-xs text-neutral-400"
           role="status"
         >
-          {model.notice || (Number.isInteger(selectedPointId) ? `第 ${pairNumber} 組已選參照點，再標記下方兩張影像。` : "請選芽尖、葉尖或莖節等清楚的位置。")}
+          {model.notice || (tipPicking
+            ? Number.isInteger(selectedPointId) ? "已選模型尖端，按儲存即可更新本輪標記。" : "在模型點選尖端，或使用上方俯視與側視標記。"
+            : Number.isInteger(selectedPointId) ? `第 ${pairNumber} 組已選參照點，再標記下方兩張影像。` : "請選芽尖、葉尖或莖節等清楚的位置。")}
         </p>
       ) : null}
     </div>

@@ -158,6 +158,16 @@ def get_analysis_round_model_preview(
     return context.analysis_service.get_round_model_preview(analysis_id, round_key)
 
 
+@router.get("/{analysis_id}/round-feature-correspondences", response_model=dict)
+def get_analysis_round_feature_correspondences(
+    analysis_id: str,
+    round_key: str,
+    snapshot_id: str | None = None,
+    context: AppContext = Depends(get_context),
+) -> dict:
+    return context.analysis_service.get_round_feature_correspondences(analysis_id, round_key, snapshot_id)
+
+
 @router.get(
     "/{analysis_id}/tip-landmarks",
     response_model=list[TipLandmark],
@@ -336,8 +346,8 @@ def retry_analysis_run(
 
 
 @router.get("/{analysis_id}/stereo-review")
-def get_stereo_review(analysis_id: str, context: AppContext = Depends(get_context)) -> dict:
-    return context.analysis_service.get_stereo_review(analysis_id)
+def get_stereo_review(analysis_id: str, round_key: str | None = None, context: AppContext = Depends(get_context)) -> dict:
+    return context.analysis_service.get_stereo_review(analysis_id, **({"round_key": round_key} if round_key is not None else {}))
 
 
 @router.post("/{analysis_id}/stereo-review", response_model=AnalysisRun)
@@ -345,8 +355,10 @@ def submit_stereo_review(
     analysis_id: str, request: StereoPoseReviewRequest | ModelPoseReviewRequest,
     context: AppContext = Depends(get_context),
     principal: Principal = Depends(get_request_principal),
+    round_key: str | None = None,
 ) -> AnalysisRun:
-    return _action_response(context.analysis_service.submit_stereo_review(analysis_id, request, principal.actor))
+    return _action_response(context.analysis_service.submit_stereo_review(analysis_id, request, principal.actor,
+                             **({"round_key": round_key} if round_key is not None else {})))
 
 
 @router.post("/{analysis_id}/resume", response_model=AnalysisRun)
@@ -355,6 +367,16 @@ def resume_analysis_run(
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
     return _action_response(context.analysis_service.resume(analysis_id))
+
+
+@router.post("/{analysis_id}/skip-stereo-review", response_model=AnalysisRun)
+def skip_stereo_review(analysis_id: str, context: AppContext = Depends(get_context)) -> AnalysisRun:
+    return _action_response(context.analysis_service.skip_stereo_review(analysis_id))
+
+
+@router.post("/{analysis_id}/round-retry", response_model=AnalysisRun)
+def retry_analysis_round(analysis_id: str, round_key: str, context: AppContext = Depends(get_context)) -> AnalysisRun:
+    return _action_response(context.analysis_service.retry_round(analysis_id, round_key))
 
 
 @router.post("/{analysis_id}/pause", response_model=AnalysisRun)

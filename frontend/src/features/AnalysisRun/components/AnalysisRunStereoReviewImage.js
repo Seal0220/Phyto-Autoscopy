@@ -133,12 +133,12 @@ export default function AnalysisRunStereoReviewImage({
           data-stereo-pair={index}
           className={disabled ? "cursor-default" : "cursor-grab active:cursor-grabbing"}
         >
-          <title>{stereoPairLabel(pair, index, validation)}</title>
+          <title>{stereoPairLabel(pair, index, validation, camera)}</title>
           <circle
             cx={pair[camera].x_px}
             cy={pair[camera].y_px}
             r={(index === selected ? 8 : 5) * markerScale}
-            fill={stereoPairCheck(validation, index) === "check" ? "#fbbf24" : index === selected ? "#34d399" : "#ffffff"}
+            fill={stereoPairCheck(validation, index, camera) === "check" ? "#fbbf24" : index === selected ? "#34d399" : "#ffffff"}
             stroke="#06100c"
             strokeWidth={2 * markerScale}
           />

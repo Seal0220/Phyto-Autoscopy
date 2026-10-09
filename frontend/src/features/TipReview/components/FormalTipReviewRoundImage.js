@@ -12,6 +12,7 @@ import { ANALYSIS_CAMERA_LABELS } from "@/features/Analysis/analysisConfig";
 import { formatDateTime } from "@/lib/formatUtils";
 
 import { formalViewImageUrl } from "../lib/formalTipReviewApiUtils";
+import AnalysisRunImageFeatureMarkers from "@/features/AnalysisRun/components/AnalysisRunImageFeatureMarkers";
 
 function imagePoint(
   event,
@@ -41,8 +42,12 @@ export default function FormalTipReviewRoundImage({
   disabled,
   onPointChange,
   onPointRemove,
+  initialCoordinateSpace = "reprojection",
+  features = [],
+  activeFeature,
+  onActiveFeature,
 }) {
-  const [coordinateSpace, setCoordinateSpace] = useState("reprojection");
+  const [coordinateSpace, setCoordinateSpace] = useState(initialCoordinateSpace);
   const [dimensions, setDimensions] = useState({
     width: 0,
     height: 0,
@@ -55,12 +60,12 @@ export default function FormalTipReviewRoundImage({
   );
 
   useEffect(() => {
-    setCoordinateSpace("reprojection");
+    setCoordinateSpace(initialCoordinateSpace);
     setDimensions({
       width: 0,
       height: 0,
     });
-  }, [view.view_id]);
+  }, [view.view_id, initialCoordinateSpace]);
 
   return (
     <article className="grid min-w-0 gap-3 rounded-xl border border-white/15 bg-black/15 p-3">
@@ -85,7 +90,7 @@ export default function FormalTipReviewRoundImage({
         role="application"
         aria-label={`${cameraLabel}尖端位置選擇`}
         onPointerDown={(event) => {
-          if (disabled || event.target.tagName !== "IMG") return;
+          if (disabled || event.button !== 0 || event.target.tagName !== "IMG") return;
           const resolved = imagePoint(event, event.target);
           if (resolved) onPointChange(view.view_id, resolved);
         }}
@@ -109,14 +114,22 @@ export default function FormalTipReviewRoundImage({
         />
         {point && dimensions.width > 0 && dimensions.height > 0 ? (
           <span
-            className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.3)]"
+            className="pointer-events-none absolute z-20 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white bg-emerald-400 text-xs font-black text-black shadow-[0_0_0_4px_rgba(16,185,129,0.3)]"
             style={{
               left: `${(point.x_px / dimensions.width) * 100}%`,
               top: `${(point.y_px / dimensions.height) * 100}%`,
             }}
             aria-hidden="true"
-          />
+          >尖</span>
         ) : null}
+        <AnalysisRunImageFeatureMarkers
+          features={features}
+          viewId={view.view_id}
+          width={dimensions.width}
+          height={dimensions.height}
+          activeFeature={activeFeature}
+          onActiveFeature={onActiveFeature}
+        />
         <FullscreenImage
           src={imageUrl}
           alt={`${cameraLabel}尖端標記重投影`}

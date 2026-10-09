@@ -15,6 +15,7 @@ export const metadata = {
 
 export default async function TipReviewPage({
   params,
+  searchParams,
 }) {
   const session = await getSession();
 
@@ -27,5 +28,7 @@ export default async function TipReviewPage({
     notFound();
   }
 
-  return <TipReview analysisId={analysisId} />;
+  const query = await searchParams;
+  const initialRoundKey = typeof query?.round_key === "string" && query.round_key.length <= 512 ? query.round_key : undefined;
+  return <TipReview analysisId={analysisId} initialRoundKey={initialRoundKey} />;
 }

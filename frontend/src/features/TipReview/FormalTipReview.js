@@ -63,6 +63,7 @@ function displayNumber(
 }
 
 function roundStatus(item, landmark) {
+  if (item.status === "alignment_pending") return { label: "相機對齊待補正", tone: "warning" };
   if (landmark?.valid && item.status === "tip_completed") {
     return {
       label: "可用",
@@ -83,6 +84,7 @@ function roundStatus(item, landmark) {
 
 export default function FormalTipReview({
   analysisId,
+  initialRoundKey,
 }) {
   const router = useRouter();
   const { showNotification } = useNotificationsContext();
@@ -113,6 +115,7 @@ export default function FormalTipReview({
     completeReview,
   } = useFormalTipReview({
     analysisId,
+    initialRoundKey,
   });
   const runDisplay = analysisRunDisplay(run);
   const locked = Boolean(pendingAction) || loading;
@@ -383,6 +386,11 @@ export default function FormalTipReview({
                         }
                       </p>
                     ) : null}
+                    {selectedRound.status === "alignment_pending" ? (
+                      <Button onClick={() => router.push(`/analysis/${encodeURIComponent(analysisId)}`)}>
+                        回各輪結果補相機對齊
+                      </Button>
+                    ) : null}
                   </InnerPanel>
 
                   <InnerPanel>
@@ -513,6 +521,7 @@ export default function FormalTipReview({
                   <FormalTipReviewModel
                     analysisId={analysisId}
                     model={selectedModel}
+                    landmark={resolvedLandmark}
                   />
 
                   <InnerPanel>

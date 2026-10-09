@@ -34,7 +34,19 @@ export function stereoValidationCount(validation) {
 export function stereoPairCheck(
   validation,
   index,
+  camera = null,
 ) {
+  const check = validation?.cameras?.[camera];
+  if (check) {
+    if ((!check.status || check.status === "accepted") && Array.isArray(check.inlier_indices)) {
+      return check.inlier_indices.includes(index) ? "inlier" : "check";
+    }
+    // A rejected pose's consistent candidates are not verified inliers.
+    if (check.status === "rejected" && Array.isArray(check.outlier_indices)) {
+      return check.outlier_indices.includes(index) ? "check" : null;
+    }
+    return null;
+  }
   if (stereoValidationCount(validation) === null) return null;
   return validation.inlier_indices.includes(index) ? "inlier" : "check";
 }
@@ -43,8 +55,9 @@ export function stereoPairLabel(
   pair,
   index,
   validation,
+  camera = null,
 ) {
-  const check = stereoPairCheck(validation, index);
+  const check = stereoPairCheck(validation, index, camera);
   const status = !pair.top || !pair.side ? "待標記"
     : check === "check" ? "需檢查" : check === "inlier" ? "內點" : "已標記";
   return `第 ${index + 1} 組（${status}）`;

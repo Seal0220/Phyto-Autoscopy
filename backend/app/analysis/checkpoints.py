@@ -66,6 +66,11 @@ class StepJournal:
     def close(self) -> None:
         self.connection.close()
 
+    def invalidate(self, item: str, stages: tuple[str, ...]) -> None:
+        """Invalidate only the selected round's derived steps after correction."""
+        with self.connection:
+            self.connection.executemany("DELETE FROM steps WHERE stage=? AND item=?", [(stage, item) for stage in stages])
+
     def __enter__(self):
         return self
 

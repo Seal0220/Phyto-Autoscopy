@@ -27,6 +27,7 @@ class AnalysisJobManager:
         )
         self._lock = RLock()
         self._jobs: dict[str, tuple[Future, Event]] = {}
+        self._restart_requests: set[str] = set()
         self._closed = False
 
     def _run(self, analysis_id: str, cancel_event: Event) -> None:
@@ -61,8 +62,33 @@ class AnalysisJobManager:
                     self._jobs.pop(analysis_id, None)
             return True
 
+    def start_when_idle(self, analysis_id: str) -> bool:
+        """Resume after the worker publishing an initialization pause exits."""
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("分析背景工作已關閉。")
+            current = self._jobs.get(analysis_id)
+            if current is None or current[0].done():
+                return self.start(analysis_id)
+            if analysis_id not in self._restart_requests:
+                self._restart_requests.add(analysis_id)
+                future, cancel_event = current
+                future.add_done_callback(
+                    lambda _: self._restart_when_finished(analysis_id, cancel_event)
+                )
+            return True
+
+    def _restart_when_finished(self, analysis_id: str, cancel_event: Event) -> None:
+        with self._lock:
+            if analysis_id not in self._restart_requests:
+                return
+            self._restart_requests.discard(analysis_id)
+            if not self._closed and not cancel_event.is_set():
+                self.start(analysis_id)
+
     def cancel(self, analysis_id: str) -> bool:
         with self._lock:
+            self._restart_requests.discard(analysis_id)
             current = self._jobs.get(analysis_id)
             if current is None or current[0].done():
                 return False
@@ -72,6 +98,7 @@ class AnalysisJobManager:
 
     def pause(self, analysis_id: str) -> bool:
         with self._lock:
+            self._restart_requests.discard(analysis_id)
             current = self._jobs.get(analysis_id)
             if current is None or current[0].done():
                 return False
@@ -127,6 +154,7 @@ class AnalysisJobManager:
             if self._closed:
                 return
             self._closed = True
+            self._restart_requests.clear()
             for _, cancel_event in self._jobs.values():
                 cancel_event.pause_requested = True
                 cancel_event.set()

@@ -22,7 +22,7 @@ from app.analysis.reconstruction.dataset_adapter import _sha256
 from app.analysis.reconstruction.plant_isolation import foreground_point_selection
 
 
-PLANT_TRAINING_VERSION = "plant_pot_surface_v3"
+PLANT_TRAINING_VERSION = "mcmc_sh3_v4"
 
 
 _SH_C0 = 0.28209479177387814
@@ -308,7 +308,7 @@ def train_gsplat_model(
 ) -> GsplatTrainingResult:
     """Train one Round with gsplat while keeping camera poses immutable.
 
-    The optimizer structure follows gsplat's documented ``DefaultStrategy``
+    Gaussian relocation/growth follows gsplat's documented ``MCMCStrategy``
     public API. Camera poses are tensors without gradients, so training cannot
     change the established world frame or its millimetre scale.
     """
@@ -316,7 +316,7 @@ def train_gsplat_model(
     try:
         import torch
         from gsplat.rendering import rasterization
-        from gsplat.strategy import DefaultStrategy
+        from gsplat.strategy import MCMCStrategy
     except ImportError as error:
         raise GsplatTrainingError(
             "尚未安裝可用的 PyTorch／gsplat，無法建立三維模型。"
@@ -393,7 +393,7 @@ def train_gsplat_model(
         ),
         "sh0": torch.nn.Parameter(torch.from_numpy(sh0.astype(np.float32))),
         "shN": torch.nn.Parameter(
-            torch.zeros((point_count, 3, 3), dtype=torch.float32)
+            torch.zeros((point_count, 15, 3), dtype=torch.float32)
         ),
     }).to(device)
     if saved is not None:
@@ -419,21 +419,17 @@ def train_gsplat_model(
         optimizers["means"],
         gamma=0.01 ** (1.0 / maximum_steps),
     )
-    # Absolute image-plane gradients avoid cancellation across broad surfaces.
-    # gsplat recommends a higher splitting threshold with absgrad enabled.
-    strategy = DefaultStrategy(
+    # Published MCMC relocation replenishes dead splats without repeated
+    # opacity resets or image-gradient thresholds starving small plant masks.
+    strategy = MCMCStrategy(
         verbose=False,
-        absgrad=foreground_only,
-        grow_grad2d=8e-4 if foreground_only else 2e-4,
-        revised_opacity=foreground_only,
+        cap_max=max(point_count, 100_000 if foreground_only else 1_000_000),
+        refine_start_iter=min(500, max(50, maximum_steps // 20)),
+        refine_stop_iter=int(maximum_steps * 0.85),
+        refine_every=100,
     )
-    strategy.refine_start_iter = min(500, max(50, maximum_steps // 20))
-    strategy.refine_stop_iter = int(maximum_steps * 0.75)
-    strategy.refine_every = max(50, maximum_steps // 100)
-    strategy.reset_every = max(500, maximum_steps // 10)
-    strategy.pause_refine_after_reset = len(views)
     strategy.check_sanity(splats, optimizers)
-    strategy_state = strategy.initialize_state(scene_scale=1.0)
+    strategy_state = strategy.initialize_state()
     if saved is not None:
         for name, optimizer in optimizers.items():
             optimizer.load_state_dict(saved["optimizers"][name])
@@ -479,8 +475,6 @@ def train_gsplat_model(
         iteration_path.write_text("".join(f"{row}\n" for row in retained), encoding="utf-8")
     report_every = max(10, maximum_steps // 200)
     checkpoint_every = max(500, maximum_steps // 10)
-    shape_start = maximum_steps // 4
-    shape_ramp = max(1, maximum_steps // 20)
 
     def persist_checkpoint() -> None:
         _checkpoint(
@@ -515,20 +509,14 @@ def train_gsplat_model(
             Ks=item["K"],
             width=width,
             height=height,
-            sh_degree=1,
+            sh_degree=min(3, step // 1000),
             packed=False,
-            absgrad=bool(strategy.absgrad),
+            absgrad=False,
+            rasterize_mode="antialiased",
             near_plane=0.01,
             far_plane=100.0,
         )
         colors_rendered = renders[..., :3]
-        strategy.step_pre_backward(
-            params=splats,
-            optimizers=optimizers,
-            state=strategy_state,
-            step=step,
-            info=info,
-        )
         mask = item["mask"]
         loss_weight = item["loss_weight"]
         if bool((loss_weight > 0).any()):
@@ -561,12 +549,9 @@ def train_gsplat_model(
             background_mask = ~plant_mask if mask is None else mask & ~plant_mask
             background_alpha_loss = alpha[background_mask].mean() if bool(background_mask.any()) else alpha.sum() * 0
             loss = loss + .1 * (foreground_alpha_loss + background_alpha_loss)
-            # Establish the coarse shape first, then favor surface coverage.
-            # Thin leaves remain valid: the penalty only rejects covariance
-            # collapse toward a single substantial axis, rather than flatness.
-            shape_weight = .01 * min(1., max(0., (step - shape_start) / shape_ramp))
-            if shape_weight:
-                loss = loss + shape_weight * _gaussian_shape_loss(splats["scales"], torch)
+        # Regularizers specified by the MCMC paper; no imposed leaf shape.
+        loss = loss + .01 * torch.sigmoid(splats["opacities"]).mean()
+        loss = loss + .01 * torch.exp(splats["scales"]).mean()
         if not torch.isfinite(loss):
             raise GsplatTrainingError("模型損失出現非有限值，已停止該 Round。")
         loss.backward()
@@ -575,19 +560,13 @@ def train_gsplat_model(
             optimizer.zero_grad(set_to_none=True)
         scheduler.step()
         _bound_opacity_logits(splats["opacities"], torch)
-        # DefaultStrategy assumes a loss averaged over the complete image.
-        # Foreground-normalized loss otherwise magnifies its gradient by up to
-        # 200x for this recording, creating millions of unnecessary Gaussians.
-        gradient_key = strategy.key_for_gradient
-        gradient = (info[gradient_key].absgrad if strategy.absgrad else info[gradient_key].grad)
-        gradient.mul_(item["densification_gradient_scale"])
         strategy.step_post_backward(
             params=splats,
             optimizers=optimizers,
             state=strategy_state,
             step=step,
             info=info,
-            packed=False,
+            lr=optimizers["means"].param_groups[0]["lr"],
         )
         completed_steps = step + 1
         losses.append(float(loss.detach().cpu()))
@@ -654,9 +633,14 @@ def train_gsplat_model(
                                    for camera in ("top", "side", "rotating")},
         "training_views": [{"view_id": view.source.view_id, "camera_id": view.source.camera_id, "crop_box": view.crop_box,
                             "width": view.image.shape[1], "height": view.image.shape[0]} for view in views],
-        "densification_gradient_normalized": True,
-        "surface_shape_regularization": "effective_rank" if foreground_only else None,
-        "absolute_densification_gradient": bool(strategy.absgrad),
+        "training_method": "3dgs_mcmc",
+        "strategy": "MCMCStrategy",
+        "strategy_repository_url": "https://github.com/ubc-vision/3dgs-mcmc",
+        "gaussian_budget": strategy.cap_max,
+        "spherical_harmonics_degree": min(3, (completed_steps - 1) // 1000),
+        "rasterize_mode": "antialiased",
+        "opacity_regularization": .01,
+        "scale_regularization": .01,
         "initial_foreground_selection": initial_foreground_quality,
         "foreground_selection": foreground_quality,
         **({"world_center_mm": center_world_mm.tolist(), "internal_world_scale_mm": world_scale_mm}

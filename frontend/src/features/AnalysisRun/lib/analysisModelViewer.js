@@ -2,7 +2,7 @@ import * as THREE from "three";
 import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { gaussianPointIndex } from "./analysisModelReferenceUtils";
-import { createModelMarkerLayer } from "./analysisModelMarkers";
+import { createModelMarkerLayer, createTipMarkerLayer } from "./analysisModelMarkers";
 
 export function createModelViewer({
   element,
@@ -12,6 +12,7 @@ export function createModelViewer({
   onRemove,
   onNotice,
   onProgress,
+  tipPicking = false,
 }) {
   const { radius } = reference;
   const scene = new THREE.Scene();
@@ -20,6 +21,7 @@ export function createModelViewer({
   renderer.setClearColor(0x07100c, 1);
   element.appendChild(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(40, 1, radius * .001, radius * 100);
+  const tipMarker = createTipMarkerLayer({ element, camera });
   const markers = createModelMarkerLayer({
     element,
     camera,
@@ -28,6 +30,7 @@ export function createModelViewer({
     onMove,
     onRemove,
     onNotice,
+    tipPicking,
     onDragState: (active) => {
       dragging = active;
       controls.enabled = !disabled && !dragging && !disposed;
@@ -52,6 +55,7 @@ export function createModelViewer({
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     markers.update();
+    tipMarker.update();
   };
   resize();
   const reset = () => {
@@ -65,6 +69,7 @@ export function createModelViewer({
     camera.lookAt(target);
     controls.update();
     markers.update();
+    tipMarker.update();
   };
   reset();
   const viewer = new GaussianSplats3D.Viewer({
@@ -77,7 +82,8 @@ export function createModelViewer({
     sharedMemoryForWorkers: false,
     gpuAcceleratedSort: true,
     integerBasedSort: true,
-    sphericalHarmonicsDegree: 1,
+    sphericalHarmonicsDegree: 3,
+    antialiased: reference.model_quality?.rasterize_mode === "antialiased",
     optimizeSplatData: false,
     inMemoryCompressionLevel: 0,
     renderMode: GaussianSplats3D.RenderMode.OnChange,
@@ -87,6 +93,7 @@ export function createModelViewer({
   observer.observe(element);
   const cameraChanged = () => {
     markers.update();
+    tipMarker.update();
     viewer.forceRenderNextFrame();
   };
   controls.addEventListener("change", cameraChanged);
@@ -167,6 +174,7 @@ export function createModelViewer({
     camera.updateProjectionMatrix();
     controls.update();
     markers.update();
+    tipMarker.update();
     viewer.forceRenderNextFrame();
   };
   const wheel = (event) => {
@@ -223,7 +231,7 @@ export function createModelViewer({
       if (disposed) return;
       onProgress(100);
       // The normal loader buckets/reorders even uncompressed splats. Parse directly to retain PLY IDs.
-      const buffer = GaussianSplats3D.PlyParser.parseToUncompressedSplatBuffer(bytes.buffer, 1);
+      const buffer = GaussianSplats3D.PlyParser.parseToUncompressedSplatBuffer(bytes.buffer, 3);
       await viewer.addSplatBuffers([buffer], [{ splatAlphaRemovalThreshold: 0 }], true, false, false);
       await treeReady;
       if (disposed) return;
@@ -253,6 +261,7 @@ export function createModelViewer({
       markers.setMarkers(anchors);
       viewer.forceRenderNextFrame();
     },
+    setTip(landmark) { tipMarker.setTip(landmark); },
     setDisabled(locked) {
       disabled = locked;
       markers.setDisabled(locked);
@@ -274,6 +283,7 @@ export function createModelViewer({
       controls.removeEventListener("change", cameraChanged);
       controls.dispose();
       markers.dispose();
+      tipMarker.dispose();
       viewer.stop();
       try { await viewer.dispose(); }
       finally {

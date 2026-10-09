@@ -39,7 +39,7 @@ from app.models.analysis_models import (
 
 CancelCheck = Callable[[], None]
 StageCallback = Callable[[str, float], None]
-TIP_ANALYSIS_VERSION = 3
+TIP_ANALYSIS_VERSION = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +110,30 @@ def _used_reprojection_errors(
     return tuple(errors)
 
 
+def _point_on_plant_mask(mask_path: Path, pixel, tolerance_px: float) -> bool:
+    if pixel is None or not np.isfinite(pixel).all():
+        return False
+    mask = read_analysis_image(mask_path, cv2.IMREAD_GRAYSCALE)
+    if mask is None:
+        return False
+    x, y = pixel
+    if not (0 <= x < mask.shape[1] and 0 <= y < mask.shape[0]):
+        return False
+    radius = int(np.ceil(tolerance_px))
+    left, top = max(0, int(np.floor(x)) - radius), max(0, int(np.floor(y)) - radius)
+    right, bottom = min(mask.shape[1], int(np.ceil(x)) + radius + 1), min(mask.shape[0], int(np.ceil(y)) + radius + 1)
+    rows, columns = np.nonzero(mask[top:bottom, left:right])
+    return bool(np.any((columns + left - x) ** 2 + (rows + top - y) ** 2 <= tolerance_px ** 2))
+
+
 def _write_reprojection_overlay(
     image_path: Path,
     output_path: Path,
     candidates,
     selected_ids: set[str],
     projected_point: tuple[float, float] | None,
+    *,
+    confirmed: bool = False,
 ) -> None:
     image = read_analysis_image(image_path, cv2.IMREAD_COLOR)
     if image is None:
@@ -139,12 +157,19 @@ def _write_reprojection_overlay(
         cv2.drawMarker(
             image,
             center,
-            (255, 220, 70),
+            (6, 16, 12),
             markerType=cv2.MARKER_CROSS,
-            markerSize=18,
-            thickness=2,
+            markerSize=32,
+            thickness=6,
             line_type=cv2.LINE_AA,
         )
+        color = (120, 230, 70) if confirmed else (70, 190, 255)
+        cv2.drawMarker(image, center, color, markerType=cv2.MARKER_CROSS, markerSize=32,
+                       thickness=2, line_type=cv2.LINE_AA)
+        label = "TIP - CONFIRMED" if confirmed else "TIP CANDIDATE - REVIEW"
+        label_position = (max(4, min(center[0] + 22, image.shape[1] - 260)), max(24, min(center[1] - 18, image.shape[0] - 8)))
+        cv2.putText(image, label, label_position, cv2.FONT_HERSHEY_SIMPLEX, .6, (6, 16, 12), 5, cv2.LINE_AA)
+        cv2.putText(image, label, label_position, cv2.FONT_HERSHEY_SIMPLEX, .6, color, 1, cv2.LINE_AA)
     _write_image(output_path, image)
 
 
@@ -214,6 +239,7 @@ def analyze_round_tip(
     cancel_check: CancelCheck | None = None,
     stage_callback: StageCallback | None = None,
     view_callback: Callable[[AnalysisView], None] | None = None,
+    tracked_candidates: Mapping[str, Any] | None = None,
 ) -> RoundTipAnalysisResult:
     round_root = round_artifact_directory(artifacts_root, round_item.round_key)
     tip_root = round_root / "tip"
@@ -271,6 +297,10 @@ def analyze_round_tip(
             candidate_prefix=view.view_id,
             checkpoint_root=artifacts_root,
         )
+        if tracked_candidates is not None:
+            from dataclasses import replace
+            tracked = tracked_candidates.get(view.view_id)
+            detection = replace(detection, candidates=(tracked,) if tracked is not None else ())
         safe_view_id = safe_artifact_name(view.view_id)
         mask_output_root = (
             masks_root
@@ -383,7 +413,9 @@ def analyze_round_tip(
     updated_model = model_result
     skeleton = None
     plant_point_cloud_path = None
-    if model_result is not None and model_result.point_cloud_path:
+    immutable_reference = model_result is not None and (
+        model_result.model_quality.get("immutable_reference") or model_result.model_quality.get("reference_only"))
+    if model_result is not None and model_result.point_cloud_path and not immutable_reference:
         scene_path = artifacts_root / model_result.point_cloud_path
         plant_path = (
             round_root / "model" / "plant_point_cloud.ply"
@@ -785,12 +817,26 @@ def analyze_round_tip(
         0,
         1,
     ))
-    valid = (
+    plant_masks = {view.view_id: view.plant_mask_path for view in plant_views}
+    foreground_support = [view_id for view_id in selected_view_ids
+                          if _point_on_plant_mask(plant_masks[view_id], _project_point(projections[view_id], point),
+                                                  maximum_reprojection_error_px)]
+    supporting_cameras = {view.camera_id for view in candidate_views if view.view_id in selected_view_ids}
+    geometric_valid = (
         confidence >= minimum_confidence
         and supporting_count >= minimum_supporting_views
+        and len(supporting_cameras) >= 2
+        and len(foreground_support) >= minimum_supporting_views
         and actual_maximum_error is not None
         and actual_maximum_error <= maximum_reprojection_error_px
     )
+    # This detector supplies contour/skeleton endpoints, including leaf edges.
+    # Consistent geometry cannot establish which endpoint is the growing apex.
+    # Preserve the proposal for review; only an apex-aware detector may confirm it.
+    identity_confirmed = all(candidate.source == "shoot_apex"
+                             for (_, candidate), used in zip(optimized.hypothesis.observations,
+                                                           optimized.hypothesis.used_observations) if used)
+    valid = geometric_valid and identity_confirmed
     reprojection_payloads = []
     if save_reprojection_overlays:
         if stage_callback is not None:
@@ -823,6 +869,7 @@ def analyze_round_tip(
                 if view_id in selected_by_view
                 else set(),
                 projected,
+                confirmed=valid,
             )
             reprojection_payloads.append({
                 "view_id": view_id,
@@ -863,7 +910,9 @@ def analyze_round_tip(
         failure_reason=(
             None
             if valid
-            else "尖端標記信心、支持視角或重投影品質未達門檻。"
+            else "候選點尚未確認為生長尖端，請在本輪人工標記尖端。"
+            if geometric_valid and not identity_confirmed
+            else "尖端標記信心、植物範圍、支持視角或重投影品質未達門檻。"
         ),
     )
     quality = {
@@ -872,6 +921,8 @@ def analyze_round_tip(
         "round_input_camera_counts": {camera: sum(view.camera_id == camera for view in candidate_views)
                                       for camera in ("top", "side", "rotating")},
         "hypothesis_count": len(hypotheses),
+        "foreground_supporting_view_ids": foreground_support,
+        "foreground_supporting_view_count": len(foreground_support),
         "mean_reprojection_error_px": actual_mean_error,
         "maximum_reprojection_error_px": actual_maximum_error,
         "triangulation_mean_reprojection_error_px": (
@@ -884,6 +935,9 @@ def analyze_round_tip(
         "model_surface_score": model_score,
         "local_model_supporting_point_count": local_model_support,
         "valid": valid,
+        "geometric_valid": geometric_valid,
+        "tip_identity_confirmed": identity_confirmed,
+        "model_used_for_tip_refinement": not immutable_reference and skeleton is not None,
         "reprojections": reprojection_payloads,
         "warnings": warnings,
     }

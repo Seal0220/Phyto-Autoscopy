@@ -178,11 +178,16 @@ export function sanitizeBackendDetail(
     !normalized
     || normalized.length > 500
     || CONTROL_CHARACTER_PATTERN.test(normalized)
-    || SENSITIVE_DETAIL_PATTERN.test(normalized)
   ) {
     return fallback;
   }
-  return normalized;
+  // Counts such as "3/5 組" are user-facing geometry feedback, not paths.
+  // Normalize only standalone quantities; every other path separator stays blocked.
+  const display = normalized.replace(
+    /(?<![a-z0-9_.\/\\-])(\d+)\s*\/\s*(\d+)(?=\s*(?:組|張|個|筆|點|輪|次))/gi,
+    "$1／$2",
+  );
+  return SENSITIVE_DETAIL_PATTERN.test(display) ? fallback : display;
 }
 
 export function safeRetryAfter(

@@ -5,9 +5,11 @@ export default function DisclosurePanel({
   description,
   title,
   onToggle,
+  open,
 }) {
   return (
     <details
+      open={open}
       className="min-w-0 rounded-xl border border-white/15 bg-black/15 [&[open]>summary>svg]:rotate-180"
       onToggle={onToggle}
     >

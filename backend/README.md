@@ -103,23 +103,18 @@ the axis and measured top height define the world frame. Each round uses that
 rig and motor orbit as initial poses, followed by constrained refinement and its
 own model/tip analysis. SfM snapshots, reference training and registration are
 durable; resuming an accepted review keeps its registered camera poses.
-The **final reference 3DGS training** runs only after both fixed cameras have registered, with
-all top and side images from the same round and the registered rotating views. Automatic and
-manual registrations both feed this step in the original SfM coordinate frame.
-Accepted camera poses and the alignment reference survive a pause; the joint model
-is published only after training completes, and each camera's actual training
-view count is recorded. Empty fixed-camera foreground masks fail explicitly
-instead of silently training a rotating-only model.
-Each subsequent round also selects every image with a valid camera pose and
-motor angle where required. Constrained bundle adjustment refines rotating
-poses while retaining the fixed-camera rig. Tip localization uses all matched
-observations in that round: a camera-balanced Huber reprojection fit reduces
-wrong matches and prevents one camera's duplicate frames from dominating.
-Round results record input/supporting camera counts, accepted/rejected
-observations and median/95th-percentile reprojection errors. This does not
-average coordinates across rounds or claim that pixel residuals alone prove
-absolute millimetre accuracy. Changed round selection/aggregation invalidates
-old round checkpoints while preserving accepted reference registration.
+Each round automatically builds one **immutable auxiliary reference 3DGS** from
+its successfully registered views. All captured cameras are supplied to SfM;
+only registered views can train the model, and actual per-camera counts make
+missing registration explicit. Subsequent image tip edits and metric camera
+registration never retrain or distort that model. Accepted SfM, training and
+registration results survive a pause. Metric registration and calibrated tip
+triangulation remain separate from the model's visual-reference role. Image
+tracking uses fixed top/side observations of the operator-identified shoot;
+unregistered or rejected geometry cannot create millimetre measurements.
+Round outputs preserve supporting camera counts, rejected observations and
+reprojection diagnostics, without averaging coordinates across rounds or
+claiming that pixel residuals alone prove absolute millimetre accuracy.
 Earlier rotating runs waiting for direct stereo matching become **paused** on
 startup, ready for the user to resume this new workflow. No work starts by itself.
 
@@ -129,24 +124,59 @@ seeds a bounded segmentation of the dark pot; the enclosure and detached lamps
 are excluded. A separate plant-only mask remains available for tip measurements
 and plant-only exports. Content-derived training crops preserve small subjects at
 native resolution within the preset's pixel budget, with matching principal-point
-and resize corrections. Structural loss is evaluated near the subject, and
-densification gradients are normalized for foreground coverage to avoid runaway
-growth. After coarse fitting, covariance effective-rank regularization penalizes
-needle-like Gaussians while permitting thin leaf surfaces; a longest/shortest-axis
-limit cannot distinguish these shapes. Absolute image-plane gradients with the
-corresponding splitting threshold prevent gradient cancellation across surfaces.
-Opacity logits stay within representable sigmoid endpoints before splitting, so
-saturated parents cannot create infinite child logits or an empty PLY export.
-The shape objective follows [effective-rank regularization](https://arxiv.org/abs/2406.11672),
-and densification uses [gsplat's public strategy API](https://docs.gsplat.studio/versions/1.5.3/apis/strategy.html).
-This reduces novel-view artifacts but does not supply missing camera elevations
-or recover clipped image detail. Multi-view mask evidence filters sparse
+and resize corrections. The default backend now uses
+[3DGS MCMC](https://github.com/ubc-vision/3dgs-mcmc) through gsplat's
+`MCMCStrategy`: opacity-based relocation, bounded Gaussian growth and stochastic
+position updates replace gradient-threshold splitting and opacity resets.
+Opacity and scale regularization use coefficients of 0.01. Progressive third-degree
+spherical harmonics and antialiased rasterization are used in training, exported
+previews and the interactive viewer. Foreground models have a 100,000-Gaussian
+budget, never below the initial sparse count; scene models have a 1,000,000-Gaussian
+budget. Camera poses remain fixed. The previous imposed covariance shape objective
+is removed. A strategy change cannot supply missing camera registrations or
+establish measurement accuracy. Multi-view mask evidence filters sparse
 initialization and exported Gaussians in both relative and metric coordinates.
 Mask content and the training version invalidate older tensor checkpoints and
 reference model caches. SfM may still use scene features to estimate camera poses.
 On startup, pending rotating model reviews using an older training version become
 paused without deleting their artifacts or starting work. The user resumes the
 analysis to rebuild the reference; current-version reviews remain unchanged.
+
+Per-round tip editing uses one simultaneous undistorted **top/side** pair with
+the reference model below it. Rotating images remain available in the image
+gallery but are not editable tip inputs. A model pick submits a Gaussian ID and
+model signature; the server resolves its unchanged PLY vertex and applies the
+separately saved model-to-world registration. Without metric registration the
+pick is retained as pending and omitted from valid trajectory measurements.
+Pending image/model picks resolve when registration becomes available, retaining
+their correction ID. Manual corrections can update live charts while other rounds
+train. Existing immutable reference models are reused until explicitly rebuilt.
+
+The default tip workflow is now **manually seeded temporal tracking**. Before
+training the first complete round of each mode, prepare its first two fixed-camera
+pairs and pause at `waiting_for_tip_seed`. Identify the same shoot apex in top
+and side images. Plant support, visible pixels, texture, and the next available
+frame validate the seed; a confirmed save resumes processing after the pausing
+worker exits. Existing image corrections can initialize tracking without
+requiring a registered reference model. Later rounds use that identity, or a newer
+manual correction, with local appearance matching, subpixel peak fitting,
+distinctiveness and forward/backward checks. Brief occlusions are skipped;
+an unverified target remains a gap for optional correction. No coordinate is
+interpolated into a verified measurement. `image_tip_confirmed` and
+`image_observations` describe image identity; `valid` and millimetre coordinates
+still require calibrated multi-view geometry. Missing model-camera registration
+cannot erase a good image seed. Tracking never changes the reference PLY.
+
+This follows the temporal identity and correction principle in Ruiz-Melero et al.,
+Sensors 2024, 24(3), 747, sections 2.3.2–2.3.4; it is not an implementation of
+their full mixture-of-Gaussians/epipolar minimum-path detector. Internal matching
+scores and return errors do not establish the paper's measurement accuracy.
+Read-only `round-feature-correspondences` exposes actual COLMAP observations
+supported by plant masks in at least two displayed cameras, with shared IDs for
+linked highlighting. Unregistered cameras have no fabricated correspondence.
+The approximately 295° side-camera mount provided by the operator is recorded
+as an azimuth reference against the rotating motor angles, never an exact
+measurement or a constraint that overwrites image-estimated poses.
 
 For **fixed** analyses, if automatic stereo pose estimation cannot find valid shared features, the
 analysis enters **等待人工雙鏡頭配對** and expands the inline human review section.

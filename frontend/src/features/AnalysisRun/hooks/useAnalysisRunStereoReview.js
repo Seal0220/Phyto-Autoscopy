@@ -22,6 +22,7 @@ import { knownModelPoint } from "../lib/analysisModelReferenceUtils";
 
 export default function useAnalysisRunStereoReview({
   analysisId,
+  roundKey,
   open,
   onAccepted,
 }) {
@@ -36,7 +37,7 @@ export default function useAnalysisRunStereoReview({
   const mounted = useRef(false);
   const controller = useRef(null);
   const mutation = useRef(null);
-  const path = `/api/analysis/${encodeURIComponent(analysisId)}/stereo-review`;
+  const path = `/api/analysis/${encodeURIComponent(analysisId)}/stereo-review${roundKey ? `?round_key=${encodeURIComponent(roundKey)}` : ""}`;
 
   const load = useCallback(async () => {
     controller.current?.abort();
@@ -151,6 +152,31 @@ export default function useAnalysisRunStereoReview({
     if (index >= 0) removePair(index);
   }
 
+  async function skip() {
+    if (saving || unknown || mutation.current || roundKey) return;
+    const request = new AbortController();
+    mutation.current = request;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await requestAnalysisResource(
+        `/api/analysis/${encodeURIComponent(analysisId)}/skip-stereo-review`,
+        { method: "POST", signal: request.signal, timeoutMs: 120_000 },
+      );
+      if (mounted.current) onAccepted(result);
+    } catch (failure) {
+      if (failure.name !== "AbortError" && mounted.current) {
+        setUnknown(failure instanceof UnknownAnalysisMutationOutcomeError);
+        setError(messageFromError(failure, "暫存本輪對齊失敗，請重新讀取狀態。"));
+      }
+    } finally {
+      if (mutation.current === request) {
+        mutation.current = null;
+        if (mounted.current) setSaving(false);
+      }
+    }
+  }
+
   async function submit() {
     if (saving || unknown || mutation.current || !review) return;
     const body = stereoReviewRequest(
@@ -225,5 +251,6 @@ export default function useAnalysisRunStereoReview({
     addPair,
     removePair,
     submit,
+    skip,
   };
 }

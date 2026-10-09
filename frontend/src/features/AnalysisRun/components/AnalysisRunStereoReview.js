@@ -20,6 +20,7 @@ import AnalysisRunPairActions from "./AnalysisRunPairActions";
 
 export default function AnalysisRunStereoReview({
   analysisId,
+  roundKey,
   open,
   onClose,
   onAccepted,
@@ -30,6 +31,7 @@ export default function AnalysisRunStereoReview({
   const selectId = useId();
   const state = useAnalysisRunStereoReview({
     analysisId,
+    roundKey,
     open,
     onAccepted,
   });
@@ -69,6 +71,11 @@ export default function AnalysisRunStereoReview({
           ? "選三維參照點，再標記兩張影像中的同一位置，至少四組。"
           : "標記同一位置，可選芽尖、葉尖或莖節，盡量分散。"}
       >
+        {!roundKey ? (
+          <Button disabled={locked} onClick={state.skip}>
+            稍後補正，繼續其他輪
+          </Button>
+        ) : null}
         <Button
           disabled={state.saving}
           onClick={onClose}

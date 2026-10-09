@@ -9,6 +9,7 @@ import traceback
 import zipfile
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from threading import Event, RLock
 from time import monotonic
@@ -64,6 +65,7 @@ from app.analysis.pose_alignment.model_reference import (
 from app.analysis.pose_alignment.model_review import model_preview_reference, model_review_reference, model_review_objects
 from app.analysis.reconstruction.gsplat_trainer import PLANT_TRAINING_VERSION
 from app.analysis.reconstruction.dataset_adapter import MASK_PREPARATION_VERSION
+from app.analysis.reconstruction.reference_pose_refinement import REFERENCE_GEOMETRY_VERSION
 from app.analysis.run_metadata import (
     next_dated_identifier,
     repository_commit,
@@ -78,8 +80,11 @@ from app.analysis.record_validator import (
     CaptureRecordValidator,
     ImageProbe,
 )
-from app.analysis.tip.pipeline import TIP_ANALYSIS_VERSION, analyze_round_tip
+from app.analysis.tip.pipeline import TIP_ANALYSIS_VERSION, RoundTipAnalysisResult, analyze_round_tip
 from app.analysis.tip.candidate_detector import TIP_CANDIDATE_VERSION
+from app.analysis.tip.temporal_tracker import (
+    TIP_TRACKING_VERSION, TipTrackingFrame, track_tip_sequence, validate_tip_seed,
+)
 from app.analysis.tip.trajectory_linker import (
     link_tip_trajectory,
     order_analysis_rounds,
@@ -118,6 +123,7 @@ from app.models.analysis_models import (
     TipCorrection,
     TipCorrectionRequest,
     TipLandmark,
+    TipObservation2D,
 )
 from app.models.calibration_models import CameraIntrinsics
 from app.repositories.analysis_repository import AnalysisRepository
@@ -197,9 +203,12 @@ def _model_failed_round_keys(
     models_by_round: Mapping[str, RoundModelResult],
     method_name: str,
 ) -> set[str]:
+    rounds = tuple(rounds)
+    blocked = {item.round_key for item in rounds
+               if item.status in {"alignment_pending", "failed", "incomplete", "tip_invalid"}}
     if method_name != "rotating":
-        return set()
-    return {
+        return blocked
+    return blocked | {
         item.round_key
         for item in rounds
         if item.round_id != "round.00"
@@ -268,6 +277,7 @@ class AnalysisService:
         self._round_progress: dict[str, dict[str, Any]] = {}
         self._restored_round_progress: dict[str, dict[str, Any]] = {}
         self._finalizing_analyses: set[str] = set()
+        self._result_revisions: dict[str, str] = {}
         self._validator = CaptureRecordValidator()
         self._reconstruction_backends = ReconstructionBackendRegistry()
         self._runner = AnalysisJobManager(
@@ -974,6 +984,7 @@ class AnalysisService:
                 "save_background_model": False,
             },
             "tip_analysis": {
+                "tracking_mode": "manual_seeded",
                 "minimum_confidence": 0.7,
                 "minimum_supporting_views": 2,
                 "maximum_reprojection_error_px": 5.0,
@@ -1198,7 +1209,16 @@ class AnalysisService:
             pose[:3, :3] = first.rotation_matrix
             pose[:3, 3] = first.translation_vector_mm
         try:
-            return model_preview_reference(path, self._artifacts(run).root, pose)
+            if model.model_quality.get("immutable_reference"):
+                pose = np.asarray(model.model_quality.get("initial_camera_pose"), dtype=float)
+                if pose.shape != (4, 4) or not np.isfinite(pose).all():
+                    raise ValueError("參考模型缺少原始預覽姿態。")
+            reference = model_preview_reference(path, self._artifacts(run).root, pose)
+            reference["model_quality"] = model.model_quality
+            if model.model_quality.get("immutable_reference"):
+                registration = self._saved_step(run, "aligning_model_cameras", round_key, self._stereo_pose_signature(run))
+                reference["model_to_world"] = registration.get("quality", {}).get("model_to_world") if registration else None
+            return reference
         except (OSError, ValueError) as error:
             raise AnalysisError("此輪模型無法預覽，請確認模型輸出完整。") from error
 
@@ -1216,6 +1236,30 @@ class AnalysisService:
             analysis_id,
             round_key,
         )
+
+    def get_round_feature_correspondences(self, analysis_id, round_key, snapshot_id=None):
+        run = self._require_image_context(analysis_id)
+        artifacts = self._artifacts(run)
+        views = self.repository.list_views(analysis_id, round_key)
+        selected = [view for view in views if view.snapshot_id == snapshot_id] if snapshot_id else []
+        empty = {"coordinate_space": "undistorted_pixels", "features": [],
+                 "registered_view_ids": [], "unregistered_view_ids": [view.view_id for view in selected]}
+        if not views:
+            raise AnalysisError("找不到此輪影像。")
+        context_path, _ = self._round_review_paths(run, round_key)
+        if not context_path.is_file():
+            return {**empty, "reason": "本輪尚無可靠的多視角特徵配對。"}
+        try:
+            context = json.loads(context_path.read_text(encoding="utf-8"))
+            reference = context["reference"]
+            sparse = Path(reference["sparse_path"]).resolve()
+            sparse.relative_to(artifacts.root.resolve())
+            import pycolmap
+            from app.analysis.tip.feature_correspondences import plant_feature_correspondences
+            return plant_feature_correspondences(pycolmap.Reconstruction(sparse), reference["views"], selected,
+                                                artifacts.read_undistortion_manifest(round_key), artifacts.root)
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError, ImportError) as error:
+            raise AnalysisError("讀取本輪特徵配對失敗，請重試。") from error
 
     def list_tip_trajectory(
         self,
@@ -1882,6 +1926,7 @@ class AnalysisService:
             processing_preview=preview,
             image_probe_backends=run.parameters.get("validation_image_probe_backends", {}),
             checkpoints=checkpoint_summary(self._artifacts(run).root),
+            results_revision=getattr(self, "_result_revisions", {}).get(run.analysis_id),
             **round_progress,
         )
 
@@ -2031,7 +2076,7 @@ class AnalysisService:
                 if live is None:
                     live = next((item for item in self._live_progress.values() if item.status in PROCESSING_STATUSES), None)
         if live is not None:
-            return live
+            return live.model_copy(update={"results_revision": getattr(self, "_result_revisions", {}).get(live.analysis_id)})
         if analysis_id is not None:
             run = self._require_run(analysis_id)
         else:
@@ -2169,7 +2214,7 @@ class AnalysisService:
             if isinstance(error, AnalysisError):
                 raise
             raise AnalysisError(f"無法重新啟動分析背景工作：{error}") from error
-        self._log(resumed, "INFO", "重新準備選點預覽，完成後仍需人工對齊相機。" if rebuild_preview
+        self._log(resumed, "INFO", "重新準備模型預覽並嘗試自動對齊相機，未通過者可補人工對齊。" if rebuild_preview
                   else "分析已從既有 Round checkpoint 繼續執行。")
         return resumed
 
@@ -2368,13 +2413,14 @@ class AnalysisService:
                 try:
                     context = json.loads(context_path.read_text(encoding="utf-8"))
                     version = context.get("model", {}).get("model_quality", {}).get("training_version")
+                    geometry_version = context.get("reference", {}).get("quality", {}).get("geometry_refinement", {}).get("version")
                 except (OSError, ValueError, AttributeError):
-                    version = None
-                if version is not None and version != PLANT_TRAINING_VERSION:
+                    version, geometry_version = None, None
+                if version is not None and (version != PLANT_TRAINING_VERSION or geometry_version != REFERENCE_GEOMETRY_VERSION):
                     # Keep old artifacts/drafts, but require the user to resume
-                    # before rebuilding a reference with the new training rules.
+                    # before rebuilding a reference with new geometry/training rules.
                     updated = self._set_state(run, status="paused", stage="estimating_reference_poses", clear_error=True)
-                    self._log(updated, "INFO", "參照模型訓練版本已更新，恢復分析後將重新建立模型。")
+                    self._log(updated, "INFO", "參照模型幾何或訓練版本已更新，恢復分析後將重新建立模型。")
                     continue
             if (run.method_name == "rotating" and not run.aruco_layout_snapshot
                     and run.stage in {"waiting_for_stereo_review", "estimating_stereo_pose"}
@@ -2412,26 +2458,51 @@ class AnalysisService:
             resolved[correction.round_key] = correction.corrected_tip
         return list(resolved.values())
 
-    def _refresh_tip_correction_artifacts(self, run: AnalysisRun) -> None:
-        output_settings = run.parameters.get("outputs")
-        export_trajectory_csv = (
-            bool(output_settings.get("export_trajectory_csv", True))
-            if isinstance(output_settings, Mapping)
-            else True
-        )
-        corrections = self.repository.list_tip_corrections(run.analysis_id)
-        resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
-        landmark_by_round = {
-            item.round_key: item
-            for item in resolved_landmarks
-        }
-        models = self.repository.list_round_models(run.analysis_id)
-        model_by_round = {
-            item.round_key: item
-            for item in models
-        }
+    def _resolve_pending_tip_corrections(self, run):
+        changed = False
+        latest = {item.round_key: item for item in self.repository.list_tip_corrections(run.analysis_id)}
+        rounds = {item.round_key: item for item in self.repository.list_rounds(run.analysis_id)}
+        models = {item.round_key: item for item in self.repository.list_round_models(run.analysis_id)}
+        for key, item in latest.items():
+            if (not item.pending_alignment or key not in rounds
+                    or not (item.observations or item.model_point_id is not None)):
+                continue
+            try:
+                request = TipCorrectionRequest(
+                    round_key=key, reason=item.reason, observations=item.observations,
+                    model_point_id=item.model_point_id, model_signature=item.model_signature,
+                )
+                request, model_selection = self._resolve_tip_model_selection(run, request)
+                if request is None:
+                    continue
+                result = create_tip_correction(
+                    correction_id=item.correction_id, operator_id=item.operator_id, created_at=item.created_at,
+                    request=request,
+                    round_item=rounds[key], views=self.repository.list_views(run.analysis_id, key),
+                    poses=self.repository.list_camera_poses(run.analysis_id, key), intrinsics_snapshot=run.intrinsics_snapshot,
+                    automatic_tip=item.automatic_tip, artifacts_root=self._artifacts(run).root,
+                    model_result=models[key].model_copy(update={"model_quality": {
+                        **models[key].model_quality, "reference_only": True,
+                    }}) if key in models else None,
+                    maximum_reprojection_error_px=float(run.parameters.get("tip_analysis", {}).get("maximum_reprojection_error_px", 5)),
+                )
+                if model_selection:
+                    result = result.model_copy(update=model_selection)
+            except (ValueError, AnalysisError):
+                continue  # Keep the saved clicks available for correction.
+            if not result.pending_alignment:
+                self.repository.update_tip_correction(result)
+                changed = True
+        return changed
+
+    def _synchronize_tip_rounds(self, run, resolved_landmarks, models):
+        landmark_by_round = {item.round_key: item for item in resolved_landmarks}
+        model_by_round = {item.round_key: item for item in models}
         rounds = []
         for round_item in self.repository.list_rounds(run.analysis_id):
+            if round_item.status not in {"tip_completed", "tip_only", "tip_invalid", "model_completed", "model_failed", "ready_tip_only"}:
+                rounds.append(round_item)
+                continue
             landmark = landmark_by_round.get(round_item.round_key)
             if landmark is None:
                 rounds.append(round_item)
@@ -2463,8 +2534,34 @@ class AnalysisService:
             )
             self.repository.update_round(updated_round)
             rounds.append(updated_round)
+        return rounds
+
+    def _refresh_tip_correction_artifacts(self, run: AnalysisRun) -> None:
+        run = self._require_run(run.analysis_id)
+        if not hasattr(self, "_result_revisions"):
+            self._result_revisions = {}
+        self._resolve_pending_tip_corrections(run)
+        output_settings = run.parameters.get("outputs")
+        export_trajectory_csv = (
+            bool(output_settings.get("export_trajectory_csv", True))
+            if isinstance(output_settings, Mapping)
+            else True
+        )
+        corrections = self.repository.list_tip_corrections(run.analysis_id)
+        resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
+        landmark_by_round = {
+            item.round_key: item
+            for item in resolved_landmarks
+        }
+        models = self.repository.list_round_models(run.analysis_id)
+        model_by_round = {
+            item.round_key: item
+            for item in models
+        }
+        rounds = self._synchronize_tip_rounds(run, resolved_landmarks, models)
+        trajectory_rounds = [item for item in rounds if item.round_key in landmark_by_round] if run.status in PROCESSING_STATUSES else rounds
         trajectory = link_tip_trajectory(
-            rounds,
+            trajectory_rounds,
             resolved_landmarks,
             blocked_interpolation_round_keys=_model_failed_round_keys(
                 rounds,
@@ -2487,6 +2584,7 @@ class AnalysisService:
                 "model_failed",
                 "tip_only",
                 "tip_invalid",
+                "alignment_pending",
             }
             for item in rounds
         )
@@ -2496,7 +2594,7 @@ class AnalysisService:
             completed_round_count=completed_round_count,
             failed_round_count=failed_round_count,
             tip_marker_count=valid_count,
-            trajectory_status="completed" if valid_count else "unavailable",
+            trajectory_status=("processing" if run.status in PROCESSING_STATUSES else "completed") if valid_count else "unavailable",
         )
         reprojection_errors = [
             float(item.mean_reprojection_error_px)
@@ -2529,6 +2627,7 @@ class AnalysisService:
             resolved_landmarks,
             trajectory.quality,
         )
+        self._result_revisions[run.analysis_id] = uuid4().hex
         if run.status in {"completed", "partially_completed"}:
             # Corrections update the finished results directly; no model or
             # automatic tip processing needs to restart.
@@ -2557,6 +2656,34 @@ class AnalysisService:
             round_key,
         )
 
+    def _resolve_tip_model_selection(self, run, request):
+        """Resolve a hash-bound Gaussian ID, never client-supplied relative XYZ."""
+        if request.model_point_id is None:
+            return request, {}
+        reference = self.get_round_model_preview(run.analysis_id, request.round_key)
+        if reference["signature"] != request.model_signature:
+            raise AnalysisError("模型已變更，請重新讀取本輪模型再標記尖端。")
+        path = self.get_artifact_path(run.analysis_id, reference["gaussian_path"])
+        context = {"reference": {"points": []}, "model": {"gaussian_model_path": str(path)}}
+        point = model_review_objects(context, self._artifacts(run).root, reference, [request.model_point_id])[0]
+        selection = {"model_point_id": request.model_point_id, "model_signature": request.model_signature,
+                     "model_point_relative_xyz": point}
+        if reference.get("model_quality", {}).get("immutable_reference"):
+            transform = reference.get("model_to_world")
+            if transform is None:
+                return None, selection
+            scale = float(transform["scale"])
+            rotation, translation = np.asarray(transform["rotation"]), np.asarray(transform["translation"])
+            if (not np.isfinite(scale) or scale <= 0 or rotation.shape != (3, 3)
+                    or translation.shape != (3,) or not np.isfinite(rotation).all()
+                    or not np.isfinite(translation).all()):
+                raise ValueError("模型到量測座標的轉換無效。")
+            world_point = (scale * rotation @ np.asarray(point) + translation).tolist()
+        else:
+            world_point = point
+        return TipCorrectionRequest(round_key=request.round_key, reason=request.reason,
+                                    corrected_point_mm=world_point), selection
+
     def save_tip_correction(
         self,
         analysis_id: str,
@@ -2572,6 +2699,7 @@ class AnalysisService:
                 "reviewing",
                 "completed",
                 "partially_completed",
+                "processing", "reconstructing", "paused", "cancelled", "failed",
             }:
                 raise AnalysisError("目前狀態不可修正三維尖端標記。")
             round_item = next(
@@ -2584,6 +2712,8 @@ class AnalysisService:
             )
             if round_item is None:
                 raise AnalysisError(f"找不到 Round：{request.round_key}")
+            if round_item.status in {"alignment_pending", "failed"} and request.corrected_point_mm is not None:
+                raise AnalysisError("請先補正這一輪的相機對齊，再修正尖端位置。")
             automatic_tip = next(
                 (
                     item
@@ -2593,7 +2723,11 @@ class AnalysisService:
                 None,
             )
             if automatic_tip is None:
-                raise AnalysisError("此 Round 尚無可修正的自動尖端標記。")
+                automatic_tip = TipLandmark(analysis_id=analysis_id, round_key=round_item.round_key,
+                    tip_id=f"{round_item.round_key}:tip", record_id=round_item.record_id, mode_id=round_item.mode_id,
+                    round_id=round_item.round_id, timestamp=round_item.started_at,
+                    valid=False, confidence=0, source="invalid", detection_type="invalid",
+                    failure_reason="尚未產生自動尖端位置。")
             model_result = next(
                 (
                     item
@@ -2602,6 +2736,10 @@ class AnalysisService:
                 ),
                 None,
             )
+            if model_result is not None:
+                model_result = model_result.model_copy(update={"model_quality": {
+                    **model_result.model_quality, "reference_only": True,
+                }})
             tip_settings = run.parameters.get("tip_analysis")
             maximum_error = (
                 float(tip_settings.get("maximum_reprojection_error_px", 5.0))
@@ -2609,26 +2747,62 @@ class AnalysisService:
                 else 5.0
             )
             try:
-                correction = create_tip_correction(
-                    correction_id=f"tip_correction_{uuid4().hex}",
-                    operator_id=actor_id,
-                    created_at=utc_now_iso(),
-                    request=request,
-                    round_item=round_item,
-                    views=self.repository.list_views(
-                        analysis_id,
-                        request.round_key,
-                    ),
-                    poses=self.repository.list_camera_poses(
-                        analysis_id,
-                        request.round_key,
-                    ),
-                    intrinsics_snapshot=run.intrinsics_snapshot,
-                    automatic_tip=automatic_tip,
-                    artifacts_root=self._artifacts(run).root,
-                    model_result=model_result,
-                    maximum_reprojection_error_px=maximum_error,
-                )
+                seed_quality = None
+                if self._uses_seeded_tracking(run) and request.observations:
+                    seed_quality = self._validate_tracking_seed(run, round_item, request.observations)
+                resolved_request, model_selection = self._resolve_tip_model_selection(run, request)
+                if resolved_request is None:
+                    # The reference point is real, but no millimetre registration
+                    # exists yet. Retain the selection without adding a graph point.
+                    pending_tip = automatic_tip.model_copy(update={
+                        "tip_id": f"{automatic_tip.tip_id}:model_manual", "x_mm": None, "y_mm": None, "z_mm": None,
+                        "valid": False, "confidence": 0, "source": "manual", "manually_corrected": True,
+                        "detection_type": "invalid", "supporting_view_ids": [], "visible_view_count": 0,
+                        "mean_reprojection_error_px": None, "maximum_reprojection_error_px": None,
+                        "failure_reason": "模型尖端已儲存，待相機量測座標可用後更新軌跡。",
+                        "image_tip_confirmed": False, "image_observations": [], "tracking": {},
+                    })
+                    correction = TipCorrection(
+                        correction_id=f"tip_correction_{uuid4().hex}", analysis_id=analysis_id,
+                        round_key=request.round_key, operator_id=actor_id, created_at=utc_now_iso(),
+                        reason=request.reason, correction_type="point", pending_alignment=True,
+                        automatic_tip=automatic_tip, corrected_tip=pending_tip,
+                        confidence_before=automatic_tip.confidence, confidence_after=0, **model_selection,
+                    )
+                else:
+                    correction_arguments = dict(
+                        correction_id=f"tip_correction_{uuid4().hex}",
+                        operator_id=actor_id,
+                        created_at=utc_now_iso(),
+                        request=resolved_request,
+                        round_item=round_item,
+                        views=self.repository.list_views(analysis_id, request.round_key),
+                        poses=self.repository.list_camera_poses(analysis_id, request.round_key),
+                        intrinsics_snapshot=run.intrinsics_snapshot,
+                        automatic_tip=automatic_tip,
+                        artifacts_root=self._artifacts(run).root,
+                        model_result=model_result,
+                        maximum_reprojection_error_px=maximum_error,
+                    )
+                    try:
+                        correction = create_tip_correction(**correction_arguments)
+                    except ValueError as error:
+                        if seed_quality is None:
+                            raise
+                        # A rejected metric result must not discard a good image seed.
+                        correction = create_tip_correction(**{**correction_arguments, "poses": ()})
+                        seed_quality["measurement_rejection"] = str(error)
+                    if model_selection:
+                        correction = correction.model_copy(update=model_selection)
+                if seed_quality is not None:
+                    correction = correction.model_copy(update={
+                        "tracking_seed_confirmed": True, "tracking_seed_quality": seed_quality,
+                        "corrected_tip": correction.corrected_tip.model_copy(update={
+                            "image_tip_confirmed": True,
+                            "image_observations": [item.model_dump(mode="json") for item in request.observations],
+                            "tracking": {"version": TIP_TRACKING_VERSION, "seed_id": correction.correction_id},
+                        }),
+                    })
             except (KeyError, TypeError, ValueError) as error:
                 raise AnalysisError(f"尖端標記人工修正失敗：{error}") from error
             self.repository.insert_tip_correction(correction)
@@ -2655,6 +2829,10 @@ class AnalysisService:
                     stage="waiting_for_review",
                     progress=0.95,
                 )
+            if (run.status == "paused" and run.stage == "waiting_for_tip_seed"
+                    and correction.tracking_seed_confirmed):
+                self._set_state(self._require_run(analysis_id), status="processing", clear_error=True)
+                self._runner.start_when_idle(analysis_id)
             return correction
 
     def delete_tip_correction(
@@ -2671,6 +2849,7 @@ class AnalysisService:
                 "reviewing",
                 "completed",
                 "partially_completed",
+                "processing", "reconstructing", "paused", "cancelled", "failed",
             }:
                 raise AnalysisError("目前狀態不可刪除三維尖端標記修正。")
             stored = next(
@@ -2738,9 +2917,7 @@ class AnalysisService:
 
     @staticmethod
     def _stereo_pose_signature(run: AnalysisRun) -> str:
-        return step_signature({"version": 3 if run.method_name == "rotating" else 2, "pose": run.parameters.get("pose_strategy"),
-                               **({"training_version": PLANT_TRAINING_VERSION, "model_parameters": run.parameters.get("reconstruction")}
-                                  if run.method_name == "rotating" else {}),
+        return step_signature({"version": 4 if run.method_name == "rotating" else 2, "pose": run.parameters.get("pose_strategy"),
                                "intrinsics": run.intrinsics_snapshot, "aruco": run.aruco_layout_snapshot})
 
     @staticmethod
@@ -2764,18 +2941,78 @@ class AnalysisService:
                   else "自動雙鏡頭配對不足，已保存影像，等待人工配對。")
         return updated
 
-    def get_stereo_review(self, analysis_id: str) -> dict:
-        with self._lock:
-            return self._stereo_review_payload(analysis_id)
+    def _round_review_paths(self, run, round_key):
+        item = next((item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == round_key), None)
+        if item is None or item.status != "alignment_pending":
+            raise AnalysisError("這一輪沒有待補正的相機對齊。")
+        root = round_artifact_directory(self._artifacts(run).root, round_key)
+        return root / "pose_debug/model_reference/context.json", root / "pose_debug/stereo/manual_review.json"
 
-    def _stereo_review_payload(self, analysis_id: str) -> dict:
+    def get_stereo_review(self, analysis_id: str, *, round_key: str | None = None) -> dict:
+        with self._lock:
+            return self._stereo_review_payload(analysis_id, round_key=round_key)
+
+    def skip_stereo_review(self, analysis_id: str) -> AnalysisRun:
+        """Migrate a waiting legacy review into a deferred per-round review."""
+        with self._lock:
+            run = self._require_run(analysis_id)
+            if not self._is_stereo_review(run):
+                raise AnalysisError("目前沒有待補正的相機對齊。")
+            if not self._runner.wait_until_idle(analysis_id):
+                raise AnalysisError("前一個分析工作尚未保存完畢，請稍後再試。")
+            review = self._stereo_review_payload(analysis_id)
+            key = review["views"][0]["round_key"]
+            if any(view["round_key"] != key for view in review["views"]):
+                raise AnalysisError("待補正影像不屬於同一輪。")
+            root = self._artifacts(run).root
+            local = round_artifact_directory(root, key)
+            source = root / "pose_debug/model_reference/context.json"
+            if review.get("mode") == "model_reference":
+                write_json_atomic(local / "pose_debug/model_reference/context.json", json.loads(source.read_text(encoding="utf-8")))
+            source = root / "pose_debug/stereo/manual_review.json"
+            saved = json.loads(source.read_text(encoding="utf-8")) if source.is_file() else {}
+            reason = review.get("reason") or "相機對齊待人工補正。"
+            write_json_atomic(local / "pose_debug/stereo/manual_review.json", {
+                **saved, "accepted": False, "round_key": key, "reason": reason,
+                "view_ids": [view["view_id"] for view in review["views"]],
+            })
+            item = next(item for item in self.repository.list_rounds(analysis_id) if item.round_key == key)
+            self._skip_round_alignment(run, item, self.repository.list_views(analysis_id, key),
+                                       AnalysisReviewRequiredError(reason), self._round_pipeline_signature(run), Event())
+            resumed = self._set_state(self._require_run(analysis_id), status="processing", stage="snapshotting_intrinsics", clear_error=True)
+            if not self._runner.start(analysis_id):
+                self._set_state(resumed, status="paused")
+                raise AnalysisError("背景工作尚未停止，請稍後再恢復分析。")
+            return resumed
+
+    def retry_round(self, analysis_id: str, round_key: str) -> AnalysisRun:
+        with self._lock:
+            run = self._require_run(analysis_id)
+            if run.status in PROCESSING_STATUSES or not self._runner.wait_until_idle(analysis_id):
+                raise AnalysisError("請等目前的分析工作完成或暫停，再重試這一輪。")
+            item = next((item for item in self.repository.list_rounds(analysis_id) if item.round_key == round_key), None)
+            if item is None or item.status not in {"failed", "alignment_pending"}:
+                raise AnalysisError("這一輪沒有可重試的對齊工作。")
+            with StepJournal(self._artifacts(run).root) as journal:
+                journal.invalidate(round_key, ("round_skipped", "round_pipeline", "round_preprocessing", "round_model", "round_tip",
+                                                "estimating_camera_poses", "triangulating_tip_marker"))
+            self.repository.update_round(item.model_copy(update={"status": "ready", "failure_reason": None, "tip_landmark_id": None}))
+            resumed = self._set_state(run, status="processing", stage="snapshotting_intrinsics", clear_error=True)
+            if not self._runner.start(analysis_id):
+                self._set_state(resumed, status="paused")
+                raise AnalysisError("背景工作尚未停止，請稍後再恢復分析。")
+            return resumed
+
+    def _stereo_review_payload(self, analysis_id: str, *, round_key: str | None = None) -> dict:
         run = self._require_image_context(analysis_id)
-        if not self._is_stereo_review(run):
+        if round_key is None and not self._is_stereo_review(run):
             raise AnalysisError("目前沒有待確認的雙鏡頭姿態。")
         context_path = self._artifacts(run).root / "pose_debug/model_reference/context.json"
-        if run.stage == "waiting_for_model_review":
+        saved_path = self._artifacts(run).root / "pose_debug/stereo/manual_review.json"
+        if round_key is not None:
+            context_path, saved_path = self._round_review_paths(run, round_key)
+        if (round_key is None and run.stage == "waiting_for_model_review") or (round_key is not None and context_path.is_file()):
             context = json.loads(context_path.read_text(encoding="utf-8"))
-            saved_path = self._artifacts(run).root / "pose_debug/stereo/manual_review.json"
             saved = json.loads(saved_path.read_text(encoding="utf-8")) if saved_path.is_file() else {}
             review_views = [self.repository.get_view(analysis_id, view_id) for view_id in context["fixed_view_ids"]]
             if any(view is None for view in review_views):
@@ -2786,30 +3023,39 @@ class AnalysisService:
                 # Existing sparse anchors retain their IDs when opening an already trained model.
                 draft = {**draft, "reference_signature": reference["signature"]}
             valid_draft = draft and draft.get("reference_signature") == reference["signature"]
-            return {"analysis_id": analysis_id, "mode": "model_reference", "minimum_pairs": 4,
+            return {"analysis_id": analysis_id, "round_key": round_key, "mode": "model_reference", "minimum_pairs": 4,
                     "reason": saved.get("reason"), "views": [v.model_dump(mode="json") for v in review_views],
                     "reference": reference, "draft": draft if valid_draft else None,
                     "validation": saved.get("validation") if valid_draft else None}
-        preview = self._progress_for_run(run).processing_preview
+        preview = self._progress_for_run(run).processing_preview if round_key is None else None
         views = [self.repository.get_view(analysis_id, view.view_id) for view in (preview.views if preview else [])]
         views = [view for view in views if view is not None and view.camera_id in {"top", "side"}]
-        if {view.camera_id for view in views} != {"top", "side"}:
-            raise AnalysisError("缺少待確認的俯視與側視影像，請重試姿態估計以產生診斷影像。")
-        path = self._artifacts(run).root / "pose_debug" / "stereo" / "manual_review.json"
         try:
-            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved = json.loads(saved_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             saved = {}
-        return {"analysis_id": analysis_id, "reason": saved.get("reason") or run.last_error,
+        if round_key is not None:
+            views = [self.repository.get_view(analysis_id, view_id) for view_id in saved.get("view_ids", [])]
+            views = [view for view in views if view is not None and view.round_key == round_key]
+        if {view.camera_id for view in views} != {"top", "side"}:
+            raise AnalysisError("缺少待確認的俯視與側視影像，請重試姿態估計以產生診斷影像。")
+        return {"analysis_id": analysis_id, "round_key": round_key, "reason": saved.get("reason") or run.last_error,
                 "minimum_pairs": MINIMUM_MANUAL_STEREO_PAIRS, "views": [view.model_dump(mode="json") for view in views],
                 "draft": saved.get("request"), "validation": saved.get("validation"),
                 "diagnostics": preview.diagnostics if preview else {}}
 
-    def submit_stereo_review(self, analysis_id: str, request: StereoPoseReviewRequest | ModelPoseReviewRequest, actor_id: str) -> AnalysisRun:
+    def submit_stereo_review(self, analysis_id: str, request: StereoPoseReviewRequest | ModelPoseReviewRequest, actor_id: str, *, round_key: str | None = None) -> AnalysisRun:
         with self._lock:
             run = self._require_run(analysis_id)
-            if not self._is_stereo_review(run):
+            if round_key is None and not self._is_stereo_review(run):
                 raise AnalysisError("目前沒有待確認的雙鏡頭姿態。")
+            if round_key is not None and run.status in PROCESSING_STATUSES:
+                raise AnalysisError("請等目前的分析工作完成或暫停，再補正這一輪。")
+            root = self._artifacts(run).root
+            context_path = root / "pose_debug/model_reference/context.json"
+            review_path = root / "pose_debug/stereo/manual_review.json"
+            if round_key is not None:
+                context_path, review_path = self._round_review_paths(run, round_key)
             if not self._runner.wait_until_idle(analysis_id):
                 raise AnalysisError("前一個分析工作尚未保存完畢，請稍後再試。")
             views = [self.repository.get_view(analysis_id, view_id) for view_id in (request.top_view_id, request.side_view_id)]
@@ -2817,6 +3063,8 @@ class AnalysisService:
                 raise AnalysisError("配對影像必須是本分析的俯視與側視影像。")
             if (views[0].round_key, views[0].snapshot_id) != (views[1].round_key, views[1].snapshot_id):
                 raise AnalysisError("人工配對必須使用同一輪、同一次擷取的兩個視角。")
+            if round_key is not None and views[0].round_key != round_key:
+                raise AnalysisError("配對影像必須屬於這一輪。")
             for pair in request.correspondences:
                 for view in views:
                     point = getattr(pair, view.camera_id)
@@ -2834,34 +3082,49 @@ class AnalysisService:
                 snapshot = run.intrinsics_snapshot[view.camera_id]
                 intrinsics[view.camera_id] = {"camera_matrix": snapshot["undistorted_camera_matrix"],
                                             "width": view.image_width, "height": view.image_height}
-            review_path = root / "pose_debug" / "stereo" / "manual_review.json"
             payload = {"accepted": False, "request": request.model_dump(mode="json"),
+                       "round_key": round_key, "view_ids": [view.view_id for view in views],
                        "reviewed_by": actor_id, "updated_at": utc_now_iso()}
             write_json_atomic(review_path, payload)
             validation = {}
             try:
                 settings = MarkerlessPoseSettings.model_validate(run.parameters.get("pose_strategy")).model_dump(mode="json")
-                if run.stage == "waiting_for_model_review":
+                if (round_key is None and run.stage == "waiting_for_model_review") or (round_key is not None and context_path.is_file()):
                     if not isinstance(request, ModelPoseReviewRequest):
                         raise ValueError("請先選擇模型參照點，再標記兩個視角。")
-                    context = json.loads((root / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
+                    context = json.loads(context_path.read_text(encoding="utf-8"))
                     reference = model_review_reference(context, root)
                     if request.reference_signature != reference["signature"] or {v.view_id for v in views} != set(context["fixed_view_ids"]):
                         raise ValueError("模型或對齊影像已變更，請重新讀取參照模型。")
                     objects = model_review_objects(context, root, reference, [p.model_point_id for p in request.correspondences])
                     fixed, checks = {}, {}
                     validation.update(validated_stage="reprojection", inlier_indices=[], cameras=checks)
+                    failures = []
                     for camera in ("top", "side"):
                         pixels = [[getattr(p, camera).x_px, getattr(p, camera).y_px] for p in request.correspondences]
-                        pose, check = model_camera_pose(objects, pixels, intrinsics[camera]["camera_matrix"], settings["maximum_pnp_reprojection_error_px"])
-                        fixed[camera], checks[camera] = pose.tolist(), check
+                        check = checks[camera] = {}
+                        try:
+                            pose, _ = model_camera_pose(objects, pixels, intrinsics[camera]["camera_matrix"],
+                                settings["maximum_pnp_reprojection_error_px"], diagnostics=check)
+                            fixed[camera] = pose.tolist()
+                        except (ValueError, cv2.error) as error:
+                            label = "俯視角" if camera == "top" else "側視角"
+                            reason = str(error) if isinstance(error, ValueError) else "模型姿態無法求解，請重新選取分散的參照點。"
+                            outliers = check.get("outlier_indices", [])
+                            numbers = "、".join(str(index + 1) for index in outliers[:8])
+                            hint = f"請優先檢查第 {numbers}{' 等' if len(outliers) > 8 else ''} 組。" if outliers else ""
+                            check["reason"] = f"{label}：{reason}{hint}"
+                            failures.append(check["reason"])
+                    if failures:
+                        validation["status"] = "rejected"
+                        raise ValueError(" ".join(failures))
                     validation.update(validated_stage="reprojection", inlier_indices=sorted(set(checks["top"]["inlier_indices"]) & set(checks["side"]["inlier_indices"])), cameras=checks)
                     if len(validation["inlier_indices"]) < 4:
                         raise ValueError("模型對齊至少需要四組通過兩個視角幾何檢查的參照點。")
                     registration = metric_model_registration(context["reference"], fixed, settings)
                     poses, quality = registration["poses"], registration["quality"]
                     quality["estimation_source"] = "manual_model_reference"
-                    self._store_model_registration(run, registration)
+                    self._store_model_registration(run, registration, round_key=round_key)
                 else:
                     if isinstance(request, ModelPoseReviewRequest):
                         raise ValueError("目前沒有可供對齊的參照模型，請使用雙鏡頭配對。")
@@ -2869,14 +3132,21 @@ class AnalysisService:
                         *frames, intrinsics, settings, payload["request"]["correspondences"], diagnostics=validation,
                     )
             except (ValueError, cv2.error) as error:
-                payload.update(validation=validation)
+                payload.update(validation=validation, reason=str(error))
                 write_json_atomic(review_path, payload)
-                self._request_stereo_review(run, str(error))
+                if round_key is None:
+                    self._request_stereo_review(run, str(error))
                 raise AnalysisError(str(error)) from error
             payload.update(accepted=True, quality=quality, validation=validation)
             write_json_atomic(review_path, payload)
             self._save_step(run, "estimating_stereo_pose", "rig", self._stereo_pose_signature(run),
                             {"poses": poses, "quality": quality}, outputs=[review_path, *paths])
+            if round_key is not None:
+                with StepJournal(root) as journal:
+                    journal.invalidate(round_key, ("round_pipeline", "round_preprocessing", "round_model", "round_tip",
+                                                    "estimating_camera_poses", "triangulating_tip_marker", "round_skipped"))
+                item = next(item for item in self.repository.list_rounds(analysis_id) if item.round_key == round_key)
+                self.repository.update_round(item.model_copy(update={"status": "ready", "failure_reason": None, "tip_landmark_id": None}))
             resumed = self._set_state(run, status="processing",
                                       stage="aligning_model_cameras" if isinstance(request, ModelPoseReviewRequest) else "estimating_stereo_pose",
                                       clear_error=True)
@@ -2893,14 +3163,23 @@ class AnalysisService:
         with StepJournal(self._artifacts(run).root) as journal:
             journal.save(stage, item, signature, payload, outputs=outputs)
 
-    def _store_model_registration(self, run, registration):
-        # Registration remains valid when joint training publishes a new PLY.
-        # Depending on context.json would invalidate the accepted manual pose.
+    def _store_model_registration(self, run, registration, *, round_key=None):
+        # Measurement registration never changes the frozen reference model.
         payload = {key: value for key, value in registration.items() if key != "outputs"}
-        path = self._artifacts(run).root / "pose_debug/model_reference/registration.json"
+        root = self._artifacts(run).root
+        reference_root = round_artifact_directory(root, round_key) / "pose_debug/model_reference" if round_key else root / "pose_debug/model_reference"
+        path = reference_root / "registration.json"
         write_json_atomic(path, payload)
-        self._save_step(run, "aligning_model_cameras", "registration",
+        self._save_step(run, "aligning_model_cameras", round_key or "registration",
                         self._stereo_pose_signature(run), payload, outputs=[path])
+        if round_key and self._saved_step(run, "aligning_model_cameras", "registration", self._stereo_pose_signature(run)) is None:
+            # The first accepted round defines the shared physical rig. Keep
+            # pending rounds' previews and drafts in their own directories.
+            write_json_atomic(root / "pose_debug/model_reference/context.json", {
+                "source_context_path": (reference_root / "context.json").relative_to(root).as_posix(),
+            })
+            self._save_step(run, "aligning_model_cameras", "registration",
+                            self._stereo_pose_signature(run), payload, outputs=[path])
 
     @staticmethod
     def _reference_model_job(run, reference, training_views, *, alignment_preview=False):
@@ -2913,8 +3192,9 @@ class AnalysisService:
         elif cameras != {"top", "side", "rotating"}:
             raise AnalysisError("初始 3DGS 必須包含已對齊的俯視、側視與旋臂影像。")
         return {"analysis_id": run.analysis_id, "round_key": training_views[0]["round_key"],
-                "artifact_root": run.output_path, "backend": "gsplat_3dgs",
+                "artifact_root": run.output_path, "backend": run.parameters["reconstruction"].get("backend", "gsplat_3dgs"),
                 "mask_preparation_version": MASK_PREPARATION_VERSION,
+                "reference_geometry_version": REFERENCE_GEOMETRY_VERSION,
                 "purpose": "camera_alignment_preview" if alignment_preview else "reference_model",
                 "world_coordinate_unit": "relative", "geometry_signature": reference["signature"],
                 "initial_sparse_path": reference["sparse_path"], "intrinsics_snapshot": run.intrinsics_snapshot,
@@ -2944,171 +3224,124 @@ class AnalysisService:
                             outputs=[Path(model["gaussian_model_path"]), *map(Path, model["preview_paths"])])
         return model, signature
 
-    def _build_alignment_preview(self, run, context, reference_root, cancel_event):
-        # A dense, trained preview makes physical landmarks identifiable before
-        # all cameras register. Never invent a pose for an unregistered camera.
-        training_views = [view for view in context["reference"]["views"] if view.get("pose") is not None]
-        job = self._reference_model_job(run, context["reference"], training_views, alignment_preview=True)
-        model, signature = self._train_reference_model(
-            run, job, reference_root / "alignment_preview", cancel_event, item="alignment_preview",
+    def _publish_reference_model(self, run, context, round_key):
+        """Publish the original model; measurement registration lives separately."""
+        root = self._artifacts(run).root
+        model = context["model"]
+        relative = lambda path: Path(path).resolve().relative_to(root.resolve()).as_posix() if path else None
+        result = RoundModelResult(
+            analysis_id=run.analysis_id, round_key=round_key,
+            model_id=f"{run.analysis_id}:{round_key}:model", backend=model.get("backend", "gsplat_3dgs"),
+            backend_version=model.get("backend_version", "unknown"), status="completed",
+            repository_url=model.get("repository_url"), repository_commit=model.get("repository_commit"),
+            license=model.get("license"), environment=model.get("environment", {}),
+            source_view_ids=model.get("source_view_ids") or [v["view_id"] for v in context["reference"]["views"]],
+            model_path=relative(model.get("gaussian_model_path")),
+            point_cloud_path=relative(model.get("point_cloud_path")),
+            preview_paths=[relative(path) for path in model.get("preview_paths", [])],
+            gaussian_count=model.get("gaussian_count"), point_count=model.get("point_count"),
+            training_iterations=model.get("training_iterations"),
+            training_duration_seconds=model.get("training_duration_seconds"),
+            model_quality={**model.get("model_quality", {}), "immutable_reference": True,
+                           "reference_only": True, "coordinate_unit": "relative",
+                           "model_policy_version": 1,
+                           "reference_geometry_signature": context["reference"]["signature"],
+                           "input_camera_counts": context.get("input_camera_counts", {}),
+                           "unregistered_view_ids": context.get("unregistered_view_ids", []),
+                           "initial_camera_pose": context["reference"]["views"][0]["pose"]},
         )
-        quality = {**model["model_quality"], "representation": "alignment_3dgs", "purpose": "camera_alignment_preview"}
-        model = {**model, "status": "awaiting_camera_alignment", "model_quality": quality}
-        model_review_reference({**context, "model": model}, self._artifacts(run).root)
-        return {**context, "model": model, "alignment_preview_signature": signature,
-                "training_camera_counts": quality.get("training_camera_counts", {})}
+        self.repository.upsert_round_model(result)
+        self._artifacts(run).write_round_model_result(result)
+        return result
 
-    def _joint_reference_views(self, run, context, registration, views, undistorted_by_view):
-        root = self._artifacts(run).root
-        fixed_ids = set(context["fixed_view_ids"])
-        round_keys = {view.round_key for view in views if view.view_id in fixed_ids}
-        # Legacy contexts listed only one stereo pair. Expand that same round,
-        # preserving accepted reference coordinates and manual camera alignment.
-        fixed_views = [view for view in views if view.round_key in round_keys and view.camera_id in {"top", "side"}]
-        if {view.camera_id for view in fixed_views} != {"top", "side"}:
-            raise AnalysisError("共同建模缺少已對齊的俯視或側視影像。")
-        poses = reference_space_fixed_poses(registration)
-        training_views = [view for view in context["reference"]["views"] if view["camera_id"] == "rotating"]
-        if not training_views:
-            raise AnalysisError("共同建模缺少有效的旋臂姿態。")
-        for view in fixed_views:
-            metadata = undistorted_by_view[view.view_id]
-            image = (root / metadata["undistorted_path"]).resolve()
-            training_views.append({**view.model_dump(mode="json"), "undistorted_path": str(image),
-                                   "valid_mask_path": str((root / metadata["valid_pixel_mask_path"]).resolve()),
-                                   "undistorted_sha256": _sha256(image), "pose": poses[view.camera_id],
-                                   "pose_source": "model_reference"})
-        return training_views, fixed_views
-
-    def _build_joint_reference_model(self, run, context, registration, views, undistorted_by_view, cancel_event):
-        root = self._artifacts(run).root
-        training_views, fixed_views = self._joint_reference_views(run, context, registration, views, undistorted_by_view)
-        job = self._reference_model_job(run, context["reference"], training_views)
-        job["artifact_root"] = str(root)
-        signature = step_signature({"training_version": PLANT_TRAINING_VERSION, "job": job})
-        initial = (context["model"].get("status") in {"pending", "awaiting_camera_alignment"}
-                   or context["model"].get("model_quality", {}).get("representation") == "sfm_points")
-        if context.get("model_signature") == signature:
-            model = context["model"]
-        else:
-            self._write_processing_preview(run, fixed_views, message="本輪三鏡頭共同建模")
-            model, signature = self._train_reference_model(
-                run, job, root / "pose_debug/model_reference" / ("model" if initial else "joint_model"),
-                cancel_event, item="model" if initial else "joint_model",
-            )
-        counts = model.get("model_quality", {}).get("training_camera_counts", {})
-        if any(int(counts.get(camera, 0)) < 1 for camera in ("top", "side", "rotating")):
-            raise AnalysisError("參照模型未完整使用俯視、側視與旋臂影像，請重新建模。")
-        if context.get("model_signature") != signature:
-            updated = {**context, "model": model, "model_signature": signature, "training_camera_counts": counts,
-                       "fixed_training_view_ids": [view.view_id for view in fixed_views]}
-            # Retain the alignment PLY and legacy models for existing drafts.
-            # The final model has its own three-camera job and checkpoint.
-            if context["model"].get("model_quality", {}).get("representation") == "alignment_3dgs":
-                updated["alignment_preview"] = context["model"]
-            elif not initial:
-                updated["bootstrap_model"] = context.get("bootstrap_model", context["model"])
-            write_json_atomic(root / "pose_debug/model_reference/context.json", updated)
-            self._log(run, "INFO", f"參照模型共同訓練完成：俯視 {counts['top']} 張、側視 {counts['side']} 張、旋臂 {counts['rotating']} 張。")
-
-    def _prepare_model_reference(self, run, views, undistorted_by_view, cancel_event):
+    def _prepare_model_reference(self, run, views, undistorted_by_view, cancel_event, *, round_key=None):
+        """Build one image-based model per round, then register measurements only."""
         root = self._artifacts(run).root
         signature = self._stereo_pose_signature(run)
-        saved = self._saved_step(run, "aligning_model_cameras", "registration", signature)
-        if saved is not None:
-            context = json.loads((root / "pose_debug/model_reference/context.json").read_text(encoding="utf-8"))
-            # Later rounds share the accepted rig/axis coordinate frame; they
-            # train their own models, never retrain the first round's reference.
-            counts = context.get("model", {}).get("model_quality", {}).get("training_camera_counts", {})
-            if (not set(context["fixed_view_ids"]) & {view.view_id for view in views}
-                    and context.get("model_signature")
-                    and all(int(counts.get(camera, 0)) > 0 for camera in ("top", "side", "rotating"))
-                    and Path(context["model"].get("gaussian_model_path", "")).is_file()):
-                return saved
-            self._store_model_registration(run, saved)
-            self._build_joint_reference_model(run, context, saved, views, undistorted_by_view, cancel_event)
-            return saved
         grouped = {}
         for view in views:
             grouped.setdefault(view.round_key, []).append(view)
         candidates = [items for items in grouped.values() if sum(v.camera_id == "rotating" for v in items) >= 6]
         if not candidates:
-            raise AnalysisError("找不到至少六個角度的旋臂影像，無法先建立參照模型。")
+            saved = self._saved_step(run, "aligning_model_cameras", "registration", signature)
+            if saved is not None and all(v.round_key.rsplit(":", 1)[-1] == "round.00" for v in views):
+                return saved
+            raise AnalysisError("本輪至少需要六張旋臂影像才能建立參考模型。")
         selected_round = candidates[0]
-        pairs = {}
-        for view in selected_round:
-            if view.camera_id in {"top", "side"}:
-                pairs.setdefault(view.snapshot_id, {})[view.camera_id] = view
-        complete = [pair for pair in pairs.values() if {"top", "side"} <= pair.keys()]
-        if not complete:
-            raise AnalysisError("參照模型輪次缺少同一次擷取的俯視與側視影像。")
-        fixed_pair = complete[len(complete) // 2]
-        selected = [v for v in selected_round if v.camera_id in {"top", "side", "rotating"}]
-        payloads = []
-        for view in selected:
-            metadata = undistorted_by_view[view.view_id]
-            image = (root / metadata["undistorted_path"]).resolve()
-            payloads.append({**view.model_dump(mode="json"), "undistorted_path": str(image),
-                             "angle_deg": view.angle_deg if view.angle_deg is not None else view.motor_position_deg,
-                             "valid_mask_path": str((root / metadata["valid_pixel_mask_path"]).resolve()),
-                             "undistorted_sha256": _sha256(image)})
-        reference_root = root / "pose_debug/model_reference"
-        sfm_job = {"kind": "reference_sfm", "reference_action": "rotating", "artifact_root": str(root),
-                   "selected_views": payloads, "intrinsics_snapshot": run.intrinsics_snapshot,
-                   "parameters": run.parameters["pose_strategy"]}
-
-        def progress(stage, value, message):
-            self._check_cancel(cancel_event)
-            self._set_state(run, stage=stage, current_frame=int(value * 100), total_frames=100,
-                            progress=.18 + value * .04)
-
-        reference = run_reconstruction_worker(sfm_job, reference_root / "sfm", cancel_event, progress_callback=progress)
-        self._save_step(run, "estimating_reference_poses", "reference", reference["signature"],
-                        {"backend": reference["quality"]["feature_backend"], "quality": reference["quality"]},
-                        outputs=list(Path(reference["sparse_path"]).glob("*.bin")))
+        key = round_key or selected_round[0].round_key
+        reference_root = round_artifact_directory(root, key) / "pose_debug/model_reference" if round_key else root / "pose_debug/model_reference"
         context_path = reference_root / "context.json"
-        context = {"reference": reference, "fixed_view_ids": [fixed_pair[c].view_id for c in ("top", "side")],
-                   "model": {"status": "pending", "model_quality": {"coordinate_unit": "relative"}}}
-        if context_path.is_file():
-            previous = json.loads(context_path.read_text(encoding="utf-8"))
-            if previous["reference"]["signature"] == reference["signature"]:
-                # A previously trained reference/draft remains usable while
-                # migrating the old rotating-only workflow.
-                context = previous
-        registration = None
-        reason = None
-        try:
-            fixed, consensus = aggregate_fixed_camera_poses(reference["views"], orbit_radius=reference["orbit"]["radius"])
-            if set(fixed) == {"top", "side"}:
-                registration = metric_model_registration(reference, fixed, run.parameters["pose_strategy"])
-                registration["quality"]["fixed_pose_consensus"] = consensus
-        except ValueError as error:
-            reason = str(error)
-        self._write_processing_preview(run, [fixed_pair["top"], fixed_pair["side"]], message="對齊三鏡頭")
-        self._set_state(run, stage="aligning_model_cameras", current_frame=0, total_frames=2, progress=.22)
-        try:
-            if registration is None:
-                aligned = run_reconstruction_worker({**sfm_job, "reference_action": "register_fixed",
-                    "reference_root": str(reference_root / "sfm"), "source_signature": reference["signature"]},
-                    reference_root / "alignment", cancel_event, progress_callback=progress)
-                fixed, consensus = aggregate_fixed_camera_poses(aligned["views"], orbit_radius=reference["orbit"]["radius"])
-                if set(fixed) != {"top", "side"}:
-                    missing = "、".join({"top": "俯視", "side": "側視"}[camera] for camera in ("top", "side") if camera not in fixed)
-                    raise ValueError(f"{missing}尚未對齊，請選四組三維參照點；通過後才開始三鏡頭 3DGS 建模。")
-                registration = metric_model_registration(reference, fixed, run.parameters["pose_strategy"])
-                registration["quality"]["fixed_pose_consensus"] = consensus
-        except (AnalysisError, ValueError) as error:
-            reason = str(error)
-        if registration is None:
+        context = json.loads(context_path.read_text(encoding="utf-8")) if context_path.is_file() else None
+        if context is not None and context.get("source_context_path"):
+            context = None  # A different round's coordinate frame is never its model.
+        if context is not None and context.get("reference_model_policy") != "immutable_per_round_v1":
+            # Retain the earliest trained model and existing manual point IDs.
+            original = context.get("alignment_preview") or context.get("bootstrap_model") or context.get("model", {})
+            if (original.get("model_quality", {}).get("representation") != "sfm_points"
+                    and original.get("gaussian_model_path") and Path(original["gaussian_model_path"]).is_file()):
+                context = {**context, "model": original, "reference_model_policy": "immutable_per_round_v1"}
+                write_json_atomic(context_path, context)
+            else:
+                context = None
+        if context is None:
+            pairs = {}
+            for view in selected_round:
+                if view.camera_id in {"top", "side"}:
+                    pairs.setdefault(view.snapshot_id, {})[view.camera_id] = view
+            complete = [pair for pair in pairs.values() if {"top", "side"} <= pair.keys()]
+            if not complete:
+                raise AnalysisError("本輪缺少同一組擷取的俯視與側視影像。")
+            fixed_pair = complete[len(complete) // 2]
+            payloads = []
+            for view in selected_round:
+                metadata = undistorted_by_view[view.view_id]
+                image = (root / metadata["undistorted_path"]).resolve()
+                payloads.append({**view.model_dump(mode="json"), "undistorted_path": str(image),
+                                 "angle_deg": view.angle_deg if view.angle_deg is not None else view.motor_position_deg,
+                                 "valid_mask_path": str((root / metadata["valid_pixel_mask_path"]).resolve()),
+                                 "undistorted_sha256": _sha256(image)})
+            def progress(stage, value, message):
+                self._check_cancel(cancel_event)
+                self._set_state(run, stage=stage, current_frame=int(value * 100), total_frames=100,
+                                progress=.18 + value * .04)
+            sfm_job = {"kind": "reference_sfm", "reference_action": "rotating", "artifact_root": str(root),
+                       "selected_views": payloads, "intrinsics_snapshot": run.intrinsics_snapshot,
+                       "parameters": run.parameters["pose_strategy"], "refine_geometry": False}
+            reference = run_reconstruction_worker(sfm_job, reference_root / "sfm", cancel_event, progress_callback=progress)
             self._check_cancel(cancel_event)
-            if (context["model"].get("status") == "pending"
-                    or context["model"].get("model_quality", {}).get("representation") == "sfm_points"):
-                context = self._build_alignment_preview(run, context, reference_root, cancel_event)
+            training_views = [view for view in reference["views"] if view.get("pose") is not None]
+            job = self._reference_model_job(run, reference, training_views, alignment_preview=True)
+            job.update(purpose="immutable_round_reference", reference_model_policy="immutable_per_round_v1")
+            model, model_signature = self._train_reference_model(
+                run, job, reference_root / "model", cancel_event, item=f"reference:{key}",
+            )
+            registered_ids = {v["view_id"] for v in training_views}
+            context = {"reference": reference, "model": model, "model_signature": model_signature,
+                       "reference_model_policy": "immutable_per_round_v1",
+                       "fixed_view_ids": [fixed_pair[c].view_id for c in ("top", "side")],
+                       "input_camera_counts": {camera: sum(v.camera_id == camera for v in selected_round)
+                                               for camera in ("top", "side", "rotating")},
+                       "unregistered_view_ids": [v.view_id for v in selected_round if v.view_id not in registered_ids]}
             write_json_atomic(context_path, context)
-            raise AnalysisReviewRequiredError(reason or "請先完成三鏡頭對齊，再開始 3DGS 建模。")
-        write_json_atomic(context_path, context)
-        self._store_model_registration(run, registration)
-        self._build_joint_reference_model(run, context, registration, views, undistorted_by_view, cancel_event)
+            self._log(run, "INFO", f"{key} 參考模型已完成並保留原始幾何，後續尖端修正不再重建模型。")
+        if not Path(context["model"]["gaussian_model_path"]).is_file():
+            raise AnalysisError("本輪參考模型檔案遺失，請明確重置本輪後重新建立。")
+        self._publish_reference_model(run, context, key)
+        saved = self._saved_step(run, "aligning_model_cameras", round_key or "registration", signature)
+        if saved is not None:
+            return saved
+        try:
+            if not context["reference"].get("orbit"):
+                raise ValueError("參考模型已完成，但旋臂軌跡無法建立可靠的毫米量測座標。")
+            fixed, consensus = aggregate_fixed_camera_poses(context["reference"]["views"],
+                                                            orbit_radius=context["reference"]["orbit"]["radius"])
+            if set(fixed) != {"top", "side"}:
+                raise ValueError("參考模型已完成，但俯視或側視影像缺少可靠姿態；可先保存本輪的尖端影像標記。")
+            registration = metric_model_registration(context["reference"], fixed, run.parameters["pose_strategy"])
+            registration["quality"].update(fixed_pose_consensus=consensus, model_policy="immutable_per_round_v1")
+        except ValueError as error:
+            raise AnalysisReviewRequiredError(str(error)) from error
+        self._store_model_registration(run, registration, round_key=round_key)
         return registration
 
     def _run_round_preprocessing(
@@ -3199,7 +3432,7 @@ class AnalysisService:
         pose_signature = step_signature({"rig": self._stereo_pose_signature(run), "round_pipeline_version": 2})
         model_registration = None
         if markerless and run.method_name == "rotating":
-            model_registration = self._prepare_model_reference(run, views, undistorted_by_view, cancel_event)
+            model_registration = self._prepare_model_reference(run, views, undistorted_by_view, cancel_event, round_key=round_key)
             fixed_stereo_poses, stereo_quality = model_registration["poses"], model_registration["quality"]
         elif markerless:
             try:
@@ -3960,6 +4193,14 @@ class AnalysisService:
         failed = sum(item.status in {"failed", "model_failed"} for item in rounds)
         for index, round_item in enumerate(candidates, start=1):
             self._check_cancel(cancel_event)
+            existing = next((item for item in self.repository.list_round_models(run.analysis_id)
+                             if item.round_key == round_item.round_key), None)
+            if existing is not None and existing.status == "completed" and existing.model_quality.get("immutable_reference"):
+                if not existing.model_path or not (artifacts.root / existing.model_path).is_file():
+                    raise AnalysisError("本輪固定參考模型遺失，請重置此輪後重新建立。")
+                self.repository.update_round(round_item.model_copy(update={"status": "model_completed", "failure_reason": None,
+                                                                          "model_result_id": existing.model_id}))
+                continue
             self._write_processing_preview(
                 run,
                 self.repository.list_views(run.analysis_id, round_item.round_key),
@@ -4358,69 +4599,94 @@ class AnalysisService:
             model_result = models_by_round.get(round_item.round_key)
             if model_result is not None and model_result.status != "completed":
                 model_result = None
+            elif model_result is not None:
+                # Existing models are also auxiliary references. Tip processing
+                # must not prune, snap to, or rewrite their geometry.
+                model_result = model_result.model_copy(update={"model_quality": {
+                    **model_result.model_quality, "reference_only": True,
+                }})
             processing_error = False
             try:
-                result = analyze_round_tip(
-                    analysis_id=run.analysis_id,
-                    round_item=round_item,
-                    views=views_by_round.get(round_item.round_key, ()),
-                    poses=poses_by_round.get(round_item.round_key, ()),
-                    intrinsics_snapshot=run.intrinsics_snapshot,
-                    undistortion_manifest=undistortion_manifest,
-                    artifacts_root=artifacts.root,
-                    model_result=model_result,
-                    previous_landmark=previous_by_mode.get(round_item.mode_id),
-                    minimum_confidence=minimum_confidence,
-                    minimum_supporting_views=minimum_supporting_views,
-                    maximum_reprojection_error_px=(
-                        maximum_reprojection_error_px
-                    ),
-                    use_skeleton_refinement=bool(
-                        tip_settings.get("use_skeleton_refinement", True)
-                    ),
-                    use_temporal_prior=bool(
-                        tip_settings.get("use_temporal_prior", True)
-                    ),
-                    export_all_2d_candidates=bool(
-                        tip_settings.get(
-                            "export_all_2d_candidates",
-                            False,
-                        )
-                    ),
-                    export_scene_point_cloud=bool(
-                        output_settings.get(
-                            "export_scene_point_cloud",
-                            True,
-                        )
-                    ),
-                    export_plant_point_cloud=bool(
-                        output_settings.get(
-                            "export_plant_point_cloud",
-                            True,
-                        )
-                    ),
-                    export_background_point_cloud=bool(
-                        background_settings.get(
-                            "save_background_model",
-                            False,
-                        )
-                    ),
-                    export_skeleton=bool(
-                        output_settings.get("export_skeleton", True)
-                    ),
-                    export_tip_marker=export_tip_markers,
-                    save_reprojection_overlays=bool(
-                        tip_settings.get("save_reprojection_overlays", True)
-                    ),
-                    save_diagnostics=bool(
-                        output_settings.get("save_diagnostics", True)
-                    ),
-                    cancel_check=lambda: self._check_cancel(cancel_event),
-                    stage_callback=update_tip_stage,
-                    view_callback=lambda view: self._write_processing_preview(
-                        run, [view], message="目前正在偵測尖端候選的影像",
-                    ),
-                )
+                image_tip = None
+                tracked = None
+                tip_views = views_by_round.get(round_item.round_key, ())
+                if self._uses_seeded_tracking(run):
+                    image_tip, tracked, image_rows = self._track_fixed_tip(run, round_item, tip_views, cancel_event)
+                    tip_views = [view for view in tip_views if view.view_id in tracked]
+                usable_poses = {pose.view_id for pose in poses_by_round.get(round_item.round_key, ()) if pose.valid}
+                if image_tip is not None and (not tracked or not set(tracked) <= usable_poses):
+                    result = RoundTipAnalysisResult(image_tip, image_rows, model_result, (), image_tip.tracking)
+                    artifacts.write_tip_landmark(image_tip, quality=image_tip.tracking)
+                else:
+                    result = analyze_round_tip(
+                        analysis_id=run.analysis_id,
+                        round_item=round_item,
+                        views=tip_views,
+                        poses=poses_by_round.get(round_item.round_key, ()),
+                        intrinsics_snapshot=run.intrinsics_snapshot,
+                        undistortion_manifest=undistortion_manifest,
+                        artifacts_root=artifacts.root,
+                        model_result=model_result,
+                        previous_landmark=previous_by_mode.get(round_item.mode_id),
+                        minimum_confidence=minimum_confidence,
+                        minimum_supporting_views=minimum_supporting_views,
+                        maximum_reprojection_error_px=(
+                            maximum_reprojection_error_px
+                        ),
+                        use_skeleton_refinement=bool(
+                            tip_settings.get("use_skeleton_refinement", True)
+                        ),
+                        use_temporal_prior=bool(
+                            tip_settings.get("use_temporal_prior", True)
+                        ),
+                        export_all_2d_candidates=bool(
+                            tip_settings.get(
+                                "export_all_2d_candidates",
+                                False,
+                            )
+                        ),
+                        export_scene_point_cloud=bool(
+                            output_settings.get(
+                                "export_scene_point_cloud",
+                                True,
+                            )
+                        ),
+                        export_plant_point_cloud=bool(
+                            output_settings.get(
+                                "export_plant_point_cloud",
+                                True,
+                            )
+                        ),
+                        export_background_point_cloud=bool(
+                            background_settings.get(
+                                "save_background_model",
+                                False,
+                            )
+                        ),
+                        export_skeleton=bool(
+                            output_settings.get("export_skeleton", True)
+                        ),
+                        export_tip_marker=export_tip_markers,
+                        save_reprojection_overlays=bool(
+                            tip_settings.get("save_reprojection_overlays", True)
+                        ),
+                        save_diagnostics=bool(
+                            output_settings.get("save_diagnostics", True)
+                        ),
+                        cancel_check=lambda: self._check_cancel(cancel_event),
+                        stage_callback=update_tip_stage,
+                        view_callback=lambda view: self._write_processing_preview(
+                            run, [view], message="目前正在偵測尖端候選的影像",
+                        ),
+                        **({"tracked_candidates": tracked} if tracked is not None else {}),
+                    )
+                if image_tip is not None:
+                    result = replace(result, landmark=result.landmark.model_copy(update={
+                        "image_tip_confirmed": image_tip.image_tip_confirmed,
+                        "image_observations": image_tip.image_observations, "tracking": image_tip.tracking,
+                    }))
+                    if export_tip_markers:
+                        artifacts.write_tip_landmark(result.landmark, quality=result.quality)
                 landmark = result.landmark
                 if result.model_result is not None:
                     self.repository.upsert_round_model(result.model_result)
@@ -4534,136 +4800,378 @@ class AnalysisService:
                 )
             )
 
-        resolved_rounds = self.repository.list_rounds(run.analysis_id)
-        resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
-        if not finalize:
-            # Future rounds have no measurements yet. They must not appear as
-            # failures or interpolated positions in the live trajectory.
-            measured_keys = {item.round_key for item in resolved_landmarks}
-            resolved_rounds = [item for item in resolved_rounds if item.round_key in measured_keys]
-        current = self._require_run(run.analysis_id)
-        self._set_state(
-            current,
-            stage="linking_tip_trajectory",
-            current_frame=len(candidates),
-            total_frames=len(candidates),
-            progress=0.89,
-        )
-        trajectory = link_tip_trajectory(
-            resolved_rounds,
-            resolved_landmarks,
-            blocked_interpolation_round_keys=_model_failed_round_keys(
-                resolved_rounds,
-                models_by_round,
-                run.method_name,
-            ),
-        )
-        self.repository.replace_tip_trajectory(
-            run.analysis_id,
-            trajectory.points,
-        )
-        artifacts.write_tip_trajectory(
-            trajectory.points,
-            trajectory.quality,
-            export_csv=export_trajectory_csv,
-        )
-        current = self._require_run(run.analysis_id)
-        self._set_state(
-            current,
-            stage="calculating_quality_metrics",
-            current_frame=len(candidates),
-            total_frames=len(candidates),
-            progress=0.90,
-        )
-        artifacts.write_formal_summaries(
-            resolved_rounds,
-            self.repository.list_round_models(run.analysis_id),
-            resolved_landmarks,
-            trajectory.quality,
-        )
-        artifacts.write_round_model_index(
-            self.repository.list_round_models(run.analysis_id)
-        )
-        if finalize:
-            artifacts.write_round_index(resolved_rounds, self.repository.list_views(run.analysis_id))
-        elif round_key is not None:
-            resolved = next(item for item in resolved_rounds if item.round_key == round_key)
-            artifacts.write_single_round_index(resolved, self.repository.list_views(run.analysis_id, round_key))
-        current = self._require_run(run.analysis_id)
-        self._set_state(
-            current,
-            stage="exporting",
-            current_frame=len(candidates),
-            total_frames=len(candidates),
-            progress=0.91,
-        )
-
-        valid_count = sum(item.valid for item in resolved_landmarks)
-        successful_round_count = sum(
-            item.status == "tip_completed"
-            for item in resolved_rounds
-        )
-        failed_round_count = sum(
-            item.status in {
-                "failed",
-                "model_failed",
-                "tip_only",
-                "tip_invalid",
-            }
-            for item in resolved_rounds
-        )
-        trajectory_status = ("completed" if finalize else "processing") if valid_count else "unavailable"
-        self.repository.update_state(
-            run.analysis_id,
-            updated_at=utc_now_iso(),
-            completed_round_count=successful_round_count,
-            failed_round_count=failed_round_count,
-            tip_marker_count=valid_count,
-            trajectory_status=trajectory_status,
-        )
-        reprojection_errors = [
-            float(item.mean_reprojection_error_px)
-            for item in resolved_landmarks
-            if (
-                item.valid
-                and item.mean_reprojection_error_px is not None
+        # Serialize result publication with manual saves, outside GPU training.
+        with self._lock:
+            resolved_pending = self._resolve_pending_tip_corrections(self._require_run(run.analysis_id))
+            resolved_landmarks = self._resolved_tip_landmarks(run.analysis_id)
+            resolved_rounds = self._synchronize_tip_rounds(run, resolved_landmarks, self.repository.list_round_models(run.analysis_id))
+            if not finalize:
+                # Future rounds have no measurements yet. They must not appear as
+                # failures or interpolated positions in the live trajectory.
+                measured_keys = {item.round_key for item in resolved_landmarks}
+                resolved_rounds = [item for item in resolved_rounds if item.round_key in measured_keys]
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                stage="linking_tip_trajectory",
+                current_frame=len(candidates),
+                total_frames=len(candidates),
+                progress=0.89,
             )
-        ]
-        self.repository.update_average_reprojection_error(
-            run.analysis_id,
-            (
-                float(np.mean(reprojection_errors))
-                if reprojection_errors
-                else None
-            ),
-            utc_now_iso(),
-        )
-        current = self._require_run(run.analysis_id)
-        if not finalize:
-            return self._set_state(current, status="processing", stage="linking_tip_trajectory", progress=1.0)
-        # Finish every round even when no automatic tip is trustworthy. Keep
-        # the missing positions explicit and allow optional correction later.
-        final_status = (
-            "partially_completed"
-            if failed_round_count > 0
-            else "completed"
-        )
-        completed = self._set_state(
-            current,
-            status=final_status,
-            stage="completed",
-            current_frame=len(resolved_rounds),
-            total_frames=len(resolved_rounds),
-            progress=1.0,
-            manual_review_completed=False,
-            clear_error=True,
-        )
-        self._log(
-            completed,
-            "INFO",
-            f"各輪處理完成，共建立 {valid_count} 個三維尖端標記；缺少的尖端可稍後人工補正。",
-        )
-        return completed
+            trajectory = link_tip_trajectory(
+                resolved_rounds,
+                resolved_landmarks,
+                blocked_interpolation_round_keys=_model_failed_round_keys(
+                    resolved_rounds,
+                    models_by_round,
+                    run.method_name,
+                ),
+            )
+            self.repository.replace_tip_trajectory(
+                run.analysis_id,
+                trajectory.points,
+            )
+            artifacts.write_tip_corrections(self.repository.list_tip_corrections(run.analysis_id))
+            artifacts.write_tip_trajectory(
+                trajectory.points,
+                trajectory.quality,
+                export_csv=export_trajectory_csv,
+            )
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                stage="calculating_quality_metrics",
+                current_frame=len(candidates),
+                total_frames=len(candidates),
+                progress=0.90,
+            )
+            artifacts.write_formal_summaries(
+                resolved_rounds,
+                self.repository.list_round_models(run.analysis_id),
+                resolved_landmarks,
+                trajectory.quality,
+            )
+            artifacts.write_round_model_index(
+                self.repository.list_round_models(run.analysis_id)
+            )
+            if finalize:
+                artifacts.write_round_index(resolved_rounds, self.repository.list_views(run.analysis_id))
+            elif round_key is not None:
+                resolved = next(item for item in resolved_rounds if item.round_key == round_key)
+                artifacts.write_single_round_index(resolved, self.repository.list_views(run.analysis_id, round_key))
+            current = self._require_run(run.analysis_id)
+            self._set_state(
+                current,
+                stage="exporting",
+                current_frame=len(candidates),
+                total_frames=len(candidates),
+                progress=0.91,
+            )
+
+            valid_count = sum(item.valid for item in resolved_landmarks)
+            successful_round_count = sum(
+                item.status == "tip_completed"
+                for item in resolved_rounds
+            )
+            failed_round_count = sum(
+                item.status in {
+                    "failed",
+                    "model_failed",
+                    "tip_only",
+                    "tip_invalid",
+                    "alignment_pending",
+                }
+                for item in resolved_rounds
+            )
+            trajectory_status = ("completed" if finalize else "processing") if valid_count else "unavailable"
+            self.repository.update_state(
+                run.analysis_id,
+                updated_at=utc_now_iso(),
+                completed_round_count=successful_round_count,
+                failed_round_count=failed_round_count,
+                tip_marker_count=valid_count,
+                trajectory_status=trajectory_status,
+            )
+            reprojection_errors = [
+                float(item.mean_reprojection_error_px)
+                for item in resolved_landmarks
+                if (
+                    item.valid
+                    and item.mean_reprojection_error_px is not None
+                )
+            ]
+            self.repository.update_average_reprojection_error(
+                run.analysis_id,
+                (
+                    float(np.mean(reprojection_errors))
+                    if reprojection_errors
+                    else None
+                ),
+                utc_now_iso(),
+            )
+            current = self._require_run(run.analysis_id)
+            if resolved_pending:
+                if not hasattr(self, "_result_revisions"):
+                    self._result_revisions = {}
+                self._result_revisions[run.analysis_id] = uuid4().hex
+            if not finalize:
+                return self._set_state(current, status="processing", stage="linking_tip_trajectory", progress=1.0)
+            # Finish every round even when no automatic tip is trustworthy. Keep
+            # the missing positions explicit and allow optional correction later.
+            final_status = (
+                "partially_completed"
+                if failed_round_count > 0
+                else "completed"
+            )
+            completed = self._set_state(
+                current,
+                status=final_status,
+                stage="completed",
+                current_frame=len(resolved_rounds),
+                total_frames=len(resolved_rounds),
+                progress=1.0,
+                manual_review_completed=False,
+                clear_error=True,
+            )
+            self._log(
+                completed,
+                "INFO",
+                f"各輪處理完成，共建立 {valid_count} 個三維尖端標記；缺少的尖端可稍後人工補正。",
+            )
+            return completed
+
+    def _shared_rig_signature(self, run):
+        stage, item = ("aligning_model_cameras", "registration") if run.method_name == "rotating" else ("estimating_stereo_pose", "rig")
+        saved = self._saved_step(run, stage, item, self._stereo_pose_signature(run))
+        return step_signature({key: value for key, value in saved.items() if key != "outputs"}) if saved is not None else None
+
+    @staticmethod
+    def _uses_seeded_tracking(run):
+        return run.parameters.get("tip_analysis", {}).get("tracking_mode", "manual_seeded") == "manual_seeded"
+
+    @staticmethod
+    def _fixed_pairs(views):
+        pairs = {}
+        for view in sorted(views, key=lambda item: (item.timestamp or "", item.capture_id)):
+            if view.camera_id in {"top", "side"}:
+                pairs.setdefault(view.snapshot_id or view.timestamp, {})[view.camera_id] = view
+        return [pair for pair in pairs.values() if {"top", "side"} <= pair.keys()]
+
+    def _tracking_frame(self, run, view):
+        artifacts = self._artifacts(run)
+        metadata = next((item for item in artifacts.read_undistortion_manifest(view.round_key)
+                         if item["view_id"] == view.view_id), None)
+        if metadata is None:
+            raise ValueError("此尖端影像尚未完成去畸變。")
+        return TipTrackingFrame(view.view_id, view.camera_id, artifacts.root / metadata["undistorted_path"],
+                                artifacts.root / metadata["valid_pixel_mask_path"])
+
+    def _validate_tracking_seed(self, run, round_item, observations):
+        views = {view.view_id: view for view in self.repository.list_views(run.analysis_id, round_item.round_key)}
+        selected = [views.get(item.view_id) for item in observations]
+        if (len(selected) != 2 or any(view is None for view in selected)
+                or {view.camera_id for view in selected} != {"top", "side"}
+                or len({view.snapshot_id or view.timestamp for view in selected}) != 1):
+            raise ValueError("追蹤初始化需要同一組俯視與側視的生長尖端標記。")
+        quality = {}
+        pairs = self._fixed_pairs(views.values())
+        for observation, view in zip(observations, selected):
+            frame = self._tracking_frame(run, view)
+            quality[view.camera_id] = validate_tip_seed(frame, (observation.x_px, observation.y_px))
+            # Verify that the selected appearance survives the next same-camera
+            # capture when it is available; no camera pose/model is consulted.
+            next_view = next((pair[view.camera_id] for pair in pairs
+                              if (pair[view.camera_id].timestamp or "") > (view.timestamp or "")), None)
+            if next_view is not None:
+                try:
+                    next_frame = self._tracking_frame(run, next_view)
+                except (ValueError, OSError):
+                    next_frame = None
+                if next_frame is not None:
+                    candidate, detail = track_tip_sequence(frame, (observation.x_px, observation.y_px), [next_frame])
+                    if candidate is None:
+                        raise ValueError(f"{view.camera_id} 尖端未通過下一張影像的追蹤檢查，請重新確認標記。")
+                    quality[view.camera_id]["next_frame_check"] = detail
+        return quality
+
+    def _ensure_initial_tip_seed(self, run, round_item, views, cancel_event):
+        """Pause before any model job until this mode has an identified shoot."""
+        if not self._uses_seeded_tracking(run):
+            return True
+        first = next((item for item in order_analysis_rounds(self.repository.list_rounds(run.analysis_id))
+                      if item.mode_id == round_item.mode_id and item.status != "incomplete"), None)
+        if first is None or first.round_key != round_item.round_key:
+            return True
+        correction = next((item for item in reversed(self.repository.list_tip_corrections(run.analysis_id))
+                           if item.round_key == first.round_key and (item.observations or item.invalid)), None)
+        if correction and not correction.invalid and correction.observations:
+            try:
+                self._validate_tracking_seed(run, first, correction.observations)
+                if round_item.status == "waiting_tip_seed":
+                    self.repository.update_round(round_item.model_copy(update={"status": "ready", "failure_reason": None}))
+                return True
+            except (ValueError, OSError) as error:
+                reason = str(error)
+        else:
+            reason = "請先在第一輪的俯視與側視標記同一個生長尖端，確認後會自動延續追蹤。"
+        pairs = self._fixed_pairs(views)
+        if not pairs:
+            raise AnalysisError("第一輪缺少可初始化尖端追蹤的俯視與側視影像組。")
+        artifacts = self._artifacts(run)
+        try:
+            existing = artifacts.read_undistortion_manifest(first.round_key)
+        except (ValueError, OSError):
+            existing = []
+        existing_by_id = {item["view_id"]: item for item in existing}
+        seed_views = [view for pair in pairs[:2] for view in pair.values()]
+        missing = [view for view in seed_views if view.view_id not in existing_by_id]
+        if missing:
+            prepared = undistort_analysis_views(missing, run.intrinsics_snapshot, artifacts.root,
+                cancel_check=lambda: self._check_cancel(cancel_event),
+                source_manifest=run.parameters.get("source_manifest", run.parameters.get("input_manifest", [])),
+                manifest_path=artifacts.undistortion_manifest_path(first.round_key))
+            existing_by_id.update({item["view_id"]: item for item in prepared})
+            write_json_atomic(artifacts.undistortion_manifest_path(first.round_key), {"views": list(existing_by_id.values())})
+        self.repository.update_round(round_item.model_copy(update={"status": "waiting_tip_seed", "failure_reason": reason}))
+        self._write_processing_preview(run, list(pairs[0].values()), message=reason)
+        self._set_state(run, status="paused", stage="waiting_for_tip_seed", clear_error=True)
+        return False
+
+    def _track_fixed_tip(self, run, round_item, views, cancel_event):
+        """Resolve 2D shoot identity even when metric pose registration failed."""
+        ordered = [item for item in order_analysis_rounds(self.repository.list_rounds(run.analysis_id))
+                   if item.mode_id == round_item.mode_id]
+        indexes = {item.round_key: index for index, item in enumerate(ordered)}
+        latest = {item.round_key: item for item in self.repository.list_tip_corrections(run.analysis_id)
+                  if item.observations or item.invalid}
+        seeds = [item for key, item in latest.items() if key in indexes and indexes[key] <= indexes[round_item.round_key]
+                 and not item.invalid and item.observations]
+        seed = max(seeds, key=lambda item: indexes[item.round_key], default=None)
+        pairs = self._fixed_pairs(views)
+        landmark = TipLandmark(analysis_id=run.analysis_id, round_key=round_item.round_key,
+            tip_id=f"{round_item.round_key}:tip", record_id=round_item.record_id, mode_id=round_item.mode_id,
+            round_id=round_item.round_id, timestamp=round_item.started_at, confidence=0, valid=False,
+            source="invalid", detection_type="invalid", failure_reason="尚未初始化生長尖端追蹤。")
+        if seed is None or not pairs:
+            return landmark, {}, ()
+        if latest.get(round_item.round_key) is not None and latest[round_item.round_key].invalid:
+            return landmark.model_copy(update={
+                "failure_reason": "本輪尖端已人工標記為不可見；已跳過，可重新指定尖端。",
+            }), {}, ()
+        seed_views = {view.view_id: view for view in self.repository.list_views(run.analysis_id, seed.round_key)}
+        source_by_camera = {seed_views[item.view_id].camera_id: (seed_views[item.view_id], item.x_px, item.y_px)
+                            for item in seed.observations if item.view_id in seed_views}
+        if set(source_by_camera) != {"top", "side"}:
+            return landmark, {}, ()
+        # Reuse only tracks descending from the current manual seed. A changed
+        # manual point invalidates subsequent old tracker anchors automatically.
+        for previous in sorted(self.repository.list_tip_landmarks(run.analysis_id), key=lambda item: indexes.get(item.round_key, -1)):
+            if (previous.round_key not in indexes or not indexes[seed.round_key] <= indexes[previous.round_key] < indexes[round_item.round_key]
+                    or not previous.image_tip_confirmed or previous.tracking.get("seed_id") != seed.correction_id):
+                continue
+            by_id = {view.view_id: view for view in self.repository.list_views(run.analysis_id, previous.round_key)}
+            for item in previous.image_observations:
+                if item["view_id"] in by_id:
+                    view = by_id[item["view_id"]]
+                    source_by_camera[view.camera_id] = (view, item["x_px"], item["y_px"])
+        target_pair = pairs[0]
+        if seed.round_key == round_item.round_key:
+            target_pair = {camera: item[0] for camera, item in source_by_camera.items()}
+        candidates, observations, quality = {}, [], {}
+        for camera in ("top", "side"):
+            source_view, x, y = source_by_camera[camera]
+            target_view = target_pair[camera]
+            try:
+                frames = []
+                for item in ordered[indexes[source_view.round_key]:indexes[round_item.round_key] + 1]:
+                    for pair in self._fixed_pairs(self.repository.list_views(run.analysis_id, item.round_key)):
+                        view = pair[camera]
+                        if (source_view.timestamp or "") < (view.timestamp or "") <= (target_view.timestamp or ""):
+                            frames.append(self._tracking_frame(run, view))
+                candidate, detail = track_tip_sequence(self._tracking_frame(run, source_view), (x, y), frames,
+                    cancel_check=lambda: self._check_cancel(cancel_event))
+            except (ValueError, OSError) as error:
+                candidate, detail = None, {"reason": "tracking_input_invalid", "detail": str(error)}
+            quality[camera] = detail
+            if candidate is not None:
+                candidates[target_view.view_id] = candidate
+                observations.append({"view_id": target_view.view_id, "x_px": candidate.x_px, "y_px": candidate.y_px})
+        confirmed = len(candidates) == 2
+        landmark = landmark.model_copy(update={"image_tip_confirmed": confirmed, "image_observations": observations,
+            "confidence": min((item.confidence for item in candidates.values()), default=0),
+            "supporting_view_ids": list(candidates), "visible_view_count": len(candidates),
+            "source": "temporal_tracking" if confirmed else "invalid",
+            "tracking": {"version": TIP_TRACKING_VERSION, "seed_id": seed.correction_id, "cameras": quality},
+            "failure_reason": "影像尖端已追蹤，待量測校正後計算三維位置。" if confirmed else "尖端追蹤失敗或目標不明確；本輪已跳過，可人工重新標記。"})
+        rows = tuple(TipObservation2D(analysis_id=run.analysis_id, round_key=round_item.round_key,
+            view_id=view_id, candidate_id=candidate.candidate_id, x_px=candidate.x_px, y_px=candidate.y_px,
+            confidence=candidate.confidence, visibility_confidence=candidate.visibility_confidence,
+            selected=confirmed, rejection_reason=None if confirmed else "stereo_track_incomplete")
+            for view_id, candidate in candidates.items())
+        return landmark, candidates if confirmed else {}, rows
+
+    def _skip_round_alignment(self, run, round_item, views, error, signature, cancel_event):
+        artifacts = self._artifacts(run)
+        reason = public_error_detail(error)
+        pending = isinstance(error, AnalysisReviewRequiredError)
+        status = "alignment_pending" if pending else "failed"
+        directory = round_artifact_directory(artifacts.root, round_item.round_key)
+        pairs = {}
+        for view in views:
+            if view.camera_id in {"top", "side"}:
+                pairs.setdefault(view.snapshot_id, {})[view.camera_id] = view
+        complete = [pair for pair in pairs.values() if {"top", "side"} <= pair.keys()]
+        selected = complete[len(complete) // 2] if complete else {}
+        review_path = directory / "pose_debug/stereo/manual_review.json"
+        if not review_path.is_file():
+            write_json_atomic(review_path, {"accepted": False, "reason": reason,
+                              "round_key": round_item.round_key, "view_ids": [view.view_id for view in selected.values()],
+                              "updated_at": utc_now_iso()})
+        landmark = TipLandmark(analysis_id=run.analysis_id, round_key=round_item.round_key,
+            tip_id=f"{round_item.round_key}:tip", record_id=round_item.record_id, mode_id=round_item.mode_id,
+            round_id=round_item.round_id, timestamp=round_item.started_at, confidence=0, valid=False,
+            source="invalid", detection_type="invalid", failure_reason="相機姿態尚未通過檢查，尖端位置未確認。")
+        self.repository.replace_camera_poses(run.analysis_id, [], round_key=round_item.round_key)
+        if self._uses_seeded_tracking(run):
+            landmark, _, image_rows = self._track_fixed_tip(run, round_item, views, cancel_event)
+            self.repository.replace_tip_observations(run.analysis_id, round_item.round_key, image_rows)
+        else:
+            self.repository.replace_tip_observations(run.analysis_id, round_item.round_key, ())
+        self.repository.upsert_tip_landmark(landmark)
+        artifacts.write_tip_landmark(landmark)
+        model = next((item for item in self.repository.list_round_models(run.analysis_id)
+                      if item.round_key == round_item.round_key and item.status == "completed"
+                      and item.model_quality.get("immutable_reference")), None)
+        if run.method_name == "rotating" and round_item.round_id != "round.00":
+            if model is None:
+                model = RoundModelResult(analysis_id=run.analysis_id, round_key=round_item.round_key,
+                    model_id=f"{run.analysis_id}:{round_item.mode_id}:{round_item.round_id}:model", backend=run.parameters.get("reconstruction", {}).get("backend", "gsplat_3dgs"),
+                    backend_version="unavailable", status=status, failure_reason=reason)
+                self.repository.upsert_round_model(model)
+                artifacts.write_round_model_result(model)
+        self.repository.update_round(round_item.model_copy(update={"status": status, "failure_reason": reason,
+            "model_result_id": model.model_id if model else None, "tip_landmark_id": landmark.tip_id}))
+        self._save_step(run, "round_skipped", round_item.round_key, signature,
+                        {"status": status, "reason": reason, "rig_signature": self._shared_rig_signature(run),
+                          "reference_model_policy_version": 1,
+                          "tip_tracking_version": TIP_TRACKING_VERSION if self._uses_seeded_tracking(run) else None,
+                          "tip_seed_id": landmark.tracking.get("seed_id")})
+        self._log(run, "WARNING", f"{round_item.round_id} 已跳過，之後可從各輪結果補正或重試：{reason}")
+        # Publish an explicit missing position immediately; never interpolate
+        # across an unregistered round or reuse a preceding round's tip.
+        return self._run_tip_markers(run, cancel_event, round_key=round_item.round_key, process_rounds=False, finalize=False)
+
+    @staticmethod
+    def _round_pipeline_signature(run):
+        return step_signature({
+            "round_pipeline_version": 3,
+            "version": 3 if run.method_name == "rotating" else 2,
+            "training_version": PLANT_TRAINING_VERSION if run.method_name == "rotating" else None,
+            "intrinsics": run.intrinsics_snapshot, "pose": run.parameters.get("pose_strategy"),
+            "aruco": run.aruco_layout_snapshot, "reconstruction": run.parameters.get("reconstruction"),
+            "tips": run.parameters.get("tip_analysis"), "background": run.parameters.get("background"),
+            "outputs": run.parameters.get("outputs"),
+        })
 
     def _run_round_pipeline(self, run: AnalysisRun, cancel_event: Event) -> AnalysisRun:
         """Finish and publish one round before opening the next round's images."""
@@ -4671,7 +5179,8 @@ class AnalysisService:
         rounds = order_analysis_rounds(self.repository.list_rounds(run.analysis_id))
         if not rounds:
             raise AnalysisError("分析缺少輪次清單。")
-        if run.method_name == "rotating" and rounds[0].round_id == "round.00":
+        if (run.method_name == "rotating" and rounds[0].round_id == "round.00"
+                and not self._uses_seeded_tracking(run)):
             registration = self._saved_step(
                 run, "aligning_model_cameras", "registration", self._stereo_pose_signature(run),
             )
@@ -4684,15 +5193,7 @@ class AnalysisService:
                 )), None)
                 if reference is not None:
                     rounds = (reference, *(item for item in rounds if item.round_key != reference.round_key))
-        signature = step_signature({
-            "round_pipeline_version": 2,
-            "version": 3 if run.method_name == "rotating" else 2,
-            "training_version": PLANT_TRAINING_VERSION if run.method_name == "rotating" else None,
-            "intrinsics": run.intrinsics_snapshot, "pose": run.parameters.get("pose_strategy"),
-            "aruco": run.aruco_layout_snapshot, "reconstruction": run.parameters.get("reconstruction"),
-            "tips": run.parameters.get("tip_analysis"), "background": run.parameters.get("background"),
-            "outputs": run.parameters.get("outputs"),
-        })
+        signature = self._round_pipeline_signature(run)
         sources = {item["absolute_path"]: item for item in run.parameters.get("source_manifest", run.parameters.get("input_manifest", []))}
         if not hasattr(self, "_round_progress"):
             self._round_progress = {}
@@ -4707,6 +5208,9 @@ class AnalysisService:
                     "current_round": index, "total_rounds": len(rounds), "round_progress": 0.0,
                 }
                 views = self.repository.list_views(run.analysis_id, key)
+                if not self._ensure_initial_tip_seed(run, current_round, views, cancel_event):
+                    return self._require_run(run.analysis_id)
+                current_round = next(item for item in self.repository.list_rounds(run.analysis_id) if item.round_key == key)
                 # Check identities only for this round, including completed
                 # rounds on resume. No decoding/conversion of future rounds.
                 for view in views:
@@ -4716,6 +5220,26 @@ class AnalysisService:
                         stat = Path(view.absolute_path).stat()
                         if (stat.st_size, stat.st_mtime_ns) != (expected["size_bytes"], expected["modified_ns"]):
                             raise AnalysisError("分析輸入在建立後已變更，無法恢復既有結果。")
+                skipped = journal.get("round_skipped", key, signature)
+                if skipped is not None:
+                    if self._uses_seeded_tracking(run):
+                        image_tip, _, image_rows = self._track_fixed_tip(run, current_round, views, cancel_event)
+                        self.repository.upsert_tip_landmark(image_tip)
+                        self.repository.replace_tip_observations(run.analysis_id, key, image_rows)
+                        artifacts.write_tip_landmark(image_tip, quality=image_tip.tracking)
+                        run = self._run_tip_markers(run, cancel_event, round_key=key, process_rounds=False, finalize=False)
+                    rig_signature = self._shared_rig_signature(run)
+                    updated_method = skipped.get("reference_model_policy_version") != 1
+                    updated_rig = run.method_name == "fixed" and rig_signature is not None and skipped.get("rig_signature") != rig_signature
+                    if current_round.status != "alignment_pending" or not (updated_method or updated_rig):
+                        continue
+                    # A newly verified physical rig can resolve earlier deferred
+                    # rounds. Completed models and unverified priors are never
+                    # used as reasons to invalidate another round's results.
+                    journal.invalidate(key, ("round_skipped", "round_preprocessing", "estimating_camera_poses"))
+                    current_round = current_round.model_copy(update={"status": "ready", "failure_reason": None, "tip_landmark_id": None})
+                    self.repository.update_round(current_round)
+                    self._log(run, "INFO", f"{current_round.round_id} 使用{'更新的俯視定位方法' if updated_method else '新確認的共用相機對齊'}重新處理。")
                 landmark = next((item for item in self.repository.list_tip_landmarks(run.analysis_id) if item.round_key == key), None)
                 tip_checkpoint = journal.get("triangulating_tip_marker", key) or {}
                 refresh_tip = (
@@ -4749,9 +5273,16 @@ class AnalysisService:
                     )
                     if not complete_manifest:
                         prepared = None
+                    model = next((item for item in self.repository.list_round_models(run.analysis_id) if item.round_key == key), None)
+                    needs_reference = (run.method_name == "rotating" and not run.aruco_layout_snapshot
+                            and current_round.round_id != "round.00"
+                            and sum(view.camera_id == "rotating" for view in views) >= 6
+                            and (model is None or (model.status != "completed" and not model.model_quality.get("immutable_reference"))))
+                    if needs_reference:
+                        prepared = None
                     # Adopt already preprocessed rounds from the former all-
                     # rounds pipeline without discarding models or BA results.
-                    if prepared is None and legacy_manifest and current_round.status not in {"ready", "ready_tip_only", "cancelled"}:
+                    if prepared is None and not needs_reference and legacy_manifest and current_round.status not in {"ready", "ready_tip_only", "cancelled"}:
                         poses = self.repository.list_camera_poses(run.analysis_id, key)
                         if poses and complete_manifest:
                             write_json_atomic(artifacts.undistortion_manifest_path(key), {"coordinate_space": "undistorted", "views": manifest})
@@ -4760,7 +5291,12 @@ class AnalysisService:
                             ])
                             prepared = journal.get("round_preprocessing", key, signature)
                     if prepared is None:
-                        run = self._run_round_preprocessing(run, cancel_event, round_key=key)
+                        try:
+                            run = self._run_round_preprocessing(run, cancel_event, round_key=key)
+                        except AnalysisError as error:
+                            self._check_cancel(cancel_event)
+                            run = self._skip_round_alignment(run, current_round, views, error, signature, cancel_event)
+                            continue
                         image_outputs = [
                             artifacts.root / item[field]
                             for item in artifacts.read_undistortion_manifest(key)
@@ -4805,6 +5341,18 @@ class AnalysisService:
                     "tip_candidate_version": TIP_CANDIDATE_VERSION,
                 }, outputs=tip_outputs)
                 journal.save("round_pipeline", key, signature, {}, outputs=[*model_outputs, *tip_outputs])
+
+            rig_signature = self._shared_rig_signature(run)
+            if run.method_name == "fixed" and rig_signature is not None and any(
+                item.status == "alignment_pending"
+                and (saved := journal.get("round_skipped", item.round_key, signature)) is not None
+                and saved.get("rig_signature") != rig_signature
+                for item in self.repository.list_rounds(run.analysis_id)
+            ):
+                # Registration may have succeeded after the earlier rounds
+                # were skipped. Backfill them before final trajectory export.
+                self._check_cancel(cancel_event)
+                return self._run_round_pipeline(self._require_run(run.analysis_id), cancel_event)
 
         self._round_progress.pop(run.analysis_id, None)
         if not hasattr(self, "_finalizing_analyses"):

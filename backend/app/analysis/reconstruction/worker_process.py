@@ -55,8 +55,12 @@ def execute_job(
     job = _read_job(job_path)
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    if job.get("kind") == "reference_sfm":
-        from app.analysis.reconstruction.reference_sfm import build_reference_sfm
+    if job.get("kind") in {"reference_sfm", "reference_localization"}:
+        if job["kind"] == "reference_localization":
+            from app.analysis.reconstruction.render_registration import localize_reference_top as reference_operation
+            configure_native_build()
+        else:
+            from app.analysis.reconstruction.reference_sfm import build_reference_sfm as reference_operation
 
         def reference_cancel():
             if cancel_path.exists():
@@ -67,7 +71,7 @@ def execute_job(
             write_json_atomic(progress_path, {"stage": stage, "progress": value, "message": message, "updated_at": _utc_now()})
 
         try:
-            result = build_reference_sfm(job, output_dir, progress=reference_progress, cancel_check=reference_cancel)
+            result = reference_operation(job, output_dir, progress=reference_progress, cancel_check=reference_cancel)
             write_json_atomic(result_path, result)
             return 0
         except Exception as error:

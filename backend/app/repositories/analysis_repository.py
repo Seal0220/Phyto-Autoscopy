@@ -887,6 +887,12 @@ class AnalysisRepository:
             ),
         )
 
+    def update_tip_correction(self, item: TipCorrection) -> None:
+        self.database.execute(
+            "UPDATE analysis_tip_corrections SET payload_json=? WHERE analysis_id=? AND correction_id=?",
+            (_json_dump(item.model_dump(mode="json")), item.analysis_id, item.correction_id),
+        )
+
     def list_tip_corrections(
         self,
         analysis_id: str,

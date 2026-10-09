@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PerspectiveCamera, Vector3 } from "three";
-import { createModelMarkerLayer } from "../src/features/AnalysisRun/lib/analysisModelMarkers.js";
+import { createModelMarkerLayer, createTipMarkerLayer } from "../src/features/AnalysisRun/lib/analysisModelMarkers.js";
 
 class Element extends EventTarget {
   style = {};
@@ -24,6 +24,38 @@ class Element extends EventTarget {
     this.parentNode = null;
   }
 }
+
+test("tip markers project the measured position and distinguish confirmed tips from candidates", (t) => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new Element() };
+  t.after(() => { globalThis.document = previous; });
+  const element = new Element();
+  const camera = new PerspectiveCamera(40, 4 / 3, .01, 100);
+  camera.position.set(0, 0, 10);
+  const marker = createTipMarkerLayer({ element, camera });
+  const node = element.children[0].children[0];
+  marker.setTip({ x_mm: 0, y_mm: 0, z_mm: 0, valid: true });
+  assert.equal(node.hidden, false);
+  assert.equal(node.style.left, "400px");
+  assert.equal(node.style.top, "300px");
+  assert.equal(node.dataset.tipStatus, "confirmed");
+  assert.match(node.innerHTML, /尖端（已確認）/);
+  const graphic = node.innerHTML;
+  camera.fov = 20;
+  camera.updateProjectionMatrix();
+  marker.update();
+  assert.equal(node.innerHTML, graphic, "zoom must preserve the marker's screen size");
+  marker.setTip({ x_mm: 1, y_mm: 0, z_mm: 0, valid: false });
+  assert.equal(node.dataset.tipStatus, "candidate");
+  assert.match(node.attributes["aria-label"], /待補正/);
+  assert.ok(parseFloat(node.style.left) > 400);
+  marker.setTip({ x_mm: null, y_mm: 0, z_mm: 0, valid: false });
+  assert.equal(node.hidden, true, "missing coordinates must not create a tip at the origin");
+  marker.setTip({ x_mm: 0, y_mm: 0, z_mm: 11, valid: true });
+  assert.equal(node.hidden, true, "a point behind the camera must be hidden");
+  marker.dispose();
+  assert.equal(element.children.length, 0);
+});
 
 function event(node, type, values = {}) {
   const input = new Event(type, { cancelable: true });

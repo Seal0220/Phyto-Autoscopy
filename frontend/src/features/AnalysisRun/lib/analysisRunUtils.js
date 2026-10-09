@@ -17,6 +17,7 @@ const ACTIVE_STATUSES = new Set([
 ]);
 
 const ROUND_STATUS_META = {
+  waiting_tip_seed: { label: "等待尖端初始化", tone: "warning" },
   ready: {
     label: "等待處理",
     tone: "neutral",
@@ -40,6 +41,10 @@ const ROUND_STATUS_META = {
   model_failed: {
     label: "模型失敗",
     tone: "offline",
+  },
+  alignment_pending: {
+    label: "相機對齊待補正",
+    tone: "warning",
   },
   tip_completed: {
     label: "分析完成",
@@ -103,6 +108,7 @@ export function normalizeAnalysisRun(payload) {
 export function normalizeAnalysisProgress(payload) {
   return {
     analysis_id: text(payload?.analysis_id),
+    results_revision: text(payload?.results_revision),
     status: text(payload?.status) || "idle",
     stage: text(payload?.stage),
     current_frame: Math.max(0, finiteNumber(payload?.current_frame)),
@@ -202,7 +208,7 @@ export function analysisRunActionAvailability(
     start: status === "ready",
     cancel: ACTIVE_STATUSES.has(status),
     pause: ACTIVE_STATUSES.has(status) && status !== "pausing",
-    resume: status === "paused",
+    resume: status === "paused" && stage !== "waiting_for_tip_seed",
     retry: ["failed", "cancelled"].includes(status),
     rebuildPreview: ["needs_review", "reviewing"].includes(status) && stage === "waiting_for_model_review",
     reset: ["failed", "cancelled", "paused"].includes(status),

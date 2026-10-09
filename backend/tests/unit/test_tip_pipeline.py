@@ -13,7 +13,20 @@ from app.analysis.tip import candidate_detector
 from app.analysis.tip.candidate_detector import TipCandidate2D, TipCandidateDetection, detect_tip_candidates
 from app.analysis.tip.candidate_matcher import TipCandidateView, TriangulatedTipHypothesis, triangulate_tip_hypotheses
 from app.analysis.tip.marker_optimizer import optimize_tip_marker
-from app.models.analysis_models import AnalysisRound, AnalysisView, CameraPoseResult
+from app.models.analysis_models import AnalysisRound, AnalysisView, CameraPoseResult, RoundModelResult
+
+
+def test_tip_foreground_check_rejects_background_and_missing_projections(tmp_path):
+    mask = np.zeros((100, 120), np.uint8)
+    mask[50:55, 60:65] = 255
+    path = tmp_path / "plant-mask.png"
+    cv2.imencode(".png", mask)[1].tofile(path)
+    assert pipeline._point_on_plant_mask(path, (62.3, 51.8), 3.7)
+    assert pipeline._point_on_plant_mask(path, (58., 52.), 3.7)
+    assert not pipeline._point_on_plant_mask(path, (10., 10.), 3.7)
+    assert not pipeline._point_on_plant_mask(path, (-1., 52.), 3.7)
+    assert not pipeline._point_on_plant_mask(path, None, 3.7)
+    assert not pipeline._point_on_plant_mask(path, (float("nan"), 52.), 3.7)
 
 
 def test_large_green_tinted_lamp_halo_cannot_displace_small_plant_candidates(tmp_path):
@@ -114,9 +127,14 @@ def test_tip_choice_favors_independent_cameras_and_allows_occluded_camera_fallba
     assert occluded.quality["camera_coverage_cost"] == 0
 
 
-@pytest.mark.parametrize("minimum_confidence, valid", [(0.7, True), (0.99, False)])
+@pytest.mark.parametrize("minimum_confidence,foreground,source,valid", [
+    (0.7, True, "shoot_apex", True), (0.99, True, "shoot_apex", False),
+    (0.7, False, "shoot_apex", False), (0.7, True, "geometric_endpoint", False),
+    (0.7, True, "skeleton_endpoint", False),
+])
+@pytest.mark.parametrize("reference_only", [True, False])
 def test_three_camera_tip_and_quality_are_saved_without_discarding_observations(
-    tmp_path, monkeypatch, minimum_confidence, valid,
+    tmp_path, monkeypatch, minimum_confidence, foreground, source, valid, reference_only,
 ):
     round_item = AnalysisRound(
         analysis_id="analysis", round_key="record:mode:round.94", record_id="record",
@@ -130,14 +148,14 @@ def test_three_camera_tip_and_quality_are_saved_without_discarding_observations(
     for snapshot in range(2):
         for camera, center in (("top", (0., 0., 0.)), ("side", (100., 0., 0.)), ("rotating", (20., 90., 0.))):
             view_id = f"{camera}:{snapshot}"
-            source = tmp_path / f"{camera}-{snapshot}.tiff"
-            valid_mask = source.with_suffix(".png")
-            cv2.imencode(".tiff", image)[1].tofile(source)
+            source_path = tmp_path / f"{camera}-{snapshot}.tiff"
+            valid_mask = source_path.with_suffix(".png")
+            cv2.imencode(".tiff", image)[1].tofile(source_path)
             cv2.imencode(".png", mask)[1].tofile(valid_mask)
             views.append(AnalysisView(
                 analysis_id="analysis", round_key=round_item.round_key, view_id=view_id,
                 capture_id=len(views), camera_id=camera, timestamp="2026-10-08T00:00:00Z",
-                relative_path=source.name, absolute_path=str(source),
+                relative_path=source_path.name, absolute_path=str(source_path),
                 image_width=128, image_height=96, image_sha256="test",
             ))
             poses.append(CameraPoseResult(
@@ -148,25 +166,43 @@ def test_three_camera_tip_and_quality_are_saved_without_discarding_observations(
             pixel = matrix @ (expected - center)
             candidate = TipCandidate2D(
                 candidate_id=f"{view_id}:tip", x_px=float(pixel[0] / pixel[2]),
-                y_px=float(pixel[1] / pixel[2]), confidence=1., visibility_confidence=1., source="synthetic",
+                y_px=float(pixel[1] / pixel[2]), confidence=1., visibility_confidence=1., source=source,
             )
             detections[view_id] = TipCandidateDetection(
                 candidates=(candidate,), plant_mask=mask, skeleton=mask,
                 heatmap=image, mask_confidence=1., foreground_ratio=1.,
             )
             manifest.append({
-                "view_id": view_id, "undistorted_path": source.name,
+                "view_id": view_id, "undistorted_path": source_path.name,
                 "valid_pixel_mask_path": valid_mask.name,
             })
     monkeypatch.setattr(pipeline, "detect_tip_candidates", lambda *args, candidate_prefix, **kwargs: detections[candidate_prefix])
+    if not foreground:
+        for detection in detections.values():
+            detection.plant_mask[:] = 0
+
+    model = None
+    if reference_only:
+        model = RoundModelResult(analysis_id="analysis", round_key=round_item.round_key,
+            model_id="immutable", backend="gsplat_3dgs", backend_version="test", status="completed",
+            model_path="model.ply", point_cloud_path="scene.ply", model_quality={"immutable_reference": True})
+        for filename in ("model.ply", "scene.ply"):
+            (tmp_path / filename).write_bytes(b"unchanged reference geometry")
+        monkeypatch.setattr(pipeline, "isolate_plant_point_cloud", lambda *a, **k: pytest.fail("reference model must not be pruned"))
+        monkeypatch.setattr(pipeline, "extract_plant_skeleton", lambda *a, **k: pytest.fail("reference model must not guide tip snapping"))
 
     result = pipeline.analyze_round_tip(
         analysis_id="analysis", round_item=round_item, views=views, poses=poses,
         intrinsics_snapshot={camera: {"undistorted_camera_matrix": matrix.tolist()} for camera in ("top", "side", "rotating")},
-        undistortion_manifest=manifest, artifacts_root=tmp_path, model_result=None,
+        undistortion_manifest=manifest, artifacts_root=tmp_path, model_result=model,
         previous_landmark=None, minimum_confidence=minimum_confidence,
-        minimum_supporting_views=2, maximum_reprojection_error_px=5.,
+        minimum_supporting_views=2, maximum_reprojection_error_px=5., export_scene_point_cloud=False,
     )
+
+    if reference_only:
+        assert result.model_result == model
+        for filename in ("model.ply", "scene.ply"):
+            assert (tmp_path / filename).read_bytes() == b"unchanged reference geometry"
 
     assert result.landmark.valid is valid
     assert result.landmark.confidence > .7
@@ -176,6 +212,8 @@ def test_three_camera_tip_and_quality_are_saved_without_discarding_observations(
     tip_root = round_artifact_directory(tmp_path, round_item.round_key) / "tip"
     saved = json.loads((tip_root / "tip_marker.json").read_text(encoding="utf-8"))
     assert saved["valid"] is valid
+    assert saved["quality"]["tip_identity_confirmed"] is (source == "shoot_apex")
+    assert saved["quality"]["foreground_supporting_view_count"] == (6 if foreground else 0)
     assert saved["quality"]["supporting_camera_counts"] == {"top": 2, "side": 2, "rotating": 2}
     assert json.loads((tip_root / "marker_quality.json").read_text(encoding="utf-8")) == saved["quality"]
     reprojections = json.loads((tip_root / "reprojection.json").read_text(encoding="utf-8"))

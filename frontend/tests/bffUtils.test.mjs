@@ -103,3 +103,15 @@ test("backend error helpers preserve only bounded safe string details", () => {
   assert.equal(safeRetryAfter("60"), "60");
   assert.equal(safeRetryAfter("bad\r\nvalue", null), null);
 });
+
+test("geometry counts survive sanitization while file paths and secrets stay hidden", () => {
+  const fallback = "請求失敗。";
+  const reason = "模型對齊未通過幾何檢查：有效參照點 3/5 組，至少需要四組。";
+  assert.equal(sanitizeBackendDetail(reason, fallback), reason.replace("3/5", "3／5"));
+  assert.equal(sanitizeBackendDetail("俯視角：3 / 5 組；側視角：1/5 組。", fallback), "俯視角：3／5 組；側視角：1／5 組。");
+  for (const detail of [
+    "找不到檔案：123/456", "找不到檔案：config/3/5 組", "找不到檔案：C:\\3/5 組",
+    "找不到檔案：/3/5 組", "找不到檔案：run.3/5 組", "找不到檔案：run-3/5 組",
+    "PHYTO_AUTOSCOPY_BFF_TOKEN：3/5 組", "3\n/5 組", "3/5 組" + "x".repeat(500),
+  ]) assert.equal(sanitizeBackendDetail(detail, fallback), fallback);
+});

@@ -18,6 +18,7 @@ function displayRatio(value) {
 export default function FormalTipReviewModel({
   analysisId,
   model,
+  landmark,
 }) {
   const quality = model?.model_quality || {};
   const status = ANALYSIS_MODEL_STATUS_META[model?.status] || {
@@ -37,6 +38,7 @@ export default function FormalTipReviewModel({
       <AnalysisRunModelPreview
         analysisId={analysisId}
         model={model}
+        landmark={landmark}
       />
       <InformationGrid
         items={[

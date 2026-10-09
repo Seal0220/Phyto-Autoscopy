@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import cv2
 import numpy as np
+import pytest
 
 from app.analysis.pose_alignment.model_reference import aggregate_fixed_camera_poses
 from app.analysis.reconstruction.multiview import robust_multiview_triangulate
@@ -18,19 +19,55 @@ from test_model_reference import _reference_service_fixture, _reference_model_re
 from test_multiview_reconstruction import _projection, _project
 
 
-def test_joint_sfm_initialization_uses_motor_baseline_instead_of_repeated_fixed_frames():
+def test_joint_sfm_initialization_uses_image_parallax_instead_of_repeated_fixed_frames():
     views = [{"view_id": str(i), "camera_id": camera, "undistorted_path": f"{i}.tiff",
               "angle_deg": angle, "motor_position_deg": motor}
              for i, (camera, angle, motor) in enumerate((("side", 0., None), ("side", 10., None),
                   ("rotating", 355., None), ("rotating", None, 15.), ("rotating", 355.5, None)), 1)]
-    images = [SimpleNamespace(image_id=i, name=reference_image_name(v)) for i, v in enumerate(views, 1)]
+    images = [SimpleNamespace(image_id=i, name=reference_image_name(v), camera_id=1)
+              for i, v in enumerate(views, 1)]
     pairs = [(1, 2), (3, 5), (3, 4)]
     geometries = [SimpleNamespace(inlier_matches=[None] * n) for n in (9999, 1000, 24)]
-    database = SimpleNamespace(read_all_images=lambda: images, read_two_view_geometries=lambda: (pairs, geometries))
-    pycolmap = SimpleNamespace(Database=SimpleNamespace(open=lambda _: nullcontext(database)), pair_id_to_image_pair=lambda p: p)
-    assert reference_initial_pair(pycolmap, "database.db", views, 12) == {
-        "image_ids": [3, 4], "motor_baseline_deg": 20., "camera_id": "rotating"}
+    database = SimpleNamespace(read_all_images=lambda: images, read_two_view_geometries=lambda: (pairs, geometries),
+                               read_camera=lambda _: None, read_keypoints=lambda _: np.zeros((24, 2)))
+    measured = SimpleNamespace(inlier_matches=[None] * 24, tri_angle=np.deg2rad(15),
+                               cam2_from_cam1=SimpleNamespace(rotation=SimpleNamespace(matrix=lambda: np.eye(3)),
+                                                              translation=np.array([1., 0., 0.])))
+    pycolmap = SimpleNamespace(Database=SimpleNamespace(open=lambda _: nullcontext(database)),
+                              pair_id_to_image_pair=lambda p: p,
+                              TwoViewGeometryOptions=lambda: SimpleNamespace(ransac=SimpleNamespace()),
+                              estimate_calibrated_two_view_geometry=lambda *args: measured)
+    chosen = reference_initial_pair(pycolmap, "database.db", views, 12)
+    assert chosen["image_ids"] == [3, 4]
+    assert chosen["motor_baseline_deg"] == 20.
+    assert chosen["source"] == "calibrated_image_geometry"
+    assert chosen["triangulation_angle_deg"] == pytest.approx(15)
     assert reference_initial_pair(pycolmap, "database.db", views, 25) is None
+
+
+def test_seed_prefers_depth_support_and_rejects_a_fictitious_large_parallax_branch():
+    angles = [0., 10., 30., 20.]
+    views = [{"view_id": str(i), "camera_id": "rotating", "undistorted_path": f"{i}.png", "angle_deg": angle}
+             for i, angle in enumerate(angles, 1)]
+    images = [SimpleNamespace(image_id=i, camera_id=1, name=reference_image_name(view))
+              for i, view in enumerate(views, 1)]
+    matches = {i: np.full((count, 2), i, np.uint32) for i, count in enumerate((50, 30, 45))}
+    pairs = [(1, 2), (1, 3), (1, 4)]
+    database = SimpleNamespace(read_all_images=lambda: images,
+        read_two_view_geometries=lambda: (pairs, [SimpleNamespace(inlier_matches=matches[i]) for i in range(3)]),
+        read_camera=lambda _: None, read_keypoints=lambda _: np.zeros((64, 2)))
+
+    def geometry(*args):
+        index = int(args[4][0, 0])
+        return SimpleNamespace(inlier_matches=matches[index], tri_angle=np.deg2rad([5., 25., 80.][index]),
+            cam2_from_cam1=SimpleNamespace(rotation=SimpleNamespace(matrix=lambda: np.eye(3)), translation=np.array([1., 0, 0])))
+
+    module = SimpleNamespace(Database=SimpleNamespace(open=lambda _: nullcontext(database)),
+        pair_id_to_image_pair=lambda pair: pair, TwoViewGeometryOptions=lambda: SimpleNamespace(ransac=SimpleNamespace()),
+        estimate_calibrated_two_view_geometry=geometry)
+    chosen = reference_initial_pair(module, "database.db", views, 12)
+    assert chosen["image_ids"] == [1, 3]
+    assert chosen["verified_inlier_count"] == 30
 
 
 def test_every_valid_round_view_is_selected_including_repeated_fixed_and_motor_positions(tmp_path):

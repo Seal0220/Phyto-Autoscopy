@@ -56,6 +56,7 @@ export default function useAnalysisRun({
   const runStatusRef = useRef("");
   const lastTerminalProgressRef = useRef("");
   const lastRoundProgressRef = useRef("");
+  const lastResultsRevisionRef = useRef(null);
   const {
     snapshot,
     socketError,
@@ -120,6 +121,11 @@ export default function useAnalysisRun({
     if (!mountedRef.current || next.analysis_id !== analysisId) return;
     runStatusRef.current = next.status;
     setProgress(next);
+    if (next.results_revision && next.results_revision !== lastResultsRevisionRef.current) {
+      lastResultsRevisionRef.current = next.results_revision;
+      void load({ silent: true });
+      return;
+    }
     if (!POLLED_STATUSES.has(next.status)) {
       const terminalKey = `${analysisId}:${next.status}`;
       if (lastTerminalProgressRef.current !== terminalKey) {

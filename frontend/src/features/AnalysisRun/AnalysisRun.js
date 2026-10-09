@@ -305,6 +305,8 @@ export default function AnalysisRun({
                 <AnalysisRunRoundOverview
                   analysisId={analysisId}
                   formalData={formalData}
+                  busy={locked || ["processing", "reconstructing", "validating", "pausing"].includes(effectiveRun.status)}
+                  onReloadRun={() => load({ silent: true, confirmMutation: true })}
                 />
 
                 <AnalysisRunMetadata

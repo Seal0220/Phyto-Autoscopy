@@ -135,7 +135,7 @@ function transportErrorResponse(
 }
 
 function fallbackDetail(status) {
-  if (status === 400) return "請求資料格式錯誤。";
+  if (status === 400) return "這次操作未通過檢查，請確認輸入內容。";
   if (status === 403) return "目前的使用者角色沒有執行此操作的權限。";
   if (status === 404) return "找不到指定資源。";
   if (status === 405) return "此資源不支援目前的請求方法。";

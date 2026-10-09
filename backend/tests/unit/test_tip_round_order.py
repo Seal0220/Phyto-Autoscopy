@@ -61,3 +61,11 @@ def test_single_missing_tip_is_interpolated_only_with_reliable_motion() -> None:
     )
     assert blocked.points[2].detection_type == "invalid"
     assert blocked.points[2].x_mm is None
+
+
+def test_failed_automatic_rounds_are_never_filled_by_the_service_trajectory():
+    from app.services.analysis_service import _model_failed_round_keys
+    for method in ("fixed", "rotating"):
+        for status in ("alignment_pending", "tip_invalid", "failed"):
+            item = _round("round.00", "2026-10-09T00:00:00Z").model_copy(update={"status": status})
+            assert item.round_key in _model_failed_round_keys([item], {}, method)

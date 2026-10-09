@@ -9,6 +9,7 @@ import numpy as np
 
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.checkpoints import StepJournal, step_signature
+from app.analysis.reconstruction.colmap_camera import colmap_pinhole_params
 from app.analysis.reconstruction.constrained_bundle_adjustment import (
     refine_sparse_camera_poses,
 )
@@ -94,7 +95,7 @@ def initialize_sparse_geometry(
             journal.save(stage, dataset.round_key, signature, payload, outputs=outputs)
 
     signature = step_signature({
-        "version": 2, "bundle_adjustment": use_constrained_bundle_adjustment,
+        "version": 3, "bundle_adjustment": use_constrained_bundle_adjustment,
         "views": [{"id": view.view_id, "hash": view.source_sha256,
                    "K": view.camera_matrix.tolist(), "pose": view.world_to_camera_matrix.tolist()}
                   for view in dataset.views],
@@ -133,15 +134,7 @@ def initialize_sparse_geometry(
             model=pycolmap.CameraModelId.PINHOLE,
             width=view.image_width,
             height=view.image_height,
-            params=np.asarray(
-                [
-                    matrix[0, 0],
-                    matrix[1, 1],
-                    matrix[0, 2],
-                    matrix[1, 2],
-                ],
-                dtype=np.float64,
-            ),
+            params=np.asarray(colmap_pinhole_params(matrix), dtype=np.float64),
             has_prior_focal_length=True,
         )
 

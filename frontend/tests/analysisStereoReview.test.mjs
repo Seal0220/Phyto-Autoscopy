@@ -162,3 +162,22 @@ test("unverified and edited pairs have no stale geometry verdict", () => {
   assert.equal(stereoValidationCount(rejected), 0);
   assert.equal(stereoPairCheck(rejected, 0), "check");
 });
+
+test("camera feedback identifies suspect points without accepting a rejected pose", () => {
+  const validation = {
+    validated_stage: "reprojection", inlier_indices: [], status: "rejected",
+    cameras: {
+      top: { status: "rejected", inlier_indices: [0, 1, 2], outlier_indices: [3, 4] },
+      side: { status: "accepted", inlier_indices: [0, 1, 2, 3], outlier_indices: [4] },
+    },
+  };
+  const pair = { top: { x_px: 10, y_px: 20 }, side: { x_px: 30, y_px: 40 } };
+  assert.equal(stereoValidationCount(validation), 0);
+  assert.equal(stereoPairCheck(validation, 0, "top"), null);
+  assert.equal(stereoPairCheck(validation, 3, "top"), "check");
+  assert.equal(stereoPairCheck(validation, 3, "side"), "inlier");
+  assert.equal(stereoPairLabel(pair, 3, validation, "top"), "第 4 組（需檢查）");
+  assert.equal(stereoPairLabel(pair, 0, validation, "top"), "第 1 組（已標記）");
+  assert.equal(stereoPairCheck({ cameras: { top: { status: "not_solved" } } }, 0, "top"), null);
+  assert.equal(stereoPairCheck({ cameras: { top: { status: "ambiguous", inlier_indices: [] } } }, 0, "top"), null);
+});
