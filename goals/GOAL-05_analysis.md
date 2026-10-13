@@ -14,7 +14,7 @@
 ```text
 每一 Round
 → 讀取同一 Round 的俯視、側視與旋臂影像
-→ 每張影像套用所屬實體相機的內參並去畸變
+→ 每張影像套用所屬實體相機的內參並變形校正
 → 使用 ArUco 建立每張影像的公制世界座標姿態
 → 使用多視角特徵精修相機姿態與建立稀疏幾何
 → 共同建立每個 Round 的三維植物模型
@@ -343,7 +343,7 @@ plant_mask
 
 排除：
 
-- 魚眼去畸變產生的黑邊
+- 魚眼變形校正產生的黑邊
 - 無有效影像資料區域
 - 重新映射後的無效像素
 
@@ -391,7 +391,7 @@ side_detection.plant_base
 plant_base_world_mm = [x, y, z]
 ```
 
-再依每張影像的內參與外參投影至去畸變影像座標。
+再依每張影像的內參與外參投影至變形校正影像座標。
 
 ---
 
@@ -590,7 +590,7 @@ static_scene_score
 - 重投影誤差
 - 人工修正
 
-都必須先載入對應實體相機的內參並完成去畸變。
+都必須先載入對應實體相機的內參並完成變形校正。
 
 正式順序：
 
@@ -676,7 +676,7 @@ cy
 
 若長寬比、裁切區域或感光元件模式不同，現有內參應標記為不相容並阻止分析。
 
-## 7.5 Fisheye 去畸變
+## 7.5 Fisheye 變形校正
 
 目前正式相機模型為 `opencv_fisheye` 時，必須使用：
 
@@ -765,14 +765,14 @@ coordinate_space = "undistorted"
 
 ```text
 原始畸變座標
-去畸變座標
+變形校正座標
 ```
 
 ## 7.8 原始資料保護
 
 原始捕捉影像保持唯讀。
 
-去畸變影像、遮罩與診斷圖像寫入 Analysis Run 的衍生資料目錄。
+變形校正影像、遮罩與診斷圖像寫入 Analysis Run 的衍生資料目錄。
 
 不得覆蓋原始 Record 影像。
 
@@ -833,7 +833,7 @@ Marker 在平台上的安裝方向必須已知。
 
 ## 8.3 偵測順序
 
-ArUco 必須在去畸變影像上偵測：
+ArUco 必須在變形校正影像上偵測：
 
 ```text
 undistorted image
@@ -851,7 +851,7 @@ undistorted camera matrix
 distortion coefficients = zero
 ```
 
-不得將原始影像中的 ArUco 角點與去畸變後相機矩陣混用。
+不得將原始影像中的 ArUco 角點與變形校正後相機矩陣混用。
 
 ## 8.4 Top 與 Side
 
@@ -947,7 +947,7 @@ ArUco 對齊在本 GOAL 中指：
 
 3DGS 必須保留各影像原本的觀察方向，只使用：
 
-- 去畸變影像
+- 變形校正影像
 - 相機內參
 - 相機外參
 - 公制世界座標
@@ -1196,9 +1196,9 @@ MOG2 learning rate
 2. 驗證原始影像與 SHA-256
 3. 載入 Analysis Run 內參 Snapshot
 4. 依相機與解析度建立 Remap
-5. 對每張影像執行 Fisheye 去畸變
+5. 對每張影像執行 Fisheye 變形校正
 6. 建立 Valid Pixel Mask
-7. 在去畸變影像中偵測 ArUco
+7. 在變形校正影像中偵測 ArUco
 8. 估算每張影像的世界座標姿態
 9. 計算 ArUco 重投影誤差
 10. 執行影像清晰度、曝光與靜態性檢查
@@ -1211,7 +1211,7 @@ MOG2 learning rate
 17. 匯出 Gaussian Centers 與 Point Cloud
 18. 隔離植物模型並移除背景
 19. 建立植物骨架與三維幾何端點候選
-20. 在每張去畸變影像中建立二維尖端候選
+20. 在每張變形校正影像中建立二維尖端候選
 21. 執行多視角尖端候選匹配
 22. 三角化初始三維尖端標記
 23. 使用模型表面與骨架精修尖端標記
@@ -1413,8 +1413,8 @@ round_dataset/
 
 其中：
 
-- `images/` 使用去畸變影像
-- `cameras.bin` 使用去畸變後內參
+- `images/` 使用變形校正影像
+- `cameras.bin` 使用變形校正後內參
 - `images.bin` 使用 ArUco 與姿態精修後外參
 - `points3D.bin` 使用稀疏初始化點
 - `phyto_metadata.json` 保存 Round 與公制世界座標資訊
@@ -1471,7 +1471,7 @@ pip install pycolmap
 正式流程：
 
 ```text
-去畸變影像
+變形校正影像
 ＋ ArUco 初始姿態
 ＋ 公制世界座標
 → PyCOLMAP 特徵與匹配
@@ -1533,7 +1533,7 @@ opencv-contrib-python
 用途：
 
 - Fisheye 內參套用
-- 去畸變
+- 變形校正
 - ArUco 偵測
 - solvePnP
 - 重投影
@@ -1659,7 +1659,7 @@ class PlantSkeletonBackend(Protocol):
 
 ```text
 OpenCV
-→ 內參、去畸變、ArUco、PnP、影像遮罩
+→ 內參、變形校正、ArUco、PnP、影像遮罩
 
 PyCOLMAP
 → 多視角特徵、稀疏點、姿態精修
@@ -2039,7 +2039,7 @@ maximum Z
 
 ## 16.3 二維尖端候選
 
-每張去畸變影像可建立：
+每張變形校正影像可建立：
 
 ```text
 plant mask
@@ -2902,7 +2902,7 @@ snapshotting_intrinsics
 → 固化相機內參
 
 undistorting_images
-→ 套用內參並去畸變
+→ 套用內參並變形校正
 
 detecting_aruco
 → 偵測 ArUco 基準
@@ -3112,7 +3112,7 @@ analysis_<id>/
    └─ analysis_summary.json
 ```
 
-大型去畸變影像可依設定決定是否永久保存。
+大型變形校正影像可依設定決定是否永久保存。
 
 即使不保存影像，也必須保存：
 
@@ -3347,7 +3347,7 @@ detect_rotating_tip_near_projection 作為主要方法
 ```
 
 舊模組直接移除，不再提供舊 Analysis Run 相容層。`fixed` 與
-`rotating` 都使用正式的 Round、View、去畸變座標與尖端標記資料模型。
+`rotating` 都使用正式的 Round、View、變形校正座標與尖端標記資料模型。
 
 ---
 
@@ -3444,8 +3444,8 @@ Migration 必須：
 
 必須驗證：
 
-- ArUco 在去畸變影像上偵測
-- Pose 使用去畸變相機矩陣
+- ArUco 在變形校正影像上偵測
+- Pose 使用變形校正相機矩陣
 - top／side 可建立穩健固定姿態
 - rotating 每張影像有獨立姿態
 - motor angle 不是最終外參
@@ -3488,7 +3488,7 @@ Migration 必須：
 
 - 每 Round 可輸出三維尖端標記
 - 尖端標記不是直接取 maximum Z
-- 二維候選使用去畸變座標
+- 二維候選使用變形校正座標
 - 多視角三角化可排除離群候選
 - 尖端標記靠近植物模型或骨架
 - 支持視角數正確
@@ -3540,12 +3540,12 @@ Migration 必須：
 7. 建立 Round Readiness
 8. 補單元測試
 
-## Phase 3 — 內參與去畸變
+## Phase 3 — 內參與變形校正
 
 1. 固化 Intrinsics Snapshot
 2. 建立 Resolution Adaptation
 3. 建立 Fisheye Remap Cache
-4. 對所有 Analysis View 去畸變
+4. 對所有 Analysis View 變形校正
 5. 建立 Valid Pixel Mask
 6. 統一 Undistorted Coordinate Space
 7. 保存處理 Metadata
@@ -3554,7 +3554,7 @@ Migration 必須：
 ## Phase 4 — ArUco 姿態
 
 1. 固化 ArUco Layout
-2. 在去畸變影像偵測 ArUco
+2. 在變形校正影像偵測 ArUco
 3. 建立每張影像 Pose
 4. 建立固定相機穩健姿態
 5. 建立旋臂逐張姿態
@@ -3575,7 +3575,7 @@ Migration 必須：
 
 ## Phase 6 — PyCOLMAP 初始化
 
-1. 建立去畸變影像 Dataset
+1. 建立變形校正影像 Dataset
 2. 寫入已知 Camera Intrinsics
 3. 寫入 ArUco 初始 Pose
 4. 提取特徵
@@ -3673,8 +3673,8 @@ version: 2.0.0
 - 前後端完全沒有人工 ROI
 - 不再要求植物基部像素
 - 每個 Analysis Run 固化已啟用相機內參
-- 每張影像在所有分析前完成 Fisheye 去畸變
-- 所有後續二維座標統一為去畸變座標
+- 每張影像在所有分析前完成 Fisheye 變形校正
+- 所有後續二維座標統一為變形校正座標
 - 每張影像使用 ArUco 建立世界座標姿態
 - top 與 side 有逐張姿態品質檢查
 - rotating 每張影像有獨立姿態

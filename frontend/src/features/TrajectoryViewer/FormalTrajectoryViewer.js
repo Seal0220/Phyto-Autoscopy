@@ -3,11 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
+  FiArrowLeft,
   FiDownload,
-  FiEdit3,
   FiRefreshCw,
 } from "react-icons/fi";
-import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
@@ -22,19 +21,18 @@ import {
 } from "@/components/panels/Panel";
 import {
   ANALYSIS_METHODS,
-  ANALYSIS_MODEL_STATUS_META,
   RECONSTRUCTION_BACKEND_LABELS,
 } from "@/features/Analysis/analysisConfig";
 import { analysisRunDisplay } from "@/features/AnalysisRun/lib/analysisRunUtils";
+import { analysisTipResults } from "@/features/AnalysisRun/lib/analysisTipResultsUtils";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
 import { formatDateTime } from "@/lib/formatUtils";
 
 import FormalTrajectoryViewer3D from "./components/FormalTrajectoryViewer3D";
 import FormalTrajectoryCharts from "./components/FormalTrajectoryCharts";
-import TrajectoryViewerModelOutputs from "./components/TrajectoryViewerModelOutputs";
+import TrajectoryViewerImageTipCharts from "./components/TrajectoryViewerImageTipCharts";
 import useFormalTrajectoryResults from "./hooks/useFormalTrajectoryResults";
 import {
-  TRAJECTORY_DETECTION_LABELS,
   TRAJECTORY_ROTATION_LABELS,
 } from "./trajectoryViewerConfig";
 
@@ -50,19 +48,6 @@ function displayNumber(
   return Number.isFinite(number)
     ? `${number.toFixed(digits)}${suffix}`
     : "尚無資料";
-}
-
-function resolvedLandmarks(
-  landmarks,
-  corrections,
-) {
-  const resolved = new Map(
-    landmarks.map((item) => [item.round_key, item]),
-  );
-  for (const correction of corrections) {
-    resolved.set(correction.round_key, correction.corrected_tip);
-  }
-  return resolved;
 }
 
 export default function FormalTrajectoryViewer({
@@ -98,10 +83,8 @@ export default function FormalTrajectoryViewer({
   ]);
 
   const runDisplay = analysisRunDisplay(run);
-  const resolved = resolvedLandmarks(landmarks, corrections);
-  const modelsByRound = new Map(
-    models.map((item) => [item.round_key, item]),
-  );
+  const tipResults = analysisTipResults(rounds, landmarks, corrections);
+  const { resolved, pendingRounds, markedCount } = tipResults;
   const validPoints = trajectory.filter((item) => item.valid);
   const missingPoints = trajectory.filter((item) => !item.valid).length;
   const completedModels = models.filter(
@@ -127,7 +110,7 @@ export default function FormalTrajectoryViewer({
                   {runDisplay.status.label}
                 </StatusPill>
               ) : null}
-              {loadError ? (
+              {run || loadError ? (
                 <Button
                   disabled={loading}
                   onClick={() => void load()}
@@ -142,30 +125,9 @@ export default function FormalTrajectoryViewer({
                 </Button>
               ) : null}
               <Button
-                onClick={() => router.push(
-                  `/analysis/${encodeURIComponent(analysisId)}`,
-                )}
-              >
-                <PiHouseFill
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                返回分析紀錄
-              </Button>
-              <Button
-                onClick={() => router.push(
-                  `/analysis/${encodeURIComponent(analysisId)}/review`,
-                )}
-              >
-                <FiEdit3
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                檢查尖端標記
-              </Button>
-              <Button
                 variant="primary"
                 disabled={exportPending || !["completed", "partially_completed"].includes(run?.status)}
+                title={["completed", "partially_completed"].includes(run?.status) ? undefined : "分析完成後可匯出結果"}
                 onClick={() => void downloadExport()}
               >
                 <FiDownload
@@ -173,6 +135,17 @@ export default function FormalTrajectoryViewer({
                   aria-hidden="true"
                 />
                 {exportPending ? "匯出中…" : "匯出結果"}
+              </Button>
+              <Button
+                onClick={() => router.push(
+                  `/analysis/${encodeURIComponent(analysisId)}`,
+                )}
+              >
+                <FiArrowLeft
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                返回分析
               </Button>
             </div>
           )}
@@ -192,7 +165,7 @@ export default function FormalTrajectoryViewer({
                   每輪完成後更新模型與尖端軌跡。
                 </p>
               ) : null}
-              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-5">
+              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-3">
                 <StatusCard
                   title="分析輪次"
                   content={rounds.length}
@@ -202,6 +175,11 @@ export default function FormalTrajectoryViewer({
                   title="完成模型"
                   content={completedModels}
                   note={`共 ${models.length} 個模型紀錄`}
+                />
+                <StatusCard
+                  title="尖端已確認"
+                  content={markedCount}
+                  note={`${pendingRounds.length} 輪可在分析頁「各輪結果」補標`}
                 />
                 <StatusCard
                   title="可用軌跡點"
@@ -220,14 +198,25 @@ export default function FormalTrajectoryViewer({
                 />
               </div>
 
-              <FormalTrajectoryViewer3D trajectory={trajectory} />
-
-              <FormalTrajectoryCharts trajectory={trajectory} />
-
-              <TrajectoryViewerModelOutputs
+              <TrajectoryViewerImageTipCharts
                 analysisId={analysisId}
-                models={models}
+                rounds={rounds}
+                resolved={resolved}
               />
+
+              {validPoints.length ? (
+                <>
+                  <FormalTrajectoryViewer3D
+                    analysisId={analysisId}
+                    trajectory={trajectory}
+                  />
+                  <FormalTrajectoryCharts trajectory={trajectory} />
+                </>
+              ) : (
+                <p className="m-0 text-sm font-semibold text-neutral-300">
+                  目前沒有通過量測校正的毫米座標，三維軌跡尚無可用資料。影像、模型及尖端修改都在分析頁的「各輪結果」。
+                </p>
+              )}
 
               <DisclosurePanel
                 title="分析設定與品質資料"
@@ -377,78 +366,6 @@ export default function FormalTrajectoryViewer({
                 </div>
               </InnerPanel>
 
-              <DisclosurePanel
-                title={`逐輪品質明細（${rounds.length} 輪）`}
-                description="模型狀態、尖端信心與三維座標。"
-              >
-                <div className="grid max-h-[38rem] gap-2 overflow-y-auto min-[760px]:grid-cols-2">
-                  {rounds.map((item) => {
-                    const model = modelsByRound.get(item.round_key);
-                    const landmark = resolved.get(item.round_key);
-                    const modelStatus = ANALYSIS_MODEL_STATUS_META[
-                      model?.status
-                    ] || {
-                      label: "無模型",
-                      tone: "neutral",
-                    };
-                    return (
-                      <article
-                        className="grid min-w-0 gap-3 rounded-xl border border-white/15 bg-black/15 p-3"
-                        key={item.round_key}
-                      >
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="mr-auto min-w-0 truncate text-sm font-black text-white">
-                            {item.mode_id}・{item.round_id}
-                          </span>
-                          <StatusPill tone={modelStatus.tone}>
-                            {modelStatus.label}
-                          </StatusPill>
-                          <StatusPill tone={landmark?.valid ? "success" : "offline"}>
-                            尖端{landmark?.valid ? "有效" : "無效"}
-                          </StatusPill>
-                        </div>
-                        <InformationGrid
-                          items={[
-                            {
-                              label: "標記信心",
-                              value: displayNumber(
-                                landmark?.confidence != null
-                                  ? landmark.confidence * 100
-                                  : null,
-                                "%",
-                                1,
-                              ),
-                            },
-                            {
-                              label: "重投影誤差",
-                              value: displayNumber(
-                                landmark?.mean_reprojection_error_px,
-                                " px",
-                                3,
-                              ),
-                            },
-                            {
-                              label: "標記來源",
-                              value: TRAJECTORY_DETECTION_LABELS[
-                                landmark?.detection_type
-                              ] || "尚無資料",
-                            },
-                            {
-                              label: "三維位置",
-                              value: landmark?.valid
-                                ? `${displayNumber(landmark.x_mm, "", 2)}, ${displayNumber(landmark.y_mm, "", 2)}, ${displayNumber(landmark.z_mm, " mm", 2)}`
-                                : "尚無資料",
-                            },
-                          ]}
-                          rows={2}
-                          minimumColumnWidth
-                          scroll
-                        />
-                      </article>
-                    );
-                  })}
-                </div>
-              </DisclosurePanel>
             </>
           ) : null}
         </div>

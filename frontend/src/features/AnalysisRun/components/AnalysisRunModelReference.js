@@ -36,9 +36,11 @@ export default function AnalysisRunModelReference({
   const alignmentPoints = reference.model_quality?.representation === "sfm_points";
   const alignmentPreview = reference.model_quality?.representation === "alignment_3dgs";
   const cameraCounts = reference.model_quality?.training_camera_counts;
-  const missingFixedViews = cameraCounts && (!cameraCounts.top || !cameraCounts.side);
+  const orbitOnly = reference.model_quality?.model_camera_ids?.length === 1
+    && reference.model_quality.model_camera_ids[0] === "rotating";
+  const missingFixedViews = !orbitOnly && cameraCounts && (!cameraCounts.top || !cameraCounts.side);
   return (
-    <div className="grid min-w-0 gap-3">
+    <div className="@container grid min-w-0 gap-3">
       <SubsectionHeader
         title={tipPicking ? "模型尖端標記" : readOnly ? "參考模型" : alignmentPoints ? "稀疏參照點" : alignmentPreview ? "對齊預覽" : "模型選點"}
         description={tipPicking ? "點選尖端，拖動調整，右鍵刪除標記；拖曳空白處旋轉模型。" : readOnly ? "拖曳旋轉，滾輪縮放。" : reference.model_quality?.immutable_reference
@@ -49,6 +51,8 @@ export default function AnalysisRunModelReference({
           : "拖動標記調整，右鍵刪除；拖曳空白旋轉，滾輪縮放。"}
       >
         <Button
+          aria-label="重設鏡頭"
+          className="@max-[320px]:px-2"
           disabled={locked}
           onClick={model.reset}
         >
@@ -56,10 +60,14 @@ export default function AnalysisRunModelReference({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          重設鏡頭
+          <span className="@max-[320px]:sr-only">重設鏡頭</span>
         </Button>
       </SubsectionHeader>
-      {missingFixedViews ? (
+      {orbitOnly ? (
+        <p className="m-0 text-sm text-neutral-300" role="status">
+          本輪參考模型由懸臂多視角建立並保留。俯視與側視用於尖端追蹤；模型選點作為參考位置，三維毫米軌跡須通過量測校正。
+        </p>
+      ) : missingFixedViews ? (
         <p className="m-0 text-sm font-semibold text-amber-200" role="status">
           參考模型參與訓練：俯視 {cameraCounts.top || 0} 張、側視 {cameraCounts.side || 0} 張、旋臂 {cameraCounts.rotating || 0} 張。缺少的鏡頭未納入此模型；影像尖端標記與追蹤仍可使用，三維毫米位置須另通過量測校正。
         </p>

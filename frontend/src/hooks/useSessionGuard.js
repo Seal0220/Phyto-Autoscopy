@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { abortRequest } from "@/lib/httpUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 const SESSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -35,6 +36,7 @@ export default function useSessionGuard() {
       });
 
       if ([401, 403].includes(response.status)) {
+        invalidatePageData();
         window.location.replace("/");
       }
     } catch (error) {

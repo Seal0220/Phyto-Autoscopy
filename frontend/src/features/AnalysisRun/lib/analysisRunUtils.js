@@ -1,12 +1,10 @@
+import { formatDisplayMessage } from "../../../lib/formatUtils.js";
 import {
   ANALYSIS_CAMERA_LABELS,
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STATUS_META,
 } from "../../Analysis/analysisConfig.js";
-import {
-  ANALYSIS_PROGRESS_UNITS,
-  ANALYSIS_VALIDATION_STAGES,
-} from "../analysisRunConfig.js";
+import { ANALYSIS_PROGRESS_UNITS } from "../analysisRunConfig.js";
 import { needsStereoPoseReview } from "./analysisStereoReviewUtils.js";
 
 const ACTIVE_STATUSES = new Set([
@@ -43,7 +41,7 @@ const ROUND_STATUS_META = {
     tone: "offline",
   },
   alignment_pending: {
-    label: "相機對齊待補正",
+    label: "自動對齊未通過",
     tone: "warning",
   },
   tip_completed: {
@@ -98,7 +96,7 @@ export function normalizeAnalysisRun(payload) {
     current_frame: Math.max(0, finiteNumber(payload?.current_frame)),
     total_frames: Math.max(0, finiteNumber(payload?.total_frames)),
     manual_review_completed: Boolean(payload?.manual_review_completed),
-    last_error: text(payload?.last_error),
+    last_error: formatDisplayMessage(payload?.last_error),
     parameters: payload?.parameters && typeof payload.parameters === "object"
       ? payload.parameters
       : {},
@@ -119,10 +117,15 @@ export function normalizeAnalysisProgress(payload) {
     current_round: Math.max(0, finiteNumber(payload?.current_round)),
     total_rounds: Math.max(0, finiteNumber(payload?.total_rounds)),
     round_progress: Math.min(1, Math.max(0, finiteNumber(payload?.round_progress))),
-    last_error: text(payload?.last_error),
+    last_error: formatDisplayMessage(payload?.last_error),
     processing_preview: payload?.processing_preview
       && typeof payload.processing_preview === "object"
-      ? payload.processing_preview
+      ? {
+        ...payload.processing_preview,
+        ...(typeof payload.processing_preview.message === "string"
+          ? { message: formatDisplayMessage(payload.processing_preview.message) }
+          : {}),
+      }
       : null,
     image_probe_backends: payload?.image_probe_backends
       && typeof payload.image_probe_backends === "object"
@@ -153,7 +156,16 @@ export function analysisImageGroups(views) {
   return [...groups.values()];
 }
 
-export function analysisRoundStatus(status) {
+export function analysisRoundStatus(
+  status,
+  { model, landmark, correction } = {},
+) {
+  if (["alignment_pending", "tip_only", "tip_invalid"].includes(status) && model?.status === "completed") {
+    if (!correction?.invalid && (landmark?.image_tip_confirmed || correction?.observations?.length)) {
+      return { label: "尖端已追蹤", tone: "success" };
+    }
+    return { label: "尖端待補標", tone: "warning" };
+  }
   return ROUND_STATUS_META[text(status)] || {
     label: text(status) ? "未知狀態" : "尚未處理",
     tone: "neutral",
@@ -166,13 +178,12 @@ export function analysisRunDisplay(run) {
     tone: "neutral",
   };
   const probeCounts = run?.image_probe_backends || run?.parameters?.validation_image_probe_backends;
-  const validating = run?.status === "validating" || ANALYSIS_VALIDATION_STAGES.has(run?.stage);
   const workerNote = finiteNumber(probeCounts?.workers) > 0
     ? `自動並行 ${finiteNumber(probeCounts.workers)} 執行緒${probeCounts.tuning ? `（試速中，上限 ${finiteNumber(probeCounts.worker_limit)}）` : ""}`
     : "";
   const backendNote = probeCounts && (finiteNumber(probeCounts.gpu) + finiteNumber(probeCounts.cpu) + finiteNumber(probeCounts.reused)) > 0
     ? probeCounts.remap_gpu !== undefined
-      ? `GPU 去畸變 ${finiteNumber(probeCounts.remap_gpu) + finiteNumber(probeCounts.reused_gpu)} 張 · CPU 去畸變 ${finiteNumber(probeCounts.remap_cpu) + finiteNumber(probeCounts.reused_cpu)} 張 · 沿用已完成影像 ${finiteNumber(probeCounts.reused)} 張`
+      ? `GPU 變形校正 ${finiteNumber(probeCounts.remap_gpu) + finiteNumber(probeCounts.reused_gpu)} 張 · CPU 變形校正 ${finiteNumber(probeCounts.remap_cpu) + finiteNumber(probeCounts.reused_cpu)} 張 · 沿用已完成影像 ${finiteNumber(probeCounts.reused)} 張`
       : `轉檔 ${finiteNumber(probeCounts.converted)} 張 · GPU ${finiteNumber(probeCounts.gpu)} 張 · CPU 回退 ${finiteNumber(probeCounts.cpu)} 張`
     : "";
   const roundNote = finiteNumber(run?.total_rounds) > 0
@@ -185,9 +196,7 @@ export function analysisRunDisplay(run) {
   return {
     status,
     probeNote: [workerNote, backendNote].filter(Boolean).join(" · "),
-    progressTitle: validating
-      ? "驗證進度"
-      : "分析進度",
+    progressTitle: "分析進度",
     progressNote: [roundNote, stepNote].filter(Boolean).join(" · "),
     stage: ANALYSIS_STAGE_LABELS[run?.stage]
       || (run?.stage ? "未知階段" : "尚未開始"),
@@ -204,20 +213,14 @@ export function analysisRunActionAvailability(
 ) {
   const stereoReview = needsStereoPoseReview({ status, stage });
   return {
-    validate: status === "draft",
-    start: status === "ready",
+    start: ["draft", "ready"].includes(status),
     cancel: ACTIVE_STATUSES.has(status),
     pause: ACTIVE_STATUSES.has(status) && status !== "pausing",
     resume: status === "paused" && stage !== "waiting_for_tip_seed",
     retry: ["failed", "cancelled"].includes(status),
     rebuildPreview: ["needs_review", "reviewing"].includes(status) && stage === "waiting_for_model_review",
     reset: ["failed", "cancelled", "paused"].includes(status),
-    review: stereoReview || [
-      "needs_review",
-      "reviewing",
-      "completed",
-      "partially_completed",
-    ].includes(status),
+    review: stereoReview,
     skipReview: !stereoReview && ["needs_review", "reviewing"].includes(status),
     results: hasResults || ["completed", "partially_completed"].includes(status),
     export: ["completed", "partially_completed"].includes(status),

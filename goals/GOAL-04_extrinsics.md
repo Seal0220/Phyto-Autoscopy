@@ -34,7 +34,7 @@
 - 三顆相機各自的內參校正
 - ChArUco 校正板設定
 - 即時相機預覽
-- 原始／去畸變預覽
+- 原始／變形校正預覽
 - 內參品質與重投影誤差
 - 每顆相機唯一內參的套用與更新
 
@@ -168,7 +168,7 @@ refining_camera_poses
 → 繼續尖端追蹤與三維重建
 ```
 
-`opencv_fisheye` 相機必須使用 fisheye 相容的去畸變與 PnP 流程。
+`opencv_fisheye` 相機必須使用 fisheye 相容的變形校正與 PnP 流程。
 
 ---
 

@@ -11,3 +11,15 @@ export const TRAJECTORY_ROTATION_LABELS = {
   counterclockwise: "逆時針",
   stationary: "無明顯旋轉",
 };
+
+export const TRAJECTORY_PLOT_CONFIG = {
+  displaylogo: false,
+  // Container resizing is handled by the plot hook's ResizeObserver.
+  responsive: false,
+  scrollZoom: true,
+  toImageButtonOptions: {
+    format: "png",
+    filename: "phyto-trajectory-3d",
+    scale: 2,
+  },
+};

@@ -1,3 +1,10 @@
+export function formatDisplayMessage(value) {
+  // Stored diagnostics keep their audit text; render legacy wording consistently.
+  return typeof value === "string"
+    ? value.replaceAll("\u53bb\u7578\u8b8a", "變形校正")
+    : "";
+}
+
 export function formatElapsed(seconds) {
   const value = Math.max(0, Number(seconds) || 0);
   const days = Math.floor(value / 86400);

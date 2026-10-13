@@ -54,10 +54,10 @@ export default function AnalysisSetupSummaryStep({
     >
       <SubsectionHeader
         titleId="analysis-summary-step-title"
-        title="確認並建立"
+        title="確認並開始"
         description={buildsRoundModels
-          ? "建立前確認 Round、相機內參、實測雙鏡頭基線、模型後端與預期輸出。"
-          : "建立前確認 Round、相機內參、實測雙鏡頭基線與尖端標記輸出。"
+          ? "開始前確認 Round、相機內參、實測雙鏡頭基線、模型後端與預期輸出。"
+          : "開始前確認 Round、相機內參、實測雙鏡頭基線與尖端標記輸出。"
         }
       >
         {status ? (

@@ -1,3 +1,5 @@
+import { formatDisplayMessage } from "./formatUtils.js";
+
 export const DEFAULT_CLIENT_REQUEST_TIMEOUT_MS = 20_000;
 
 export class RequestTimeoutError extends Error {
@@ -138,7 +140,7 @@ export function responseErrorMessage(
   ) {
     return fallback;
   }
-  return normalized;
+  return formatDisplayMessage(normalized);
 }
 
 export function messageFromError(
@@ -148,6 +150,6 @@ export function messageFromError(
   return error instanceof Error
     && error.message
     && error.message !== "[object Object]"
-    ? error.message
+    ? formatDisplayMessage(error.message)
     : fallback;
 }

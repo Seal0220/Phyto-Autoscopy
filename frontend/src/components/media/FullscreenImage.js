@@ -21,6 +21,7 @@ export default function FullscreenImage({
   alt,
   label,
   children,
+  imageContent,
   onLoad,
   onError,
 }) {
@@ -104,13 +105,13 @@ export default function FullscreenImage({
           >
             {/* 全螢幕檢視需直接接受串流、Blob 與動態檔案 URL。 */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            {imageContent || <img
               className="block size-full object-contain"
               src={src}
               alt={alt}
               onLoad={onLoad}
               onError={onError}
-            />
+            />}
             {children}
             <Button
               className="absolute top-0 right-0 z-30 size-10 min-h-10 shrink-0 p-0! shadow-lg backdrop-blur-xl"

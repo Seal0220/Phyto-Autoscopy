@@ -236,7 +236,7 @@ def estimate_aruco_pose(
                     **base,
                     visible_marker_ids=visible_ids,
                     visible_marker_count=len(visible_ids),
-                    failure_reason=f"魚眼影像去畸變失敗：{exc}",
+                    failure_reason=f"魚眼影像變形校正失敗：{exc}",
                 ),
                 {**detection, "status": "undistortion_failed"},
             )

@@ -25,7 +25,7 @@ const BACKGROUND_TOGGLES = [
 const TIP_TOGGLES = [
   ["useSkeletonRefinement", "使用植物骨架精修", "以主生長軸與骨架端點約束三維尖端標記。"],
   ["useTemporalPrior", "使用上一輪弱時序先驗", "只協助排除不合理跳點，不強迫尖端停留在舊位置。"],
-  ["exportAll2dCandidates", "輸出全部二維候選", "保存各去畸變影像中的候選與排除原因。"],
+  ["exportAll2dCandidates", "輸出全部二維候選", "保存各變形校正影像中的候選與排除原因。"],
   ["saveReprojectionOverlays", "保存重投影疊圖", "保存尖端標記投影回各相機影像的診斷結果。"],
 ];
 
@@ -361,7 +361,7 @@ export default function AnalysisSetupReconstructionStep({
         title={buildsRoundModels ? "背景處理" : "影像處理"}
         description={buildsRoundModels
           ? "模型建立前保留必要背景特徵，完成後再建立獨立的純植物輸出。"
-          : "由各去畸變影像建立植物遮罩，協助固定雙鏡頭的尖端候選分析。"
+          : "由各變形校正影像建立植物遮罩，協助固定雙鏡頭的尖端候選分析。"
         }
       >
         <ToggleCollection

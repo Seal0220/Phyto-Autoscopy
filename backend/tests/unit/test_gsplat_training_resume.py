@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from app.analysis.checkpoints import step_signature
 
 from app.analysis.reconstruction import gsplat_trainer as trainer
 from app.analysis.reconstruction.dataset_adapter import PreparedRoundDataset, PreparedRoundView
@@ -52,6 +53,11 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
     monkeypatch.setattr(trainer, "_load_training_views", lambda *args, **kwargs: (training_view,))
     settings = {"quality_preset": "preview", "training_iterations": 500, "image_factor": 1, "save_checkpoint": False,
                 "use_plant_mask": foreground_only}
+    signatures = []
+    def remember_signature(value):
+        signatures.append(value)
+        return step_signature(value)
+    monkeypatch.setattr(trainer, "step_signature", remember_signature)
     # Foreground recovery includes real MCMC relocation/growth and its random
     # position perturbations. The restored RNG must reproduce the same model.
     first_stop, last_stop = (150, 170) if foreground_only else (10, 20)
@@ -76,11 +82,17 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
     assert paused["splats"]["shN"].shape[1:] == (15, 3)
     if foreground_only:
         assert paused["splats"]["means"].shape[0] > 64
+    if not foreground_only and coordinate_unit == "relative":
+        # Before the coarse-to-fine regularizer starts, this is also a real
+        # v4 optimizer/RNG state. Its old signature must resume, not reset.
+        paused["signature"] = step_signature({**signatures[-1], "training_version": "mcmc_sh3_v4"})
+        torch.save(paused, tmp_path / "resumed" / "checkpoint" / "latest.pt")
     with (tmp_path / "resumed" / "training_steps.csv").open("a") as handle:
         handle.write(f"{first_stop + 1},0,cuda\n{first_stop + 2},0,cuda\n")
     resumed = train_until(tmp_path / "resumed", last_stop)
     reference = train_until(tmp_path / "reference", last_stop)
     assert resumed["step"] == reference["step"] == last_stop
+    assert resumed["signature"] == paused["signature"]
     assert resumed["scheduler"] == reference["scheduler"]
     for name, parameter in reference["splats"].items():
         torch.testing.assert_close(resumed["splats"][name], parameter, rtol=1e-5, atol=1e-6)
@@ -90,3 +102,13 @@ def test_real_cuda_training_resumes_optimizer_scheduler_and_iteration(tmp_path, 
             torch.testing.assert_close(resumed_state[key], reference_state[key], rtol=1e-5, atol=1e-6)
     rows = (tmp_path / "resumed" / "training_steps.csv").read_text().splitlines()
     assert [int(row.split(",")[0]) for row in rows] == list(range(1, last_stop + 1))
+    if not foreground_only and coordinate_unit == "relative":
+        checkpoint = tmp_path / "resumed/checkpoint/latest.pt"
+        previous = checkpoint.read_bytes()
+        def changed_progress(*args):
+            raise AnalysisPausedError("test changed settings")
+        with pytest.raises(AnalysisPausedError):
+            trainer.train_gsplat_model(dataset, {**settings, "training_iterations": 600}, tmp_path / "resumed",
+                                      progress_callback=changed_progress)
+        history = list((checkpoint.parent / 'history').glob('*.pt'))
+        assert len(history) == 1 and history[0].read_bytes() == previous

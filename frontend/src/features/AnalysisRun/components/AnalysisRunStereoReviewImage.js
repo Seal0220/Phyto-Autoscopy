@@ -172,7 +172,7 @@ export default function AnalysisRunStereoReviewImage({
         <img
           key={attempt}
           src={url}
-          alt={`${label}去畸變影像，請配對同一個芽尖、葉尖、莖節或其他共同位置`}
+          alt={`${label}變形校正影像，請配對同一個芽尖、葉尖、莖節或其他共同位置`}
           className="block h-auto w-full select-none"
           draggable="false"
           width={width}

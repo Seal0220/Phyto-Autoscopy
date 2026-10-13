@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,7 @@ from app.analysis.reconstruction.dataset_adapter import _sha256
 from app.analysis.reconstruction.plant_isolation import foreground_point_selection
 
 
-PLANT_TRAINING_VERSION = "mcmc_sh3_v4"
+PLANT_TRAINING_VERSION = "mcmc_sh3_rank_v5"
 
 
 _SH_C0 = 0.28209479177387814
@@ -356,7 +357,7 @@ def train_gsplat_model(
     # Recovery is always available, including when optional diagnostic export
     # was disabled. Legacy weights-only checkpoints cannot restore Adam state.
     checkpoint_path = output_dir / "checkpoint" / "latest.pt"
-    signature = step_signature({
+    signature_data = {
         "training_version": PLANT_TRAINING_VERSION,
         **({"geometry_signature": dataset.geometry_signature, "coordinate_unit": dataset.coordinate_unit}
            if dataset.geometry_signature is not None or dataset.coordinate_unit != "millimetre" else {}),
@@ -367,12 +368,25 @@ def train_gsplat_model(
                    "foreground_mask": _sha256(view.foreground_mask_path) if foreground_only and view.foreground_mask_path else None,
                    "valid_mask": _sha256(view.valid_mask_path) if view.valid_mask_path else None}
                   for view in dataset.views],
-    })
+    }
+    signature = step_signature(signature_data)
     saved = None
+    training_version = PLANT_TRAINING_VERSION
     if checkpoint_path.is_file():
         candidate = torch.load(checkpoint_path, map_location=device, weights_only=False)
         if candidate.get("format_version") == 2 and candidate.get("signature") == signature:
             saved = candidate
+        elif (candidate.get("format_version") == 2
+              and candidate.get("signature") == step_signature({**signature_data, "training_version": "mcmc_sh3_v4"})):
+            # An interrupted v4 model resumes exactly as before. A new model
+            # or explicit repair uses v5 in its own output directory.
+            saved, signature, training_version = candidate, candidate["signature"], "mcmc_sh3_v4"
+        else:
+            history = checkpoint_path.parent / "history"
+            history.mkdir(exist_ok=True)
+            previous = history / f"{_sha256(checkpoint_path)}.pt"
+            if not previous.exists():
+                shutil.copy2(checkpoint_path, previous)
     numpy_scales = _initial_scales(positions)
     point_count = len(positions)
     sh0 = ((colors - 0.5) / _SH_C0)[:, None, :]
@@ -549,9 +563,12 @@ def train_gsplat_model(
             background_mask = ~plant_mask if mask is None else mask & ~plant_mask
             background_alpha_loss = alpha[background_mask].mean() if bool(background_mask.any()) else alpha.sum() * 0
             loss = loss + .1 * (foreground_alpha_loss + background_alpha_loss)
-        # Regularizers specified by the MCMC paper; no imposed leaf shape.
+        # The MCMC size penalty alone can collapse two axes into needles.
+        # Effective-rank regularization distinguishes those from flat leaves.
         loss = loss + .01 * torch.sigmoid(splats["opacities"]).mean()
         loss = loss + .01 * torch.exp(splats["scales"]).mean()
+        if training_version == PLANT_TRAINING_VERSION and step >= maximum_steps * (7000 / 30000):
+            loss = loss + .01 * _gaussian_shape_loss(splats["scales"], torch)
         if not torch.isfinite(loss):
             raise GsplatTrainingError("模型損失出現非有限值，已停止該 Round。")
         loss.backward()
@@ -626,7 +643,7 @@ def train_gsplat_model(
         "plant_mask_in_training_loss": bool(
             parameters.get("use_plant_mask", True)
         ),
-        "training_version": PLANT_TRAINING_VERSION,
+        "training_version": training_version,
         "foreground_only": foreground_only,
         "foreground_kind": "plant_and_pot" if foreground_only and any(view.foreground_mask_path is not None for view in dataset.views) else "plant" if foreground_only else "scene",
         "training_camera_counts": {camera: sum(view.source.camera_id == camera for view in views)
@@ -641,6 +658,8 @@ def train_gsplat_model(
         "rasterize_mode": "antialiased",
         "opacity_regularization": .01,
         "scale_regularization": .01,
+        "effective_rank_regularization": .01 if training_version == PLANT_TRAINING_VERSION else 0.,
+        "effective_rank_start_iteration": math.ceil(maximum_steps * (7000 / 30000)) if training_version == PLANT_TRAINING_VERSION else None,
         "initial_foreground_selection": initial_foreground_quality,
         "foreground_selection": foreground_quality,
         **({"world_center_mm": center_world_mm.tolist(), "internal_world_scale_mm": world_scale_mm}

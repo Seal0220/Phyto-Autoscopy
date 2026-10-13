@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiRefreshCw } from "react-icons/fi";
+import { FiRefreshCw, FiTrendingUp } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
 
 import Button from "@/components/buttons/Button";
@@ -24,13 +24,17 @@ import AnalysisRunRoundOverview from "./components/AnalysisRunRoundOverview";
 import AnalysisRunProcessingImages from "./components/AnalysisRunProcessingImages";
 import AnalysisRunStereoReview from "./components/AnalysisRunStereoReview";
 import { needsStereoPoseReview } from "./lib/analysisStereoReviewUtils";
+import { analysisTipResults } from "./lib/analysisTipResultsUtils";
 import useAnalysisRun from "./hooks/useAnalysisRun";
 import {
+  analysisRunActionAvailability,
   analysisRunDisplay,
 } from "./lib/analysisRunUtils";
 
 export default function AnalysisRun({
   analysisId,
+  initialRoundKey,
+  initialTipFilter = "all",
 }) {
   const router = useRouter();
   const { showNotification } = useNotificationsContext();
@@ -125,7 +129,18 @@ export default function AnalysisRun({
     }
     : null;
   const display = analysisRunDisplay(effectiveRun);
+  const tipResults = analysisTipResults(formalData?.rounds, formalData?.landmarks, formalData?.corrections);
+  const initializingRound = effectiveRun?.stage === "waiting_for_tip_seed"
+    ? formalData?.rounds?.find((item) => item.status === "waiting_tip_seed") : null;
+  const initialCorrection = formalData?.corrections?.filter(
+    (item) => item.round_key === initializingRound?.round_key,
+  ).at(-1);
   const locked = Boolean(pendingAction) || mutationOutcomeUnknown;
+  const canOpenResults = effectiveRun && analysisRunActionAvailability(
+    effectiveRun.status,
+    effectiveRun.stage,
+    hasResults,
+  ).results;
   const stereoReview = needsStereoPoseReview(effectiveRun);
   const [stereoReviewOpen, setStereoReviewOpen] = useState(false);
   useEffect(() => {
@@ -136,6 +151,11 @@ export default function AnalysisRun({
     setStereoReviewOpen(false);
     void load({ silent: true });
   }, [load]);
+  useEffect(() => {
+    if (formalData?.rounds?.length && (initialRoundKey || initialTipFilter === "missing")) {
+      document.getElementById("analysis-round-results")?.scrollIntoView({ block: "start" });
+    }
+  }, [formalData?.rounds?.length, initialRoundKey, initialTipFilter]);
 
   return (
     <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 max-[980px]:pt-32">
@@ -155,7 +175,21 @@ export default function AnalysisRun({
                       className="size-4 shrink-0"
                       aria-hidden="true"
                     />
-                    {loading ? "讀取中…" : "重新讀取"}
+                    {loading ? "重新讀取中…" : "重新讀取"}
+                  </Button>
+                ) : null}
+                {canOpenResults ? (
+                  <Button
+                    disabled={locked}
+                    onClick={() => router.push(
+                      `/analysis/${encodeURIComponent(analysisId)}/results`,
+                    )}
+                  >
+                    <FiTrendingUp
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    查看結果
                   </Button>
                 ) : null}
                 <Button
@@ -166,7 +200,7 @@ export default function AnalysisRun({
                     className="size-4 shrink-0"
                     aria-hidden="true"
                   />
-                  返回分析首頁
+                  返回分析
                 </Button>
               </div>
             )}
@@ -211,12 +245,19 @@ export default function AnalysisRun({
                     note={[display.progressNote, display.probeNote].filter(Boolean).join(" · ")}
                   />
                   <StatusCard
-                    title="人工校正"
-                    content={stereoReview
+                    title="尖端標記"
+                    content={initializingRound
+                      ? "待尖端初始化"
+                      : stereoReview
                       ? "待對齊"
-                      : effectiveRun.manual_review_completed ? "已確認" : "可選擇補正"
+                      : `${tipResults.markedCount} 輪已標記`
                     }
-                    note={stereoReview ? "對齊後繼續建模" : "不影響各輪處理"}
+                    note={initializingRound
+                      ? "模型、俯視與側視一起確認後自動繼續"
+                      : stereoReview ? "在分析頁處理後繼續"
+                        : tipResults.pendingRounds.length ? `${tipResults.pendingRounds.length} 輪可在各輪結果補標`
+                          : "可在各輪結果修改"
+                    }
                   />
                 </div>
 
@@ -257,25 +298,11 @@ export default function AnalysisRun({
                   pendingAction={pendingAction}
                   status={effectiveRun.status}
                   stage={effectiveRun.stage}
-                  hasResults={hasResults}
                   stereoReview={stereoReview}
                   onAction={(action) => void performAction(action)}
                   onExport={() => void downloadExport()}
-                  onOpenReview={() => {
-                    if (stereoReview) setStereoReviewOpen(true);
-                    else router.push(`/analysis/${encodeURIComponent(analysisId)}/review`);
-                  }}
-                  onOpenResults={() => router.push(
-                    `/analysis/${encodeURIComponent(analysisId)}/results`,
-                  )}
-                  onSkipReview={() => {
-                    const confirmed = window.confirm(
-                      "略過後將直接採用目前的自動尖端標記結果，並記錄此次未完成人工確認。確定繼續嗎？",
-                    );
-                    if (confirmed) {
-                      void performAction("reconstruct_without_review");
-                    }
-                  }}
+                  onOpenReview={() => setStereoReviewOpen(true)}
+                  onSkipReview={() => void performAction("reconstruct_without_review")}
                 />
 
                 {stereoReview ? (
@@ -294,6 +321,13 @@ export default function AnalysisRun({
                     analysisId={analysisId}
                     preview={hasMatchingProgress ? progress.processing_preview : null}
                     status={effectiveRun.status}
+                    initializingRound={initializingRound}
+                    model={formalData?.models?.find((item) => item.round_key === initializingRound?.round_key)}
+                    landmark={initialCorrection?.corrected_tip || formalData?.landmarks?.find(
+                      (item) => item.round_key === initializingRound?.round_key,
+                    )}
+                    correction={initialCorrection}
+                    onSaved={() => load({ silent: true, confirmMutation: true })}
                   />
                 ) : null}
 
@@ -303,8 +337,11 @@ export default function AnalysisRun({
                 />
 
                 <AnalysisRunRoundOverview
+                  key={analysisId}
                   analysisId={analysisId}
                   formalData={formalData}
+                  initialRoundKey={initialRoundKey}
+                  initialTipFilter={initialTipFilter}
                   busy={locked || ["processing", "reconstructing", "validating", "pausing"].includes(effectiveRun.status)}
                   onReloadRun={() => load({ silent: true, confirmMutation: true })}
                 />

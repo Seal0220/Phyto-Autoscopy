@@ -1,4 +1,5 @@
 import { Vector3 } from "three";
+import { tipMarkerSvg } from "./analysisTipMarkerUtils.js";
 
 export function createTipMarkerLayer({ element, camera }) {
   const layer = document.createElement("div");
@@ -32,21 +33,14 @@ export function createTipMarkerLayer({ element, camera }) {
       anchor = xyz.every((value) => typeof value === "number" && Number.isFinite(value))
         ? new Vector3(...xyz) : null;
       const confirmed = landmark?.valid === true;
-      const label = confirmed ? "尖端（已確認）" : "尖端候選（待補正）";
-      const accent = confirmed ? "#34d399" : "#fbbf24";
+      const modelReference = landmark?.coordinate_space === "model";
+      const label = modelReference ? landmark?.source === "temporal_tracking" ? "尖端（延續追蹤）" : "尖端（人工參考）"
+        : confirmed ? "尖端（已確認）" : "尖端候選（待補正）";
       node.setAttribute("aria-label", label);
-      node.dataset.tipStatus = confirmed ? "confirmed" : "candidate";
+      node.dataset.tipStatus = modelReference ? "reference" : confirmed ? "confirmed" : "candidate";
       // The crosshair stays on the measured position; the offset label leaves
       // the plant visible. DOM projection keeps it above opaque Gaussian splats.
-      node.innerHTML = `<svg width="220" height="90" viewBox="-22 -45 220 90" fill="none" aria-hidden="true" style="position:absolute;left:0;top:0;transform:translate(-22px,-45px)">
-        <circle r="9" stroke="#06100c" stroke-width="7"/>
-        <circle r="9" stroke="${accent}" stroke-width="3"/>
-        <path d="M-18 0 H-12 M12 0 H18 M0 -18 V-12 M0 12 V18 M9 -9 L28 -28 H182" stroke="#06100c" stroke-width="6"/>
-        <path d="M-18 0 H-12 M12 0 H18 M0 -18 V-12 M0 12 V18 M9 -9 L28 -28 H182" stroke="${accent}" stroke-width="2"/>
-        <circle r="2" fill="${accent}"/>
-        <rect x="27" y="-44" width="156" height="26" rx="6" fill="#06100c" stroke="${accent}"/>
-        <text x="105" y="-26" text-anchor="middle" fill="${accent}" font-size="14" font-weight="700" font-family="sans-serif">${label}</text>
-      </svg>`;
+      node.innerHTML = tipMarkerSvg({ confirmed: confirmed || modelReference, label });
       update();
     },
     dispose() { anchor = null; layer.remove(); },
@@ -221,7 +215,7 @@ export function createModelMarkerLayer({
         // The crosshair centre is the exact anchor. Offset numbering leaves
         // the underlying bud/leaf tip visible; dark outlines contrast with
         // both bright foliage and the black enclosure.
-        node.innerHTML = `<svg width="80" height="80" viewBox="-40 -40 80 80" fill="none" aria-hidden="true" style="pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)">
+        node.innerHTML = tipPicking ? tipMarkerSvg({ interactive: true }) : `<svg width="80" height="80" viewBox="-40 -40 80 80" fill="none" aria-hidden="true" style="pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)">
           <path d="M0 0 L${badgeX} ${badgeY}" stroke="#06100c" stroke-width="4"/>
           <path d="M0 0 L${badgeX} ${badgeY}" stroke="${accent}" stroke-width="1.5"/>
           <circle r="${ringRadius}" stroke="#06100c" stroke-width="6"/>
@@ -231,7 +225,7 @@ export function createModelMarkerLayer({
           <circle r="2" fill="${accent}" stroke="#06100c" stroke-width="1"/>
           <circle cx="${badgeX}" cy="${badgeY}" r="14" fill="${selected ? "#34d399" : "#07130f"}" stroke="#06100c" stroke-width="6"/>
           <circle cx="${badgeX}" cy="${badgeY}" r="14" stroke="#ffffff" stroke-width="2"/>
-          <text x="${badgeX}" y="${badgeY + 1}" fill="${selected ? "#052e16" : "#ffffff"}" font-size="16" font-weight="800" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">${tipPicking ? "尖" : number}</text>
+          <text x="${badgeX}" y="${badgeY + 1}" fill="${selected ? "#052e16" : "#ffffff"}" font-size="16" font-weight="800" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">${number}</text>
           <circle cx="${badgeX}" cy="${badgeY}" r="16" fill="transparent" style="pointer-events:all"/>
         </svg>`;
         if (!node.parentNode) layer.appendChild(node);

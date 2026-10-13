@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildFormalTrajectoryPlot,
+  formalTrajectoryRanges,
   formalTrajectoryModeColors,
 } from "../src/features/TrajectoryViewer/lib/trajectoryUtils.js";
 
@@ -18,6 +19,35 @@ test("每個擷取模式取得穩定且不同的軌跡顏色", () => {
     colors["AngleInterval.01"],
     colors["SpecificAngles.01"],
   );
+});
+
+test("三維座標框使用相同毫米跨度並保留原點與軌跡留白", () => {
+  const trajectory = [
+    { mode_id: "mode-1", valid: true, x_mm: 8, y_mm: -33, z_mm: 138 },
+    { mode_id: "mode-1", valid: true, x_mm: 10, y_mm: -30, z_mm: 142 },
+    { mode_id: "mode-1", valid: false, x_mm: 9999, y_mm: 9999, z_mm: 9999 },
+    { mode_id: "mode-1", valid: true, x_mm: null, y_mm: 9999, z_mm: 9999 },
+  ];
+  const original = structuredClone(trajectory);
+  const ranges = formalTrajectoryRanges(trajectory);
+  const spans = Object.values(ranges).map(([lower, upper]) => upper - lower);
+  assert.ok(spans.every((span) => Math.abs(span - spans[0]) < 1e-9 && span > 142 && span < 200));
+  for (const axis of ["x", "y", "z"]) {
+    assert.ok(ranges[axis][0] < 0 && ranges[axis][1] > 0);
+    for (const point of trajectory.slice(0, 2)) {
+      assert.ok(ranges[axis][0] < point[`${axis}_mm`] && ranges[axis][1] > point[`${axis}_mm`]);
+    }
+  }
+  assert.deepEqual(trajectory, original);
+});
+
+test("單點與零位移仍有有限且非零的三維顯示範圍", () => {
+  for (const trajectory of [[], [{ mode_id: "mode-1", valid: true, x_mm: 0, y_mm: 0, z_mm: 0 }]]) {
+    const ranges = formalTrajectoryRanges(trajectory);
+    assert.ok(Object.values(ranges).every(([lower, upper]) => (
+      Number.isFinite(lower) && Number.isFinite(upper) && lower < 0 && upper > 0
+    )));
+  }
 });
 
 test("三維圖表保留世界座標與缺失輪次，不跨模式連線", () => {

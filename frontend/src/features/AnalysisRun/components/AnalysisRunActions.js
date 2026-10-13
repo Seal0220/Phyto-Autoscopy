@@ -1,5 +1,4 @@
 import {
-  FiCheckCircle,
   FiDownload,
   FiEye,
   FiFastForward,
@@ -8,7 +7,6 @@ import {
   FiRefreshCw,
   FiRotateCcw,
   FiSquare,
-  FiTrendingUp,
 } from "react-icons/fi";
 
 import ActionRow from "@/components/actions/ActionRow";
@@ -21,36 +19,21 @@ export default function AnalysisRunActions({
   locked,
   onAction,
   onExport,
-  onOpenResults,
   onOpenReview,
   onSkipReview,
   pendingAction,
   status,
   stage,
   stereoReview,
-  hasResults,
 }) {
-  const available = analysisRunActionAvailability(status, stage, hasResults);
-  let skipReviewLabel = "略過人工確認並完成";
+  const available = analysisRunActionAvailability(status, stage);
+  let skipReviewLabel = "完成分析";
   if (pendingAction === "reconstruct_without_review") {
     skipReviewLabel = "完成分析中…";
   }
 
   return (
     <ActionRow className="w-full">
-      {available.validate ? (
-        <Button
-          variant="primary"
-          disabled={locked}
-          onClick={() => onAction("validate")}
-        >
-          <FiCheckCircle
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          {pendingAction === "validate" ? "驗證中…" : "驗證分析"}
-        </Button>
-      ) : null}
       {available.start ? (
         <Button
           variant="primary"
@@ -86,7 +69,7 @@ export default function AnalysisRunActions({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          {pendingAction === "resume" ? "恢復中…" : "恢復分析"}
+          {pendingAction === "resume" ? "繼續中…" : "繼續分析"}
         </Button>
       ) : null}
       {available.cancel ? (
@@ -111,7 +94,7 @@ export default function AnalysisRunActions({
             className="size-4 shrink-0"
             aria-hidden="true"
           />
-          {pendingAction === "retry" ? "重試中…" : "重試"}
+          {pendingAction === "retry" ? "重試中…" : "重試未完成項目"}
         </Button>
       ) : null}
       {available.rebuildPreview ? (
@@ -160,18 +143,6 @@ export default function AnalysisRunActions({
             aria-hidden="true"
           />
           {skipReviewLabel}
-        </Button>
-      ) : null}
-      {available.results ? (
-        <Button
-          disabled={locked}
-          onClick={onOpenResults}
-        >
-          <FiTrendingUp
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          查看結果
         </Button>
       ) : null}
       {available.export ? (

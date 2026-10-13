@@ -64,6 +64,7 @@ export default function InformationGrid({
   scroll = false,
   minimumColumnWidth = false,
   stackAtSmall = false,
+  wrapValues = false,
   className,
   ariaLabel,
 }) {
@@ -126,7 +127,7 @@ export default function InformationGrid({
           >
             {column.map((item) => (
               <div
-                className="flex min-h-6 min-w-0 items-center justify-between gap-2"
+                className={`flex min-h-6 min-w-0 items-center justify-between gap-2 ${wrapValues ? "flex-wrap" : ""}`}
                 key={item.label}
               >
                 <dt
@@ -142,11 +143,12 @@ export default function InformationGrid({
                   ) : null}
                 </dt>
                 <dd
-                  className={`m-0 flex items-baseline gap-1 ${item.truncate ? "min-w-0" : "shrink-0"}`}
+                  className={`m-0 flex items-baseline gap-1 ${wrapValues ? "min-w-0 max-w-full" : item.truncate ? "min-w-0" : "shrink-0"}`}
                 >
                   <span
                     className={`
                       text-right text-xs font-black
+                      ${wrapValues ? "min-w-0 break-words" : ""}
                       ${item.truncate ? "min-w-0 truncate" : ""}
                       ${VALUE_TONE_CLASSES[item.tone] || VALUE_TONE_CLASSES.success}
                     `}

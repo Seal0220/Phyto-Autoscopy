@@ -137,7 +137,7 @@ test("calibration intrinsics combine each camera preview with concise controls",
   assert.match(intrinsics, /<CameraStream/);
   assert.match(intrinsics, /min-\[720px\]:grid-cols-2/);
   assert.match(intrinsics, /min-\[1180px\]:grid-cols-3/);
-  assert.doesNotMatch(intrinsics, /標記|角點|清晰度|去畸變預覽/);
+  assert.doesNotMatch(intrinsics, /標記|角點|清晰度|變形校正預覽/);
   assert.match(cameraStream, /全螢幕/);
   assert.match(extrinsics, /role="list"/);
   assert.match(extrinsics, /aria-label="外參觀測品質"/);

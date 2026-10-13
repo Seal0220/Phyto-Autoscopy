@@ -141,21 +141,6 @@ export function cancelAnalysisSourceScan(scanId) {
   );
 }
 
-export function validateAnalysisRun(
-  analysisId,
-  signal,
-) {
-  return requestAnalysisJson(
-    `/api/analysis/${encodeURIComponent(analysisId)}/validate`,
-    {
-      body: {},
-      method: "POST",
-      signal,
-      timeoutMs: 900_000,
-    },
-  );
-}
-
 export function startAnalysisRun(
   analysisId,
   signal,

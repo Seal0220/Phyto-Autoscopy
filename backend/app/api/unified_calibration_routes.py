@@ -251,7 +251,7 @@ def get_undistorted_preview(
     intrinsics = context.intrinsic_calibration_service.get_intrinsics(camera_id)
     path = intrinsics.quality.get("undistorted_preview_path")
     if not isinstance(path, str) or not path:
-        raise CalibrationError(f"相機 {camera_id} 尚無去畸變預覽。")
+        raise CalibrationError(f"相機 {camera_id} 尚無變形校正預覽。")
     return FileResponse(_safe_calibration_file(context, path))
 
 
@@ -286,7 +286,7 @@ async def calibration_camera_stream(
         )
         if intrinsics.status != "valid":
             raise CalibrationError(
-                f"相機 {camera_id} 沒有可用的有效內參，無法即時去畸變。"
+                f"相機 {camera_id} 沒有可用的有效內參，無法即時變形校正。"
             )
         frame_undistorter = LiveFrameUndistorter(intrinsics)
     first_frame, first_sequence = await asyncio.to_thread(

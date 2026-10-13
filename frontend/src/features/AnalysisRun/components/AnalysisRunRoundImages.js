@@ -6,20 +6,15 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  FiChevronLeft,
-  FiChevronRight,
-} from "react-icons/fi";
+import { createPortal } from "react-dom";
 
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
-import { SelectInput } from "@/components/inputs/Input";
-
-import { ANALYSIS_IMAGE_SPACE_OPTIONS } from "../analysisRunConfig";
 import { requestAnalysisResource } from "../lib/analysisRunApiUtils";
 import { analysisImageGroups } from "../lib/analysisRunUtils";
 import AnalysisRunImage from "./AnalysisRunImage";
-import FormalTipReviewRoundImage from "@/features/TipReview/components/FormalTipReviewRoundImage";
+import AnalysisRunRoundImageControls from "./AnalysisRunRoundImageControls";
+import AnalysisRunRoundTipImage from "./AnalysisRunRoundTipImage";
 import AnalysisRunRoundTipEditor from "./AnalysisRunRoundTipEditor";
 import useAnalysisRunFeatureCorrespondences from "../hooks/useAnalysisRunFeatureCorrespondences";
 
@@ -30,8 +25,12 @@ export default function AnalysisRunRoundImages({
   marking = false,
   correction,
   onSaved,
+  onFinishEditing,
   model,
   landmark,
+  controlsElement,
+  featureActionElement,
+  tipActionElement,
 }) {
   const [views, setViews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -91,10 +90,49 @@ export default function AnalysisRunRoundImages({
     modelStatus: model?.status,
   });
   useEffect(() => { setActiveFeature(null); }, [group?.key]);
-  const imagePoints = correction?.projected_observations || (landmark?.image_tip_confirmed ? landmark.image_observations : []) || [];
+  const imagePoints = correction?.invalid ? [] : correction?.observations?.length ? correction.observations
+    : correction?.projected_observations?.length ? correction.projected_observations
+      : landmark?.image_tip_confirmed ? landmark.image_observations || [] : [];
+  const controls = groups.length ? (
+    <AnalysisRunRoundImageControls
+      roundKey={round.round_key}
+      groups={groups}
+      selectedIndex={selectedIndex}
+      onGroupChange={setGroupIndex}
+      space={space}
+      onSpaceChange={setSpace}
+      marking={marking}
+      compact={controlsElement !== undefined}
+    />
+  ) : null;
+  const featureControls = (
+    <>
+      <Button
+        aria-pressed={showFeatures}
+        onClick={() => {
+          setShowFeatures((value) => !value);
+          setSpace("undistorted");
+          setActiveFeature(null);
+        }}
+      >
+        {showFeatures ? "隱藏葉片特徵點" : "顯示葉片特徵點"}
+      </Button>
+      {showFeatures ? (
+        <p
+          className={`m-0 text-xs text-neutral-400 ${featureActionElement !== undefined ? "min-w-[12rem] max-w-sm shrink-0" : ""}`}
+          role="status"
+        >
+          {features.loading ? "讀取葉片特徵配對中…" : features.result?.features?.length
+            ? `${features.result.features.length} 組配對；游標停在青色點上可突出其他視角的對應點。`
+            : "這組影像尚無可靠的葉片特徵配對。"}
+          {features.result?.unregistered_view_ids?.length ? " 部分視角尚未對齊，沒有對應點。" : ""}
+        </p>
+      ) : null}
+    </>
+  );
 
   return (
-    <div className="grid min-w-0 gap-3">
+    <div className="@container grid min-w-0 gap-3">
       {loading ? <p role="status">讀取此輪影像中…</p> : null}
       {error ? (
         <RetryMessage
@@ -105,59 +143,12 @@ export default function AnalysisRunRoundImages({
       ) : null}
       {groups.length ? (
         <>
-          <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <SelectInput
-              id={`analysis-snapshot-${round.round_key}`}
-              label="擷取組"
-              value={String(selectedIndex)}
-              options={groups.map((item, index) => ({ value: String(index), label: item.key }))}
-              onValueChange={(value) => setGroupIndex(Number(value))}
-            />
-            {!marking ? <SelectInput
-              id={`analysis-image-space-${round.round_key}`}
-              label="影像類型"
-              value={space}
-              options={ANALYSIS_IMAGE_SPACE_OPTIONS}
-              onValueChange={setSpace}
-            /> : null}
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                aria-label="上一組擷取影像"
-                disabled={selectedIndex === 0}
-                onClick={() => setGroupIndex(selectedIndex - 1)}
-              >
-                <FiChevronLeft aria-hidden="true" />
-              </Button>
-              <span className="whitespace-nowrap text-xs font-semibold text-neutral-400">
-                {selectedIndex + 1} / {groups.length}
-              </span>
-              <Button
-                aria-label="下一組擷取影像"
-                disabled={selectedIndex === groups.length - 1}
-                onClick={() => setGroupIndex(selectedIndex + 1)}
-              >
-                <FiChevronRight aria-hidden="true" />
-              </Button>
+          {controlsElement === undefined ? controls : controlsElement ? createPortal(controls, controlsElement) : null}
+          {featureActionElement === undefined ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              {featureControls}
             </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <Button
-              aria-pressed={showFeatures}
-              onClick={() => {
-                setShowFeatures((value) => !value);
-                setSpace("undistorted");
-                setActiveFeature(null);
-              }}
-            >
-              {showFeatures ? "隱藏葉片特徵點" : "顯示葉片特徵點"}
-            </Button>
-            {showFeatures ? <p className="m-0 text-xs text-neutral-400" role="status">
-              {features.loading ? "讀取葉片特徵配對中…" : features.result?.features?.length
-                ? `${features.result.features.length} 組配對；游標停在青色點上可突出其他視角的對應點。`
-                : "這組影像尚無可靠的葉片特徵配對。"}
-              {features.result?.unregistered_view_ids?.length ? " 部分視角尚未對齊，沒有對應點。" : ""}
-            </p> : null}
-          </div>
+          ) : featureActionElement ? createPortal(featureControls, featureActionElement) : null}
           {features.error ? <RetryMessage message={features.error} onRetry={features.retry} /> : null}
           {marking ? (
             <AnalysisRunRoundTipEditor
@@ -168,14 +159,16 @@ export default function AnalysisRunRoundImages({
               landmark={landmark}
               correction={correction}
               onSaved={onSaved}
+              onFinishEditing={onFinishEditing}
               initializing={round.status === "waiting_tip_seed"}
               features={showFeatures ? features.result?.features || [] : []}
               activeFeature={activeFeature}
               onActiveFeature={setActiveFeature}
+              actionElement={tipActionElement}
             />
-          ) : <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-3">
+          ) : <div className="grid min-w-0 gap-3 @min-[720px]:grid-cols-3">
             {group.views.map((view) => (
-              space !== "source" && (imagePoints.length || showFeatures) ? <FormalTipReviewRoundImage
+              space !== "source" && (imagePoints.length || showFeatures) ? <AnalysisRunRoundTipImage
                 key={view.view_id}
                 analysisId={analysisId}
                 view={view}

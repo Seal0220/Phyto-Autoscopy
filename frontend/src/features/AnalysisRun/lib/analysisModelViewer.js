@@ -37,7 +37,8 @@ export function createModelViewer({
     },
   });
   const target = new THREE.Vector3().fromArray(reference.center);
-  camera.up.fromArray(reference.initial_camera.up).normalize();
+  const orbitUp = reference.initial_camera.orbit_up || reference.initial_camera.up;
+  camera.up.fromArray(orbitUp).normalize();
   const originalPosition = new THREE.Vector3().fromArray(reference.initial_camera.position);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(target);
@@ -65,7 +66,7 @@ export function createModelViewer({
     camera.updateProjectionMatrix();
     controls.target.copy(target);
     camera.position.copy(originalPosition);
-    camera.up.fromArray(reference.initial_camera.up).normalize();
+    camera.up.fromArray(orbitUp).normalize();
     camera.lookAt(target);
     controls.update();
     markers.update();

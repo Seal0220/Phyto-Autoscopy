@@ -3,11 +3,17 @@ import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import InnerPanel from "@/components/panels/InnerPanel";
 
 import AnalysisRunImage from "./AnalysisRunImage";
+import AnalysisRunRoundImages from "./AnalysisRunRoundImages";
 
 export default function AnalysisRunProcessingImages({
   analysisId,
   preview,
   status,
+  initializingRound,
+  model,
+  landmark,
+  correction,
+  onSaved,
 }) {
   const views = preview?.views || [];
   const diagnostics = preview?.diagnostics || {};
@@ -18,7 +24,18 @@ export default function AnalysisRunProcessingImages({
         title={status === "failed" ? "失敗時的處理影像" : "目前處理影像"}
         description={preview?.message}
       />
-      {views.length ? (
+      {initializingRound ? (
+        <AnalysisRunRoundImages
+          key={initializingRound.round_key}
+          analysisId={analysisId}
+          round={initializingRound}
+          marking
+          model={model}
+          landmark={landmark}
+          correction={correction}
+          onSaved={onSaved}
+        />
+      ) : views.length ? (
         <>
           <p className="m-0 break-all text-xs font-semibold text-neutral-400">
             {preview.round_key}

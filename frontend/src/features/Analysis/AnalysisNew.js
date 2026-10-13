@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
   FiArrowRight,
-  FiCheckCircle,
   FiPlay,
   FiRefreshCw,
-  FiSave,
 } from "react-icons/fi";
 import { PiHouseFill } from "react-icons/pi";
 
@@ -60,8 +58,6 @@ export default function AnalysisNew({
     goToStep,
     nextStep,
     previousStep,
-    createRun,
-    validateRun,
     startRun,
   } = useAnalysisSetup({
     initialRecordId,
@@ -164,31 +160,21 @@ export default function AnalysisNew({
     );
   }
 
-  function finalActions() {
-    if (!createdRun) {
-      return (
-        <Button
-          className="ml-auto"
-          variant="primary"
-          disabled={mutationLocked}
-          onClick={() => void createRun()}
-        >
-          <FiSave
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          {mutationPending === "create" ? "建立中…" : "建立分析"}
-        </Button>
-      );
+  async function handleStart() {
+    const run = await startRun();
+    if (run?.analysis_id) {
+      router.push(`/analysis/${encodeURIComponent(run.analysis_id)}`);
     }
+  }
 
-    if (createdRun.status === "ready") {
+  function finalActions() {
+    if (!createdRun || ["draft", "ready"].includes(createdRun.status)) {
       return (
         <Button
           className="ml-auto"
           variant="primary"
           disabled={mutationLocked}
-          onClick={() => void startRun()}
+          onClick={() => void handleStart()}
         >
           <FiPlay
             className="size-4 shrink-0"
@@ -242,13 +228,13 @@ export default function AnalysisNew({
         className="ml-auto"
         variant="primary"
         disabled={mutationLocked}
-        onClick={() => void validateRun()}
+        onClick={() => router.push(`/analysis/${encodeURIComponent(createdRun.analysis_id)}`)}
       >
-        <FiCheckCircle
+        <FiPlay
           className="size-4 shrink-0"
           aria-hidden="true"
         />
-        {mutationPending === "validate" ? "驗證中…" : "驗證分析"}
+        查看分析
       </Button>
     );
   }

@@ -330,6 +330,12 @@ def test_real_cuda_training_exports_only_multiview_plant_geometry(tmp_path, monk
     monkeypatch.setattr(trainer, "_load_sparse_points", lambda _: (points, colors))
     monkeypatch.setattr(trainer, "_initial_scales", lambda values: np.tile(
         np.log(np.array([.08, .10, .12], np.float32)), (len(values), 1)))
+    shape_checks = []
+    shape_loss = trainer._gaussian_shape_loss
+    def record_shape_loss(scales, module):
+        shape_checks.append(len(scales))
+        return shape_loss(scales, module)
+    monkeypatch.setattr(trainer, "_gaussian_shape_loss", record_shape_loss)
     result = trainer.train_gsplat_model(dataset, {
         "quality_preset": "preview", "training_iterations": 500, "image_factor": 1,
         "use_plant_mask": True,
@@ -345,7 +351,8 @@ def test_real_cuda_training_exports_only_multiview_plant_geometry(tmp_path, monk
     selected, _ = foreground_point_selection(exported, dataset)
     assert selected.all()
     assert len(exported) == result.metrics["foreground_selection"]["exported_gaussian_count"]
-    assert result.metrics['densification_gradient_normalized']
+    assert result.metrics['strategy'] == 'MCMCStrategy'
+    assert result.metrics['effective_rank_regularization'] > 0 and shape_checks
     from app.analysis.reconstruction.backends.gsplat_backend import GsplatBackend, GsplatRoundResult
     path = GsplatBackend().export_gaussians(GsplatRoundResult(result, {}), tmp_path / "model.ply")
     header = path.read_bytes().split(b"end_header\n", 1)[0]

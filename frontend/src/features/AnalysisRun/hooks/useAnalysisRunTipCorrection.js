@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { messageFromError } from "@/lib/httpUtils";
-import { saveFormalTipCorrection } from "@/features/TipReview/lib/formalTipReviewApiUtils";
+import { saveAnalysisRoundTip } from "../lib/analysisRoundTipApiUtils";
 import { UnknownAnalysisMutationOutcomeError } from "../lib/analysisRunApiUtils";
 import { tipCorrectionPayload } from "../lib/analysisRoundTipUtils";
 
@@ -13,6 +13,8 @@ export default function useAnalysisRunTipCorrection({
   correction,
   landmark,
   onSaved,
+  initializing = false,
+  requireModel = false,
 }) {
   const [points, setPoints] = useState({});
   const [modelSelection, setModelSelection] = useState(null);
@@ -55,7 +57,6 @@ export default function useAnalysisRunTipCorrection({
   ) => {
     if (controller.current || unknown) return;
     setPoints((previous) => ({ ...previous, [viewId]: point }));
-    setModelSelection(null);
     setError("");
     setNotice("");
   };
@@ -74,18 +75,17 @@ export default function useAnalysisRunTipCorrection({
   ) => {
     if (controller.current || unknown) return;
     setModelSelection(pointId == null ? null : { pointId, signature: reference.signature });
-    setPoints({});
     setError("");
     setNotice("");
   };
   async function save() {
-    if (controller.current || unknown) return;
+    if (controller.current || unknown) return false;
     let payload;
     try {
-      payload = tipCorrectionPayload(roundKey, views, points, modelSelection);
+      payload = tipCorrectionPayload(roundKey, views, points, modelSelection, { initializing, requireModel });
     } catch (failure) {
       setError(failure.message);
-      return;
+      return false;
     }
     const request = new AbortController();
     controller.current = request;
@@ -93,23 +93,27 @@ export default function useAnalysisRunTipCorrection({
     setError("");
     setNotice("");
     try {
-      const result = await saveFormalTipCorrection(analysisId, payload, request.signal);
-      if (!mounted.current || controller.current !== request) return;
+      const result = await saveAnalysisRoundTip(analysisId, payload, request.signal);
+      if (!mounted.current || controller.current !== request) return false;
       setNotice(result.tracking_seed_confirmed
         ? "尖端影像已確認，後續輪次將延續此目標追蹤。三維位置會在量測校正通過後更新。"
         : result.pending_alignment ? "尖端標記已儲存，待相機姿態可用後計算三維位置。" : "尖端已更新，軌跡圖表已同步。");
       try {
         if (await onSaved?.() === false && mounted.current) {
           setError("尖端已儲存，但畫面更新失敗，請重新讀取。");
+          return false;
         }
       } catch {
         if (mounted.current) setError("尖端已儲存，但畫面更新失敗，請重新讀取。");
+        return false;
       }
+      return mounted.current && controller.current === request;
     } catch (failure) {
       if (mounted.current && !request.signal.aborted) {
         setUnknown(failure instanceof UnknownAnalysisMutationOutcomeError);
         setError(messageFromError(failure, "儲存尖端失敗，請重新讀取確認結果。"));
       }
+      return false;
     } finally {
       if (controller.current === request) {
         controller.current = null;

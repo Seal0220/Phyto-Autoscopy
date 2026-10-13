@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PerspectiveCamera, Vector3 } from "three";
 import { createModelMarkerLayer, createTipMarkerLayer } from "../src/features/AnalysisRun/lib/analysisModelMarkers.js";
+import { tipMarkerSvg } from "../src/features/AnalysisRun/lib/analysisTipMarkerUtils.js";
 
 class Element extends EventTarget {
   style = {};
@@ -40,6 +41,8 @@ test("tip markers project the measured position and distinguish confirmed tips f
   assert.equal(node.style.top, "300px");
   assert.equal(node.dataset.tipStatus, "confirmed");
   assert.match(node.innerHTML, /尖端（已確認）/);
+  assert.equal(node.innerHTML, tipMarkerSvg({ label: "尖端（已確認）" }));
+  assert.doesNotMatch(node.innerHTML, /circle r="2"/);
   const graphic = node.innerHTML;
   camera.fov = 20;
   camera.updateProjectionMatrix();
@@ -49,6 +52,9 @@ test("tip markers project the measured position and distinguish confirmed tips f
   assert.equal(node.dataset.tipStatus, "candidate");
   assert.match(node.attributes["aria-label"], /待補正/);
   assert.ok(parseFloat(node.style.left) > 400);
+  marker.setTip({ x_mm: 1, y_mm: 0, z_mm: 0, valid: false, coordinate_space: "model" });
+  assert.equal(node.dataset.tipStatus, "reference");
+  assert.match(node.attributes["aria-label"], /人工參考/);
   marker.setTip({ x_mm: null, y_mm: 0, z_mm: 0, valid: false });
   assert.equal(node.hidden, true, "missing coordinates must not create a tip at the origin");
   marker.setTip({ x_mm: 0, y_mm: 0, z_mm: 11, valid: true });

@@ -12,6 +12,16 @@ import {
   normalizeAnalysisRun,
 } from "../src/features/AnalysisRun/lib/analysisRunUtils.js";
 
+test("completed references distinguish a tracked tip from missing metric registration", () => {
+  const model = { status: "completed" };
+  const landmark = { image_tip_confirmed: true, valid: false };
+  for (const status of ["alignment_pending", "tip_only", "tip_invalid"]) {
+    assert.deepEqual(analysisRoundStatus(status, { model, landmark }), { label: "尖端已追蹤", tone: "success" });
+  }
+  assert.equal(analysisRoundStatus("alignment_pending", { model, landmark, correction: { invalid: true } }).label, "尖端待補標");
+  assert.equal(analysisRoundStatus("alignment_pending").label, "自動對齊未通過");
+});
+
 test("analysis run normalization clamps progress and preserves metadata", () => {
   const run = normalizeAnalysisRun({
     analysis_id: "analysis-1",
@@ -28,6 +38,17 @@ test("analysis run normalization clamps progress and preserves metadata", () => 
   assert.equal(analysisInputCount(run), 3);
   assert.equal(analysisRunDisplay(run).progressPercent, 100);
   assert.equal(normalizeAnalysisProgress({ progress: -1 }).progress, 0);
+});
+
+test("stored diagnostics display the current Taiwan terminology without changing the source", () => {
+  const legacy = "\u53bb\u7578\u8b8a影像";
+  const preview = { message: legacy, coordinate_space: "undistorted" };
+  assert.equal(normalizeAnalysisRun({ last_error: legacy }).last_error, "變形校正影像");
+  const progress = normalizeAnalysisProgress({ last_error: legacy, processing_preview: preview });
+  assert.equal(progress.last_error, "變形校正影像");
+  assert.equal(progress.processing_preview.message, "變形校正影像");
+  assert.equal(progress.processing_preview.coordinate_space, "undistorted");
+  assert.equal(preview.message, legacy);
 });
 
 test("analysis route IDs reject path and oversized input", () => {
@@ -74,21 +95,22 @@ test("round progress shows the round while results are available during processi
 });
 
 test("analysis run actions follow lifecycle status", () => {
-  assert.equal(analysisRunActionAvailability("draft").validate, true);
+  assert.equal(analysisRunActionAvailability("draft").start, true);
+  assert.equal(analysisRunActionAvailability("draft").validate, undefined);
   assert.equal(analysisRunActionAvailability("ready").start, true);
   assert.equal(analysisRunActionAvailability("processing").cancel, true);
   assert.equal(analysisRunActionAvailability("failed").retry, true);
   assert.equal(analysisRunActionAvailability("failed").reset, true);
   assert.equal(analysisRunActionAvailability("failed").resume, false);
   assert.equal(analysisRunActionAvailability("paused").resume, true);
-  assert.equal(analysisRunActionAvailability("needs_review").review, true);
+  assert.equal(analysisRunActionAvailability("needs_review").review, false);
   assert.equal(analysisRunActionAvailability("needs_review").skipReview, true);
   assert.equal(analysisRunActionAvailability("reviewing").skipReview, true);
   assert.equal(analysisRunActionAvailability("completed").skipReview, false);
   assert.equal(analysisRunActionAvailability("completed").results, true);
   assert.equal(analysisRunActionAvailability("completed").export, true);
   const partial = analysisRunActionAvailability("partially_completed", "completed");
-  assert.equal(partial.review, true);
+  assert.equal(partial.review, false);
   assert.equal(partial.skipReview, false);
   assert.equal(partial.results, true);
   assert.equal(partial.export, true);

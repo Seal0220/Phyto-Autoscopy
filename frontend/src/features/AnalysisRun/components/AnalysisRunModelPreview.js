@@ -4,11 +4,13 @@ import RetryMessage from "@/components/feedback/RetryMessage";
 
 import useAnalysisRunModelPreview from "../hooks/useAnalysisRunModelPreview";
 import AnalysisRunModelReference from "./AnalysisRunModelReference";
+import { savedModelTipLandmark, trackedModelTipLandmark } from "../lib/analysisModelCoordinateUtils";
 
 function AnalysisRunModelPreviewContent({
   analysisId,
   model,
   landmark,
+  correction,
 }) {
   const preview = useAnalysisRunModelPreview({
     analysisId,
@@ -34,12 +36,19 @@ function AnalysisRunModelPreviewContent({
     );
   }
   return (
-    <AnalysisRunModelReference
-      analysisId={analysisId}
-      reference={preview.reference}
-      landmark={landmark}
-      readOnly
-    />
+    <>
+      <AnalysisRunModelReference
+        analysisId={analysisId}
+        reference={preview.reference}
+        landmark={correction?.invalid ? null : savedModelTipLandmark(correction, preview.reference) || trackedModelTipLandmark(preview.reference, landmark) || landmark}
+        readOnly
+      />
+      {preview.reference.geometry_warning ? (
+        <p className="m-0 text-sm text-neutral-300" role="status">
+          {preview.reference.geometry_warning}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -47,6 +56,7 @@ export default function AnalysisRunModelPreview({
   analysisId,
   model,
   landmark,
+  correction,
 }) {
   if (model?.status !== "completed" || !(model.plant_model_path || model.model_path)) {
     return (
@@ -61,6 +71,7 @@ export default function AnalysisRunModelPreview({
       analysisId={analysisId}
       model={model}
       landmark={landmark}
+      correction={correction}
     />
   );
 }

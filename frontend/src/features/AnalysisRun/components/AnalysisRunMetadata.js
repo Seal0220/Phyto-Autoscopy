@@ -79,7 +79,7 @@ function analysisMetadata(
       {
         label: "座標空間",
         value: run.parameters?.coordinate_space === "undistorted"
-          ? "去畸變影像座標"
+          ? "變形校正影像座標"
           : "尚無資料",
       },
     ],
@@ -146,8 +146,8 @@ function analysisMetadata(
         ] || "不建立模型",
       },
       {
-        label: "人工確認",
-        value: run.manual_review_completed ? "已確認" : "可選擇補正",
+        label: "尖端修改",
+        value: "在各輪結果操作",
       },
     ],
   };

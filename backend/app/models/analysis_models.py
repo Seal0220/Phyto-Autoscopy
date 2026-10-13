@@ -521,9 +521,10 @@ class TipCorrectionRequest(BaseModel):
     def validate_correction(self) -> "TipCorrectionRequest":
         if self.model_point_id is not None or self.model_signature is not None:
             if (self.model_point_id is None or self.model_signature is None
-                    or self.observations or self.corrected_point_mm is not None or self.invalid):
-                raise ValueError("模型尖端選點必須提供點編號與模型簽章，且不可同時送出其他座標。")
-            return self
+                    or self.corrected_point_mm is not None or self.invalid):
+                raise ValueError("模型尖端選點必須提供點編號與模型簽章，且不可同時送出毫米座標或無效標記。")
+            if not self.observations:
+                return self
         if self.invalid:
             if self.observations or self.corrected_point_mm is not None:
                 raise ValueError("無效標記不可同時提供修正座標。")

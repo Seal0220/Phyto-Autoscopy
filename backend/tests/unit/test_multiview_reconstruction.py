@@ -58,6 +58,19 @@ def test_three_view_refinement_reduces_synthetic_position_error() -> None:
     assert refined.used_observations == (True, True, True)
 
 
+def test_consensus_uses_all_views_when_the_first_observation_is_wrong():
+    expected = np.array([20., -15., 750.])
+    projections = [_projection(0), _projection(100), _projection(20, 90), _projection(-60, 20)]
+    pixels = np.array([_project(projection, expected) for projection in projections])
+    pixels[0] += [80, 0]  # Also admits a false but valid top/side two-view seed.
+    for order in ([0, 1, 2, 3], [3, 0, 2, 1]):
+        result = robust_multiview_triangulate([projections[i] for i in order], pixels[order],
+            camera_ids=["top" if i == 0 else "rotating" for i in order],
+            rejection_threshold_px=3, seed_policy="consensus")
+        np.testing.assert_allclose(result.point, expected, atol=1e-6)
+        assert result.used_observations == tuple(i != 0 for i in order)
+
+
 def test_invalid_rotating_observation_is_rejected_without_losing_baseline() -> None:
     expected = np.asarray([20.0, -15.0, 750.0])
     projections = (

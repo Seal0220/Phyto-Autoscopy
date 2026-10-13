@@ -76,7 +76,7 @@ frontend/src/
 │  │  └─ models/page.js      # models placeholder
 │  ├─ actions/               # server actions such as authentication
 │  ├─ api/                   # same-origin BFF route handlers
-│  ├─ globals.css            # Tailwind v4 entry point only
+│  ├─ globals.css            # Tailwind v4 entry point and shared global base styles
 │  └─ layout.js              # document shell and authenticated application shell
 ├─ components/
 │  ├─ actions/               # shared ActionRow
@@ -206,6 +206,8 @@ Core principles:
 | Error/destructive         | Rose 100–600                            | Errors, offline and destructive actions |
 
 Use opacity deliberately for surfaces and borders. Do not replace translucent white/black surfaces with flat opaque gray. Text is the exception: use solid `text-neutral-*` values instead of white with opacity. Do not introduce another normal accent color for a new feature.
+
+Global scrollbars belong in `app/globals.css` under the base layer. Use the same dark green track and muted green rounded thumb for page, pane, menu, and horizontal scrolling; provide Firefox's standard properties, the WebKit scrollbar fallback, a brighter hover state, and native system colors in forced-colors mode. Do not copy scrollbar styles into feature components.
 
 ### 4.3 Text colors
 
@@ -382,7 +384,7 @@ For a group of status cards, use an explicit equal-width grid such as `grid-cols
 
 Use `InformationGrid` from `components/data/InformationGrid.js` for compact fixed-format label/value information. It owns configurable numeric `rows` and `columns`, column-first item flow, full-height neutral column dividers, label/value alignment, optional hover-only requirement tooltip, semantic value tones, narrow-screen stacking, and optional internal horizontal scrolling. Callers provide an `items` array containing `label`, `value`, optional `tone`, optional `requirement`, and optional `truncate`; they must not restate the grid, divider, `dt`, or `dd` classes. Pass only `rows` to derive `columns`, or only `columns` to derive `rows`; when neither is provided the component defaults to two rows and derives its columns. Pass both only when an exact grid capacity is intentional.
 
-Current consumers include calibration coverage metrics, camera intrinsic summaries, available-Record summaries, and persisted capture configuration. Use named props rather than `children` because the component owns a fixed information schema. This component is for compact facts, not dominant runtime status; continue to use `StatusCard` when content requires the title/content/note hierarchy.
+Current consumers include calibration coverage metrics, camera intrinsic summaries, available-Record summaries, and persisted capture configuration. Use named props rather than `children` because the component owns a fixed information schema. Set `wrapValues` when a narrow content pane needs labels and long values to wrap onto separate lines without overlapping. This component is for compact facts, not dominant runtime status; continue to use `StatusCard` when content requires the title/content/note hierarchy.
 
 ### 6.4 `ActionRow`
 
@@ -546,6 +548,8 @@ The gear rotation is an established exception to the general no-transform hover 
 
 `StatusPill` is exported from `components/panels/Panel.js`. It is a small rounded-full label with a current-color status dot.
 
+Use its optional `compact` variant in dense lists: it retains the semantic tone and status dot with a smaller, wrapping label. Keep the default size elsewhere.
+
 Use tones semantically:
 
 - `success`: emerald;
@@ -696,7 +700,15 @@ Each analysis owns one result page and one chart set. `fixed` displays the fixed
 
 Process and publish each Round independently. First pause each mode at `waiting_for_tip_seed`, open its first complete Round, and identify the same shoot apex in a simultaneous undistorted top/side pair. Confirming a trackable image seed resumes processing automatically. Then prepare each Round's images, build its immutable auxiliary model from successfully registered views, follow the seeded image target, and update the cross-Round trajectory before advancing. A missing or rejected later tip does not block subsequent Rounds or force review at completion. Preserve explicit trajectory gaps and allow inline correction while other Rounds train. Distinguish confirmed image identity (`image_tip_confirmed`, `image_observations`) from calibrated millimetre validity (`valid`); missing model-camera registration cannot make a saved image mark disappear. Saving or deleting corrections updates resolved rows, counts and trajectory without rebuilding models. Keep raw automatic landmarks as audit data. Camera calibration remains necessary for metric measurements. Analysis creation must not expose extra tip-review policy controls.
 
-An expanded Round result displays its actual Gaussian model through `AnalysisRunModelPreview`, shared with the manual tip-review model panel. Load the model only while that Round is expanded and release the viewer on collapse. Use the existing model viewer with drag-to-orbit, wheel zoom, right-drag pan, and only a reset-camera button; a read-only preview must not add reference points. Obtain model framing and the trained initial camera through the read-only, Round-scoped `round-model-preview` API. Use the complete trained artifact when its foreground is already the plant and pot; the plant-only export can remove the pot. Prefer the isolated plant artifact for older full-scene models. Show the captured/reprojection images directly when the Round is expanded, with the three cameras sharing one row at widths of 720px and above and stacking on smaller screens. Place the interactive model below the images, without a nested image disclosure, and never list all rendered model PNGs as the model preview. Expanded Round content grows with the page rather than scrolling inside a height-limited results block. Style each disclosure's direct summary chevron from that details element's own open attribute so a nested closed image section cannot inherit its parent Round's open indicator.
+Round results use a two-column workspace in `AnalysisRunRoundOverview`: a compact `AnalysisRunRoundList` up to 18rem wide on the left and one selected `AnalysisRunRoundDetail` on the right. Put the mode and Round on one line when they fit, with compact colored Round and model status pills below; omit the redundant model pill when both are waiting for camera alignment. Keep the workspace within the dynamic viewport height after allowing space for the application's fixed navigation, with its heading and totals outside the independently scrolling panes. The list and the detail's inner content use `min-h-0`, `overflow-y-auto`, and `overscroll-contain` so neither their content nor reaching a scroll boundary extends or scrolls the page. Preserve the selected Round and both scroll positions through background data updates; switching Rounds resets only the detail pane and releases the previous image requests and model viewer. Keep the two columns on narrow screens with compact, wrapping Round labels. Use vertical tabs with unique IDs, ArrowUp/ArrowDown/Home/End navigation, and scroll only the Round list when revealing a keyboard selection.
+
+The selected Round's bottom control bar is a fixed grid row outside its scrolling content. `AnalysisRunRoundImageControls` owns capture-group/image-space selectors and group navigation; `AnalysisRunRoundImages` places these and the feature toggle in the bar through scoped portal targets, retaining ownership of gallery state. Group the retry, feature toggle and edit-tip action with shared `ActionRow`; editing replaces the edit action with the editor's save action at the same location. Narrow control rows may scroll horizontally inside the bar without widening the page. Polling must preserve the editor's draft. The current-processing first-Round initializer retains inline controls when no portal targets are provided.
+
+The selected Round displays its actual Gaussian model through `AnalysisRunModelPreview`, shared with its inline tip editor. Mount images and models only for the selected Round. Use the existing model viewer with drag-to-orbit, wheel zoom, right-drag pan, and only a reset-camera button; a read-only preview must not add reference points. Obtain model framing and the trained initial camera through the read-only, Round-scoped `round-model-preview` API. Use the complete trained artifact when its foreground is already the plant and pot; the plant-only export can remove the pot. Prefer the isolated plant artifact for older full-scene models. Show the captured/reprojection images directly, with the three cameras sharing one row at a content-container width of 720px and above and stacking in narrower panes. Place the interactive model below the images, without a nested image disclosure, and never list all rendered model PNGs as the model preview. Keep retry and tip-edit/save actions in the selected Round's fixed bottom control bar. In a model container narrower than 320px, preserve the accessible reset-camera action as a compact icon button.
+
+The legacy `/analysis/[analysisId]/review` route redirects to the existing Round workspace, selecting the requested `round_key` or filtering to `tip_filter=missing`. Do not introduce a second whole-run tip-confirmation step. The workspace's `顯示輪次` selector keeps all Rounds available while limiting the correction queue to processed Rounds without a confirmed image or metric tip; explicitly invalid manual corrections remain skipped. Missing metric registration alone never adds a confirmed image tip to this queue. Result pages resolve the latest corrections, show confirmed-tip and metric counts independently, and render top/side image trajectories in undistorted pixel coordinates with gaps and Round links. These plots must never substitute pixels or independent model coordinates for millimetre measurements. Show the metric trajectory only when valid metric points exist.
+
+Keep the user workflow as analysis followed by viewing results. All Round images, interactive models, tip edits, and Round measurement quality belong to the existing `AnalysisRunRoundOverview` workspace on the analysis page. `AnalysisRunRoundTipImage`, `AnalysisRunTipImage`, and `analysisRoundTipApiUtils` are owned by AnalysisRun; do not restore a standalone whole-run confirmation editor or load every image for review. The result page contains trajectory plots, mode summaries, export, refresh, and one `返回分析` action. It must not duplicate the model gallery, Round list, or tip editor. Saving a tip in the analysis workspace refreshes the same data and trajectory through the existing correction API.
 
 ## 8. Interaction and motion
 
@@ -1053,9 +1065,23 @@ When a request intentionally changes the design system, update the shared primit
 
 ### Commands and process
 
-AnalysisRun 的每輪尖端編輯集中於 `AnalysisRunRoundTipEditor`：同一擷取組的俯視與側視影像位於上方，`AnalysisRunRoundTipModel` 位於下方。旋臂影像僅保留在一般影像瀏覽，不提供尖端標記入口。影像標記與模型選點為兩種可切換的輸入；模型只提交 Gaussian 點編號與簽章，由後端解析位置。已找到與待補正的尖端都可以在其他輪仍訓練時修改並儲存。模型尖端標記使用「尖」標籤，可拖動與右鍵刪除；缺少固定鏡頭註冊時顯示實際訓練鏡頭張數。
+固定鏡頭定位先使用 COLMAP，缺少姿態時自動以盆緣正規化、穩定土壤紋理與懸臂多視角三角定位補足參照點，並檢查保留特徵重投影。已完成的模型保持原始幾何。模型完成與影像尖端已追蹤的輪次使用「尖端已追蹤」狀態；毫米座標未通過仍顯示量測原因，可「重新自動對齊」，不以人工相機配對作為後續追蹤的必要步驟。`reference.model_tip` 與 `landmark.tracking.model_tip` 提供簽章綁定、位於該輪模型座標的輔助尖端，後續模型以相近懸臂角度的外觀追蹤及多視角三角定位延續，不沿用 Gaussian 點編號或上一輪座標，也不直接當成毫米軌跡。`analysisTipMarkerUtils.tipMarkerSvg` 統一模型與俯／側影像的空心圓、十字與偏移「尖」標籤，編輯與全螢幕共用樣式與操作。
 
-第一輪初始化只提供俯視／側視的生長尖端標記，確認後自動延續追蹤；後續人工影像修正更新追蹤目標。`AnalysisRunRoundImages` 以 `useAnalysisRunFeatureCorrespondences` 讀取本輪、同擷取組的實際 COLMAP 配對，預設在去畸變影像上顯示青色特徵點。`AnalysisRunImageFeatureMarkers` 以共享特徵 ID 與上層 hover／focus 狀態同步高亮其他影像的對應點。尖端保留較大的綠色「尖」標記。未註冊鏡頭不產生假對應點；切換擷取組清除高亮，取消過期請求，讀取失敗提供重試。一般影像保持三張直接顯示；尖端編輯只使用固定雙鏡頭。
+AnalysisRun 的每輪尖端編輯集中於 `AnalysisRunRoundTipEditor`：同一擷取組的俯視與側視影像位於上方，`AnalysisRunRoundTipModel` 位於下方。旋臂影像僅保留在一般影像瀏覽，不提供尖端標記入口。影像標記與模型選點可一起儲存；模型只提交 Gaussian 點編號與簽章，由後端解析位置。已找到與待補正的尖端都可以在其他輪仍訓練時修改並儲存。影像與模型尖端使用空心圓，可拖動與右鍵刪除；`AnalysisRunTipImage` 共用一般及全螢幕選點座標換算，`FullscreenImage.imageContent` 提供可互動影像內容。懸臂模型使用 `model_camera_ids` 區分刻意只用懸臂訓練與固定鏡頭註冊失敗。
+
+第一輪先建立懸臂參考模型，再由 `AnalysisRunProcessingImages` 在「目前處理影像」直接呈現模型、俯視與側視尖端初始化；三者一起保存並確認追蹤起點後，自動延續後續輪次。各輪結果不另強制展開初始化編輯器；後續人工影像修正更新追蹤目標。`AnalysisRunRoundImages` 以 `useAnalysisRunFeatureCorrespondences` 讀取本輪、同擷取組的實際 COLMAP 配對，預設在變形校正影像上顯示青色特徵點。`AnalysisRunImageFeatureMarkers` 以共享特徵 ID 與上層 hover／focus 狀態同步高亮其他影像的對應點。未註冊鏡頭不產生假對應點；切換擷取組清除高亮，取消過期請求，讀取失敗提供重試。一般影像保持三張直接顯示；尖端影像編輯只使用固定雙鏡頭。「開始分析」一次建立紀錄、完成背景輸入檢查並繼續處理，成功啟動後直接前往分析進度頁，不提供另一個驗證分析按鈕。準備階段使用「分析準備中」與共用的「分析進度」，設定末步標題為「確認並開始」。啟動失敗保留已建立草稿，重試只啟動同一筆分析；結果不確定時必須先確認狀態，不重複建立或啟動。
+
+模型預覽可呈現後端 `geometry_warning`，提示既有模型的影像幾何不穩定，保留 Gaussian 與人工標記。`trackedModelTipLandmark` 優先採用較新版追蹤證據，避免舊的持久化標記覆蓋已更新的預覽位置。各視角提供獨立影像證據；模型投影與影像追蹤有衝突時，模型不直接覆蓋可靠的影像位置。
+
+模型預覽的旋轉軸優先使用 `initial_camera.orbit_up`（影像重建的懸臂軸），缺少時沿用 `up`；重設與拖曳使用同一軸。明確要求修復的既有模型以版本化副本提供預覽，原始 Gaussian、訓練進度與人工標記保留。修復後的模型尖端透過原始影像重新追蹤到新模型座標，不複製舊座標；新模型未有毫米註冊時不沿用舊註冊，也不作為固定影像追蹤的投影提示。
+
+每輪尖端操作集中在影像與模型下方同一個位置：一般模式只有「修改尖端」或「標記尖端」，編輯模式改為「儲存尖端」，不另提供結束標記按鈕。儲存及畫面更新成功後自動結束編輯；驗證失敗、儲存失敗或結果不確定時保留編輯內容與錯誤恢復操作。第一輪仍使用「確認尖端並開始追蹤」。
+
+分析紀錄頁的導覽按鈕位於 `PanelHeader`：依序為「重新讀取」、「查看結果」、「返回分析」。結果可用時才顯示「查看結果」，保留原有操作鎖定規則；`AnalysisRunActions` 不重複顯示結果導覽按鈕。
+
+結果頁的工具依序為「重新讀取」、「匯出結果」、「返回分析」，返回按鈕固定在工具列最後，使用向左箭頭返回該筆分析。暫停的分析使用「繼續分析」，失敗或取消的分析使用「重試未完成項目」，不把接續工作標成從頭開始。主要導覽在 980px 以下由外層容器跨欄放在第二列，與右上操作分開；品牌下方標示使用目前路由所屬功能名稱。
+
+結果頁的三維軌跡由 `useFormalTrajectoryPlot` 保持同一個 Plotly 場景。背景資料更新與點數改變不銷毀圖表，保留旋轉、平移、縮放及圖例狀態；只有離開圖表、切換分析或明確重試時清理場景。繪圖、重設與清理依序執行，避免舊的非同步工作清掉新圖表。`formalTrajectoryRanges` 使用有效毫米座標與世界原點，為三軸提供相同跨度，並在最長跨度兩端各留 15% 空間；以立方框顯示，保留等比例量測，避免狹長座標框與點貼邊。
 
 - [ ] Search touched paths for stale references and duplicate implementations.
 - [ ] Run `git diff --check`.

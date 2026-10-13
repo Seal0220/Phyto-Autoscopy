@@ -39,10 +39,10 @@ test("analysis pause controls wait for saving and preserve checkpoint progress",
   const display = analysisRunDisplay({
     image_probe_backends: { cpu: 2, remap_gpu: 2, remap_cpu: 0, reused: 10 },
   });
-  assert.equal(display.probeNote, "GPU 去畸變 2 張 · CPU 去畸變 0 張 · 沿用已完成影像 10 張");
+  assert.equal(display.probeNote, "GPU 變形校正 2 張 · CPU 變形校正 0 張 · 沿用已完成影像 10 張");
   assert.equal(analysisRunDisplay({
     image_probe_backends: { remap_gpu: 0, remap_cpu: 0, reused: 55, reused_gpu: 55, reused_cpu: 0 },
-  }).probeNote, "GPU 去畸變 55 張 · CPU 去畸變 0 張 · 沿用已完成影像 55 張");
+  }).probeNote, "GPU 變形校正 55 張 · CPU 變形校正 0 張 · 沿用已完成影像 55 張");
   assert.equal(analysisRunDisplay({ image_probe_backends: { workers: 16 } }).probeNote, "自動並行 16 執行緒");
   assert.equal(analysisRunDisplay({
     image_probe_backends: { workers: 32, worker_limit: 128, tuning: 1 },
@@ -83,14 +83,15 @@ test("socket progress retains failure images and identifies stereo stage", () =>
   assert.equal(normalizeAnalysisProgress({}).processing_preview, null);
 });
 
-test("validation displays stage counts and actual GPU, conversion and CPU fallback counts", () => {
+test("analysis preparation shares analysis progress and retains conversion counts", () => {
   const progress = normalizeAnalysisProgress({
     analysis_id: "test", status: "validating", stage: "validating_images",
     current_frame: 32, total_frames: 100, progress: .144,
     image_probe_backends: { gpu: 30, cpu: 2, converted: 32 },
   });
   const display = analysisRunDisplay(progress);
-  assert.equal(display.progressTitle, "驗證進度");
+  assert.equal(display.progressTitle, "分析進度");
+  assert.equal(display.status.label, "分析準備中");
   assert.equal(display.progressNote, "32 / 100 筆");
   assert.equal(display.stage, "轉檔並檢查影像");
   assert.equal(display.progressPercent, 14);

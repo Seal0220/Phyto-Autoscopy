@@ -57,6 +57,50 @@ def _scene(include_fixed=True, point_count=24):
     return pycolmap, rec, views
 
 
+def test_new_geometry_tries_another_image_pair_before_training_without_changing_source(tmp_path, monkeypatch):
+    from app.analysis.reconstruction import reference_sfm
+
+    pycolmap, good, views = _scene(include_fixed=False)
+    source = tmp_path / "source.png"
+    source.write_bytes(b"read-only input")
+    for image_id, view in enumerate(views, 1):
+        view.update(undistorted_path=str(source), undistorted_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+        good.image(image_id).name = reference_sfm.reference_image_name(view)
+    good.update_point_3d_errors()
+    bad = pycolmap.Reconstruction(good)
+    for image_id in bad.reg_image_ids():
+        image = bad.image(image_id)
+        pose = image.cam_from_world().matrix().copy()
+        pose[:, :3] = cv2.Rodrigues(np.array([.1 * (-1) ** image_id, 0., 0.]))[0] @ pose[:, :3]
+        bad.frame(image.frame_id).rig_from_world = pycolmap.Rigid3d(pose)
+    bad.update_point_3d_errors()
+    originals = {image_id: bad.image(image_id).cam_from_world().matrix().copy() for image_id in bad.reg_image_ids()}
+    pairs = [{"image_ids": [1, 2]}, {"image_ids": [3, 4]}]
+    calls = []
+
+    def mapping(*args, **kwargs):
+        calls.append(args[3].init_image_id1)
+        return {0: bad if len(calls) == 1 else good}
+
+    monkeypatch.setattr(pycolmap, "extract_features", lambda **kwargs: None)
+    monkeypatch.setattr(pycolmap, "match_exhaustive", lambda **kwargs: None)
+    monkeypatch.setattr(pycolmap, "incremental_mapping", mapping)
+    monkeypatch.setattr(reference_sfm, "prepare_reference_feature_masks", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(reference_sfm, "reference_initial_pair", lambda *args, **kwargs: pairs)
+    result = reference_sfm.build_reference_sfm({"selected_views": views,
+        "intrinsics_snapshot": {"rotating": {"undistorted_camera_matrix": [[400, 0, 160], [0, 400, 120], [0, 0, 1]],
+                                  "analysis_image_width": 320, "analysis_image_height": 240}},
+        "parameters": {}, "artifact_root": str(tmp_path), "refine_geometry": False, "stabilize_initial_geometry": True},
+        tmp_path / "reference", progress=lambda *args: None, cancel_check=lambda: None)
+    assert calls == [1, 3]
+    assert result["quality"]["initial_pair"]["image_ids"] == [3, 4]
+    assert result["quality"]["initial_geometry_validation"]["status"] == "passed"
+    assert result["quality"]["initial_geometry_validation"]["attempts"][0]["status"] == "unstable"
+    for image_id, pose in originals.items():
+        np.testing.assert_array_equal(bad.image(image_id).cam_from_world().matrix(), pose)
+    assert source.read_bytes() == b"read-only input"
+
+
 @pytest.mark.parametrize("include_fixed", [True, False])
 def test_reference_is_refined_before_training_without_changing_source(include_fixed):
     pycolmap, rec, views = _scene(include_fixed)
@@ -273,7 +317,7 @@ def test_refinement_never_hides_unexpected_solver_errors(monkeypatch):
         refine_reference_geometry(pycolmap, rec, views, cancel_check=lambda: None)
 
 
-def test_geometry_upgrade_invalidates_saved_camera_alignment_and_preview(monkeypatch):
+def test_geometry_upgrade_changes_new_training_jobs_but_keeps_existing_reference_alignment(monkeypatch):
     from app.services import analysis_service
 
     _, _, views = _scene()
@@ -287,6 +331,6 @@ def test_geometry_upgrade_invalidates_saved_camera_alignment_and_preview(monkeyp
     signature = analysis_service.AnalysisService._stereo_pose_signature(run)
     before = analysis_service.AnalysisService._reference_model_job(run, reference, views, alignment_preview=True)
     monkeypatch.setattr(analysis_service, "REFERENCE_GEOMETRY_VERSION", before["reference_geometry_version"] + 1)
-    assert analysis_service.AnalysisService._stereo_pose_signature(run) != signature
+    assert analysis_service.AnalysisService._stereo_pose_signature(run) == signature
     after = analysis_service.AnalysisService._reference_model_job(run, reference, views, alignment_preview=True)
     assert after != before

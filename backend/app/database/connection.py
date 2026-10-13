@@ -37,9 +37,14 @@ class Database:
 
     def execute(self, sql: str, parameters: Iterable[object] = ()) -> sqlite3.Cursor:
         with self._lock:
-            cursor = self.connection.execute(sql, tuple(parameters))
-            self.connection.commit()
-            return cursor
+            connection = self.connection
+            try:
+                cursor = connection.execute(sql, tuple(parameters))
+                connection.commit()
+                return cursor
+            except Exception:
+                connection.rollback()
+                raise
 
     def fetchone(self, sql: str, parameters: Iterable[object] = ()) -> sqlite3.Row | None:
         with self._lock:

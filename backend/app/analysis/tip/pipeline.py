@@ -284,7 +284,7 @@ def analyze_round_tip(
             metadata.get("valid_pixel_mask_path") or ""
         )
         if not image_path.is_file() or not valid_mask_path.is_file():
-            warnings.append(f"{view.view_id} 缺少去畸變影像或有效遮罩。")
+            warnings.append(f"{view.view_id} 缺少變形校正影像或有效遮罩。")
             continue
         projection, center = _projection(pose, intrinsics)
         source_images[view.view_id] = image_path

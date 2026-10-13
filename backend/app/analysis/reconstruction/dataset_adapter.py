@@ -390,14 +390,14 @@ def prepare_round_dataset(
                 source.relative_to(artifact_root)
             except ValueError as error:
                 raise ValueError(
-                    f"View {view_id} 的去畸變影像不在分析產物目錄內。"
+                    f"View {view_id} 的變形校正影像不在分析產物目錄內。"
                 ) from error
         if not source.is_file():
-            raise ValueError(f"View {view_id} 的去畸變影像不存在。")
+            raise ValueError(f"View {view_id} 的變形校正影像不存在。")
         source_hash = _sha256(source)
         expected_hash = str(raw_view.get("undistorted_sha256") or "").strip()
         if expected_hash and source_hash != expected_hash:
-            raise ValueError(f"View {view_id} 的去畸變影像已變更。")
+            raise ValueError(f"View {view_id} 的變形校正影像已變更。")
 
         image_name = (
             f"{camera_id}__{safe_artifact_name(view_id)}{source.suffix.lower()}"
@@ -442,7 +442,7 @@ def prepare_round_dataset(
         camera_matrix = _matrix(
             snapshot["undistorted_camera_matrix"],
             (3, 3),
-            label=f"{camera_id} 去畸變內參",
+            label=f"{camera_id} 變形校正內參",
         )
         rotation = _matrix(
             pose.get("rotation_matrix"),

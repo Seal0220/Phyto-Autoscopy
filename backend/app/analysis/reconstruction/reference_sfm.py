@@ -11,6 +11,7 @@ import cv2
 from app.analysis.checkpoints import StepJournal, step_signature
 from app.analysis.export.json_export import write_json_atomic
 from app.analysis.pose_alignment.model_reference import fit_motor_orbit
+from app.analysis.pose_alignment.stable_features import STABLE_FEATURE_VERSION, augment_stable_tracks, localise_stable_camera, pot_rim_region
 from app.analysis.reconstruction.dataset_adapter import _materialize_read_only_image, _sha256
 from app.analysis.rounds.paths import safe_artifact_name
 from app.analysis.image_probe import read_analysis_image
@@ -24,7 +25,8 @@ def reference_image_name(view: dict) -> str:
     return f"{view['camera_id']}__{safe_artifact_name(view['view_id'])}{Path(view['undistorted_path']).suffix.lower()}"
 
 
-def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], minimum_inliers: int, *, cancel_check=lambda: None):
+def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], minimum_inliers: int, *, cancel_check=lambda: None,
+                           maximum_candidates=1):
     """Choose depth support measured from images rather than match count alone.
 
     Motor readings only restrict the candidate search. The score uses the
@@ -63,7 +65,7 @@ def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], min
         options.min_num_inliers = minimum_inliers
         options.compute_relative_pose = True
         options.ransac.random_seed = 0
-        best = None
+        ranked = []
         for _, baseline, first, second, geometry in candidates:
             cancel_check()
             camera1 = database.read_camera(images[first].camera_id)
@@ -95,9 +97,48 @@ def reference_initial_pair(pycolmap, database_path: Path, views: list[dict], min
                          "camera_id": "rotating", "source": "calibrated_image_geometry",
                          "triangulation_angle_deg": float(np.rad2deg(triangle)),
                          "verified_inlier_count": support, "depth_support_score": float(score)}
-            if best is None or score > best[0]:
-                best = (score, candidate)
-    return best[1] if best else None
+            ranked.append((score, candidate))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if maximum_candidates == 1:
+        return ranked[0][1] if ranked else None
+    selected = []
+    for _, candidate in ranked:
+        if all(not set(candidate["image_ids"]) & set(other["image_ids"]) for other in selected):
+            selected.append(candidate)
+        if len(selected) == maximum_candidates:
+            break
+    return selected
+
+
+def reference_geometry_check(reconstruction, views):
+    """Check the orbit inferred from all image poses, not a top-camera rule."""
+    by_name = {reference_image_name(view): view for view in views}
+    poses = []
+    for image_id in reconstruction.reg_image_ids():
+        image = reconstruction.image(image_id)
+        if image.name not in by_name:
+            continue
+        pose = np.eye(4)
+        pose[:3] = image.cam_from_world().matrix()
+        poses.append({**by_name[image.name], "pose": pose.tolist()})
+    try:
+        orbit = fit_motor_orbit(poses)
+        error = float(reconstruction.compute_mean_reprojection_error())
+        coverage = sum(v["camera_id"] == "rotating" for v in poses) / max(1, sum(v["camera_id"] == "rotating" for v in views))
+        passed = (np.isfinite(error) and error <= 2 and coverage >= .8
+                  and orbit["rotation_rmse_deg"] <= 2 and orbit["position_rmse_over_radius"] <= .035)
+        return {"status": "passed" if passed else "unstable", "mean_reprojection_error_px": error,
+                "rotation_rmse_deg": orbit["rotation_rmse_deg"],
+                "position_rmse_over_radius": orbit["position_rmse_over_radius"], "orbit_coverage": coverage,
+                "scope": "internal_multiview_image_consistency", "absolute_accuracy_verified": False}
+    except ValueError as error:
+        return {"status": "unstable", "reason": str(error), "absolute_accuracy_verified": False}
+
+
+def reference_geometry_rank(quality):
+    return (quality["status"] == "passed", quality.get("orbit_coverage", 0) >= .8,
+            -quality.get("rotation_rmse_deg", float("inf")),
+            -quality.get("mean_reprojection_error_px", float("inf")))
 
 
 def prepare_reference_feature_masks(views, root: Path, signature: str, *, cancel_check) -> Path:
@@ -126,6 +167,76 @@ def prepare_reference_feature_masks(views, root: Path, signature: str, *, cancel
     return masks
 
 
+def localise_unregistered_fixed(reconstruction, registered_views, views, intrinsics, *, progress, cancel_check):
+    """Localise missing cameras without changing any existing model frame."""
+    registered_view_ids = {v["view_id"] for v in registered_views}
+    missing = sorted({v["camera_id"] for v in views if v["view_id"] not in registered_view_ids})
+    quality = {"version": STABLE_FEATURE_VERSION, "cameras": {}}
+    if not missing:
+        return [], quality
+    by_name = {reference_image_name(v): v for v in views}
+    registered_ids = set(reconstruction.reg_image_ids())
+    orbit_images = [image for image in reconstruction.images.values()
+                    if image.image_id in registered_ids
+                    and image.name in by_name and by_name[image.name]["camera_id"] == "rotating"]
+    orbit_images.sort(key=lambda image: float(by_name[image.name].get("angle_deg") or 0))
+    primary = np.linspace(0, len(orbit_images) - 1, min(6, len(orbit_images)), dtype=int)
+    indexes = set(int(index) for index in primary)
+    for index in primary:
+        # Three nearby views supply measured depth for otherwise sparse soil
+        # tracks; angular metadata chooses candidates, never their poses.
+        angle = float(by_name[orbit_images[index].name].get("angle_deg") or 0)
+        distance = lambda i: abs((float(by_name[orbit_images[i].name].get("angle_deg") or 0) - angle + 180) % 360 - 180)
+        indexes.update(sorted((i for i in range(len(orbit_images)) if 4 <= distance(i) <= 20), key=distance)[:2])
+    sources = []
+    for index in sorted(indexes):
+        cancel_check()
+        image = orbit_images[index]
+        view = by_name[image.name]
+        linked = [(point.xy, point.point3D_id, reconstruction.points3D[point.point3D_id])
+                  for point in image.points2D if point.has_point3D()
+                  and point.point3D_id in reconstruction.points3D
+                  and reconstruction.points3D[point.point3D_id].track.length() >= 3
+                  and reconstruction.points3D[point.point3D_id].error <= 4]
+        try:
+            region = pot_rim_region(read_analysis_image(Path(view["undistorted_path"]), cv2.IMREAD_COLOR),
+                                    read_analysis_image(Path(view["valid_mask_path"]), cv2.IMREAD_GRAYSCALE))
+        except (ValueError, OSError, cv2.error):
+            continue
+        pose = np.eye(4)
+        pose[:3] = image.cam_from_world().matrix()
+        sources.append({"region": region, "pose": pose, "angle_deg": float(view.get("angle_deg") or 0), "pixels": [item[0] for item in linked],
+                        "point_ids": [item[1] for item in linked], "objects": [item[2].xyz for item in linked]})
+    sources = augment_stable_tracks(sources, intrinsics["rotating"]["undistorted_camera_matrix"], cancel_check=cancel_check)
+    localized = []
+    for camera in missing:
+        candidates = [v for v in views if v["camera_id"] == camera and v["view_id"] not in registered_view_ids]
+        # One fixed camera has one physical pose. Bound repeated, often almost
+        # identical frames; several accepted estimates are fused downstream.
+        indexes = np.unique(np.linspace(0, len(candidates) - 1, min(6 if camera == "rotating" else 3, len(candidates)), dtype=int))
+        attempts = []
+        for index in indexes:
+            cancel_check()
+            view = candidates[index]
+            label = {"top": "俯視", "side": "側視", "rotating": "旋臂"}[camera]
+            progress("estimating_reference_poses", .94, f"自動對齊{label}：盆緣與土壤特徵")
+            try:
+                pose, diagnostics = localise_stable_camera(
+                    read_analysis_image(Path(view["undistorted_path"]), cv2.IMREAD_COLOR),
+                    read_analysis_image(Path(view["valid_mask_path"]), cv2.IMREAD_GRAYSCALE),
+                    intrinsics[camera]["undistorted_camera_matrix"], sources, cancel_check=cancel_check,
+                )
+            except (ValueError, OSError, cv2.error) as error:
+                attempts.append({"view_id": view["view_id"], "status": "unavailable", "reason": str(error)})
+                continue
+            attempts.append({"view_id": view["view_id"], "status": "completed", **diagnostics})
+            localized.append({**view, "image_name": reference_image_name(view), "pose": pose.tolist(),
+                              "point_count": len(diagnostics["inlier_indices"]), "pose_quality": diagnostics})
+        quality["cameras"][camera] = {"status": "completed" if any(a["status"] == "completed" for a in attempts) else "unavailable",
+                                       "attempts": attempts}
+    return localized, quality
+
+
 def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dict:
     import pycolmap
 
@@ -137,10 +248,17 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
                                 "refine_geometry": job.get("refine_geometry", True),
                                 "views": views, "intrinsics": job["intrinsics_snapshot"],
                                 "action": job.get("reference_action"), "settings": job["parameters"],
+                                "mapping_camera_ids": job.get("mapping_camera_ids"),
                                 "source_signature": job.get("source_signature")})
+    if registering:
+        signature = step_signature({"base": signature, "stable_feature_version": STABLE_FEATURE_VERSION})
     with StepJournal(root) as journal:
         completed = journal.get("reference_sfm", "model", signature)
         if completed is not None:
+            if not registering and job.get("stabilize_initial_geometry"):
+                check = reference_geometry_check(pycolmap.Reconstruction(completed["sparse_path"]), views)
+                if check["status"] != "passed":
+                    raise ValueError("已保存的影像幾何不穩定，已保留檔案並跳過模型訓練。")
             return completed
         stage_record = journal.get("reference_sfm", "database", signature)
     images = source / "images"
@@ -205,9 +323,12 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
                 journal.save("reference_sfm", stage, signature, {"backend": backend})
             cancel_check()
     options = pycolmap.IncrementalPipelineOptions()
-    # All three cameras contribute tracks to the same reconstruction. Repeated
-    # fixed views still provide independent observations of the same scene.
-    options.image_names = [reference_image_name(v) for v in views]
+    # Fixed-camera features may be prepared alongside the orbit, but only the
+    # requested cameras establish the reference geometry. Later localisation
+    # fixes the existing orbit frames instead of changing the trained model.
+    mapping_views = [v for v in views if not job.get("mapping_camera_ids")
+                     or v["camera_id"] in job["mapping_camera_ids"]]
+    options.image_names = [reference_image_name(v) for v in mapping_views]
     options.multiple_models = False
     options.min_model_size = 6
     options.ba_refine_focal_length = options.ba_refine_principal_point = options.ba_refine_extra_params = False
@@ -242,22 +363,54 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
 
     latest = sorted((p for p in snapshots.iterdir() if (p / "images.bin").is_file()), key=lambda p: p.name)
     input_path = latest[-1] if latest else source / "sparse" / "0" if registering else ""
-    initial_pair = None
+    initial_pair, initial_candidates = None, []
     if not registering and not input_path:
-        initial_pair = reference_initial_pair(pycolmap, database_path, views, options.mapper.init_min_num_inliers,
-                                              cancel_check=cancel_check)
+        pairs = reference_initial_pair(pycolmap, database_path, views, options.mapper.init_min_num_inliers,
+            cancel_check=cancel_check, maximum_candidates=3 if job.get("stabilize_initial_geometry") else 1)
+        initial_candidates = (pairs or []) if job.get("stabilize_initial_geometry") else [pairs] if pairs else []
+        initial_pair = initial_candidates[0] if initial_candidates else None
         if initial_pair is None:
             raise ValueError("旋臂影像缺少有足夠視差的有效配對，無法建立參照模型深度。")
         options.init_image_id1, options.init_image_id2 = initial_pair["image_ids"]
-    progress("estimating_reference_poses", .5, "參照模型：對齊固定鏡頭" if registering else "參照模型：三鏡頭共同對齊")
+    progress("estimating_reference_poses", .5, "參照模型：對齊固定鏡頭" if registering else "參照模型：懸臂多視角對齊")
     models = pycolmap.incremental_mapping(database_path, images, root / "mapping", options,
         input_path=str(input_path), next_image_callback=registered_image, cancellation_token=token)
     if paused:
         raise paused[0]
     cancel_check()
+    if not models and registering:
+        models = {0: pycolmap.Reconstruction(source / "sparse" / "0")}
     if not models:
         raise ValueError("旋臂多視角重建未找到連續的共同特徵，尚無法建立參照模型。")
     reconstruction = max(models.values(), key=lambda m: m.num_reg_images())
+    initial_geometry = None
+    if not registering and job.get("stabilize_initial_geometry"):
+        initial_geometry = reference_geometry_check(reconstruction, views)
+        attempts = [{"initial_pair": initial_pair, **initial_geometry}]
+        for index, pair in enumerate(initial_candidates[1:], 1):
+            if initial_geometry["status"] == "passed":
+                break
+            cancel_check()
+            progress("estimating_reference_poses", .9, f"初始幾何不一致，改用第 {index + 1} 組影像配對")
+            options.init_image_id1, options.init_image_id2 = pair["image_ids"]
+            alternative = root / "initialization_candidates" / str(index)
+            alternative.mkdir(parents=True, exist_ok=True)
+            options.snapshot_path = str(alternative / "snapshots")
+            Path(options.snapshot_path).mkdir(parents=True, exist_ok=True)
+            candidate_models = pycolmap.incremental_mapping(database_path, images, alternative, options,
+                input_path="", cancellation_token=token, next_image_callback=registered_image)
+            if paused:
+                raise paused[0]
+            cancel_check()
+            if not candidate_models:
+                attempts.append({"initial_pair": pair, "status": "unavailable"})
+                continue
+            candidate = max(candidate_models.values(), key=lambda m: m.num_reg_images())
+            check = reference_geometry_check(candidate, views)
+            attempts.append({"initial_pair": pair, **check})
+            if reference_geometry_rank(check) > reference_geometry_rank(initial_geometry):
+                reconstruction, initial_geometry, initial_pair = candidate, check, pair
+        initial_geometry = {**initial_geometry, "attempts": attempts}
     sparse = root / "sparse" / "0"
     sparse.mkdir(parents=True, exist_ok=True)
     by_name = {reference_image_name(v): v for v in views}
@@ -271,17 +424,30 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
         pose[:3] = image.cam_from_world().matrix()
         registered_views.append({**view, "image_name": image.name, "pose": pose.tolist(),
                                  "point_count": int(image.num_points3D)})
+    automatic_localization = None
     if registering:
         original = json.loads((source / "reference.json").read_text(encoding="utf-8"))
         orbit = original["orbit"]
         backend = original["quality"]["feature_backend"]
         refinement_quality = original["quality"].get("geometry_refinement", {})
+        localized, automatic_localization = localise_unregistered_fixed(
+            pycolmap.Reconstruction(source / "sparse" / "0"), registered_views, views, job["intrinsics_snapshot"],
+            progress=progress, cancel_check=cancel_check,
+        )
+        registered_views.extend(localized)
     else:
         refinement_quality = {"status": "disabled", "reason": "immutable_reference_model"}
-        if job.get("refine_geometry", True):
+        before_refinement = pycolmap.Reconstruction(reconstruction) if job.get("stabilize_initial_geometry") else None
+        if job.get("refine_geometry", True) or job.get("stabilize_initial_geometry"):
             progress("estimating_reference_poses", .92, "參照模型：影像姿態精修與角度校正")
             refined = refine_reference_geometry(pycolmap, reconstruction, registered_views, cancel_check=cancel_check)
             reconstruction, refinement_quality = refined.reconstruction, refined.quality
+        if before_refinement is not None:
+            refined_check = reference_geometry_check(reconstruction, views)
+            if refined_check["status"] != "passed" and initial_geometry["status"] == "passed":
+                reconstruction = before_refinement
+                refinement_quality = {**refinement_quality, "status": "kept_original", "accepted": False,
+                    "rejection_reason": "精修後的多視角影像姿態一致性變差，保留已通過檢查的初始幾何。"}
         if refinement_quality.get("status") == "kept_original":
             progress("estimating_reference_poses", .96, "參照模型：精修未通過，沿用已檢查的原始影像幾何")
         images_by_name = {image.name: image for image in reconstruction.images.values()}
@@ -290,6 +456,11 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
             pose = np.eye(4)
             pose[:3] = image.cam_from_world().matrix()
             view.update(pose=pose.tolist(), point_count=int(image.num_points3D))
+        if job.get("stabilize_initial_geometry"):
+            final_geometry = reference_geometry_check(reconstruction, views)
+            if final_geometry["status"] != "passed":
+                raise ValueError("本輪影像幾何仍不一致，已停止模型訓練以避免破碎模型；原有模型與標記保留。")
+            initial_geometry = {**final_geometry, "attempts": initial_geometry["attempts"]}
         try:
             orbit = fit_motor_orbit(registered_views)
         except ValueError:
@@ -323,9 +494,11 @@ def build_reference_sfm(job: dict, root: Path, *, progress, cancel_check) -> dic
                           "input_camera_counts": input_counts, "registered_camera_counts": registered_counts,
                           "camera_registration": {"status": "partial" if missing_cameras else "complete",
                                                   "missing_camera_ids": missing_cameras,
+                                                  **({"automatic_localization": automatic_localization} if automatic_localization is not None else {}),
                                                   "all_three_cameras_registered": all(registered_counts[camera] > 0 for camera in cameras)},
                           "absolute_accuracy_verified": False,
                           "initial_pair": initial_pair, "geometry_refinement": refinement_quality,
+                          **({"initial_geometry_validation": initial_geometry} if initial_geometry is not None else {}),
                           "mean_reprojection_error_px": float(reconstruction.compute_mean_reprojection_error()),
                           "coordinate_unit": "relative", "feature_backend": backend}}
     write_json_atomic(root / "reference.json", result)

@@ -2,6 +2,7 @@ export function landmarkInModelSpace(
   landmark,
   reference,
 ) {
+  if (landmark?.coordinate_space === "model") return landmark;
   if (!reference?.model_quality?.immutable_reference) return landmark;
   const transform = reference.model_to_world;
   const xyz = [landmark?.x_mm, landmark?.y_mm, landmark?.z_mm];
@@ -17,4 +18,30 @@ export function landmarkInModelSpace(
     0,
   ));
   return { ...landmark, x_mm: modelPoint[0], y_mm: modelPoint[1], z_mm: modelPoint[2] };
+}
+
+export function savedModelTipLandmark(
+  correction,
+  reference,
+) {
+  const xyz = correction?.model_point_relative_xyz;
+  if (correction?.invalid || correction?.model_signature !== reference?.signature
+    || !Array.isArray(xyz) || xyz.length !== 3 || !xyz.every(Number.isFinite)) return null;
+  return { x_mm: xyz[0], y_mm: xyz[1], z_mm: xyz[2], valid: false, coordinate_space: "model" };
+}
+
+export function trackedModelTipLandmark(
+  reference,
+  landmark,
+) {
+  const persisted = landmark?.tracking?.model_tip;
+  const fresh = reference?.model_tip;
+  const tip = (fresh?.tracking_version || fresh?.quality?.version || 0)
+    > (persisted?.tracking_version || persisted?.quality?.version || 0)
+    ? fresh
+    : persisted || fresh;
+  const xyz = tip?.relative_xyz;
+  if (!["manual", "tracked"].includes(tip?.status) || tip.model_signature !== reference?.signature
+    || tip.coordinate_space !== "model" || !Array.isArray(xyz) || xyz.length !== 3 || !xyz.every(Number.isFinite)) return null;
+  return { x_mm: xyz[0], y_mm: xyz[1], z_mm: xyz[2], valid: false, coordinate_space: "model", source: tip.source };
 }

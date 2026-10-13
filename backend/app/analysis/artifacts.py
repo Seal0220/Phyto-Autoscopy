@@ -230,7 +230,7 @@ class AnalysisArtifacts:
                 payload = json.load(handle)
             views = payload.get("views") if isinstance(payload, dict) else None
             if not isinstance(views, list):
-                raise ValueError("去畸變影像清單的視角資料必須是陣列。")
+                raise ValueError("變形校正影像清單的視角資料必須是陣列。")
             for item in views:
                 if isinstance(item, dict) and (round_key is None or item.get("round_key") == round_key):
                     results[item["view_id"]] = item

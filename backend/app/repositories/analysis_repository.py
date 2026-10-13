@@ -179,6 +179,12 @@ class AnalysisRepository:
         )
         return self._run_from_row(row) if row else None
 
+    def get_intrinsics_snapshot(self, analysis_id: str) -> dict:
+        """Read the small calibration snapshot without image/pose manifests."""
+        row = self.database.fetchone("SELECT intrinsics_snapshot_json FROM analysis_runs WHERE analysis_id=?",
+                                     (analysis_id,))
+        return _json_load(row["intrinsics_snapshot_json"], {}) if row else {}
+
     def get_result_summary(self, analysis_id: str) -> AnalysisRun | None:
         """Live result metadata without loading image/pose manifests."""
         row = self.database.fetchone(
@@ -723,28 +729,37 @@ class AnalysisRepository:
             for row in rows
         ]
 
-    def upsert_round_model(self, item: RoundModelResult) -> None:
-        self.database.execute(
-            """
-            INSERT INTO analysis_round_models(
-                analysis_id, round_key, model_id, status,
-                payload_json, failure_reason
+    def upsert_round_model(self, item: RoundModelResult) -> RoundModelResult:
+        """Save one model per round, retaining its existing model identity."""
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT model_id FROM analysis_round_models WHERE analysis_id=? AND round_key=?",
+                (item.analysis_id, item.round_key),
+            ).fetchone()
+            if existing is not None and existing["model_id"] != item.model_id:
+                item = item.model_copy(update={"model_id": existing["model_id"]})
+            connection.execute(
+                """
+                INSERT INTO analysis_round_models(
+                    analysis_id, round_key, model_id, status,
+                    payload_json, failure_reason
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(analysis_id, round_key) DO UPDATE SET
+                    status=excluded.status,
+                    payload_json=excluded.payload_json,
+                    failure_reason=excluded.failure_reason
+                """,
+                (
+                    item.analysis_id,
+                    item.round_key,
+                    item.model_id,
+                    item.status,
+                    _json_dump(item.model_dump(mode="json")),
+                    item.failure_reason,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(analysis_id, model_id) DO UPDATE SET
-                status=excluded.status,
-                payload_json=excluded.payload_json,
-                failure_reason=excluded.failure_reason
-            """,
-            (
-                item.analysis_id,
-                item.round_key,
-                item.model_id,
-                item.status,
-                _json_dump(item.model_dump(mode="json")),
-                item.failure_reason,
-            ),
-        )
+        return item
 
     def list_round_models(
         self,
@@ -801,6 +816,35 @@ class AnalysisRepository:
             TipLandmark.model_validate(_json_load(row["payload_json"], {}))
             for row in rows
         ]
+
+    def refresh_existing_tip_track(self, item, observations, *, expected_tip, expected_corrections) -> bool:
+        """Publish a backfill only if its input annotation/result is unchanged."""
+        with self.database.transaction() as connection:
+            saved = connection.execute(
+                "SELECT payload_json FROM analysis_tip_landmarks WHERE analysis_id=? AND tip_id=?",
+                (item.analysis_id, item.tip_id),
+            ).fetchone()
+            corrections = connection.execute(
+                "SELECT payload_json FROM analysis_tip_corrections WHERE analysis_id=? ORDER BY created_at, correction_id",
+                (item.analysis_id,),
+            ).fetchall()
+            if (saved is None or TipLandmark.model_validate(_json_load(saved["payload_json"], {})) != expected_tip
+                    or [TipCorrection.model_validate(_json_load(row["payload_json"], {})) for row in corrections]
+                    != expected_corrections):
+                return False
+            connection.execute(
+                "UPDATE analysis_tip_landmarks SET payload_json=?, valid=?, confidence=? WHERE analysis_id=? AND tip_id=?",
+                (_json_dump(item.model_dump(mode="json")), int(item.valid), item.confidence, item.analysis_id, item.tip_id),
+            )
+            connection.execute("DELETE FROM analysis_tip_observations WHERE analysis_id=? AND round_key=?",
+                               (item.analysis_id, item.round_key))
+            connection.executemany(
+                "INSERT INTO analysis_tip_observations(analysis_id, round_key, view_id, candidate_id, payload_json, selected) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(row.analysis_id, row.round_key, row.view_id, row.candidate_id,
+                  _json_dump(row.model_dump(mode="json")), int(row.selected)) for row in observations],
+            )
+        return True
 
     def replace_tip_observations(
         self,

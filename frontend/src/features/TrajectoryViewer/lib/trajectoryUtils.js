@@ -34,6 +34,26 @@ function finiteTrajectoryPoint(point) {
     ));
 }
 
+export function formalTrajectoryRanges(trajectory) {
+  const bounds = { x: [0, 0], y: [0, 0], z: [0, 0] };
+  for (const point of trajectory || []) {
+    if (!point?.mode_id || !finiteTrajectoryPoint(point)) continue;
+    for (const axis of Object.keys(bounds)) {
+      const value = Number(point[`${axis}_mm`]);
+      bounds[axis][0] = Math.min(bounds[axis][0], value);
+      bounds[axis][1] = Math.max(bounds[axis][1], value);
+    }
+  }
+  // Include the world origin, use equal millimetre scales, and keep every
+  // measured point away from the frame even for a nearly vertical trajectory.
+  const span = Math.max(1, ...Object.values(bounds).map(([lower, upper]) => upper - lower));
+  const halfSpan = span * 0.65;
+  return Object.fromEntries(Object.entries(bounds).map(([axis, [lower, upper]]) => {
+    const center = (lower + upper) / 2;
+    return [axis, [center - halfSpan, center + halfSpan]];
+  }));
+}
+
 function pointDetails(point) {
   const confidence = Number(point.confidence);
   return [
@@ -115,6 +135,7 @@ export function buildFormalTrajectoryPlot(trajectory) {
     markerSymbols[firstIndex] = "circle-open";
     if (lastIndex !== firstIndex) markerSizes[lastIndex] = 10;
     traces.push({
+      uid: `trajectory-mode:${modeId}`,
       type: "scatter3d",
       mode: "lines+markers",
       name: modeId,
@@ -135,6 +156,7 @@ export function buildFormalTrajectoryPlot(trajectory) {
 
   if (validCount) {
     traces.push({
+      uid: "trajectory-world-origin",
       type: "scatter3d",
       mode: "markers",
       name: "世界原點",

@@ -299,7 +299,7 @@ def localize_reference_top(job, root, *, progress, cancel_check):
     if "side" not in fixed or len(views) < 3:
         raise ValueError("渲染定位需要已驗證的側視鏡頭及三次俯視擷取。")
     views = [views[0], views[len(views) // 2], views[-1]]
-    mask_root = Path(reference["sparse_path"]).parents[1] / "feature_masks"
+    mask_root = Path(job["feature_masks_root"]) if job.get("feature_masks_root") else Path(reference["sparse_path"]).parents[1] / "feature_masks"
     views = [{**view, "feature_mask_path": str(mask_root / (
         f"top__{safe_artifact_name(view['view_id'])}{Path(view['undistorted_path']).suffix.lower()}.png"))} for view in views]
     signature = step_signature({"version": RENDER_REGISTRATION_VERSION, "reference": reference["signature"],

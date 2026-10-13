@@ -232,6 +232,7 @@ def robust_multiview_triangulate(
     confidence: Sequence[float] | None = None,
     rejection_threshold_px: float = 8.0,
     camera_ids: Sequence[str] | None = None,
+    seed_policy: str = "ordered",
 ) -> MultiviewResult:
     if len(projections) != len(observations) or len(projections) < 2:
         raise ValueError("多視角三角化至少需要兩組相同數量的投影與觀測。")
@@ -253,14 +254,51 @@ def robust_multiview_triangulate(
         raise ValueError("多視角投影或像素座標格式無效。")
     if camera_ids is not None and len(camera_ids) != len(projections):
         raise ValueError("觀測鏡頭數量與投影不一致。")
-    if np.count_nonzero(weights > 0) < 2 or np.any(weights[:2] <= 0):
+    if seed_policy not in {"ordered", "consensus"}:
+        raise ValueError("多視角定位的基準選擇方式無效。")
+    if np.count_nonzero(weights > 0) < 2 or (seed_policy == "ordered" and np.any(weights[:2] <= 0)):
         raise ValueError("多視角定位需要至少兩個具有信心的基準觀測。")
 
     # The first two observations form a measured two-view seed. Never let an
     # outlying additional view pull the initial solution away from that seed.
-    point = _triangulate(projections[:2], observations[:2], weights[:2])
+    seed_indices = (0, 1)
+    viewpoint_ids = np.arange(len(projections))
+    if seed_policy == "consensus":
+        from itertools import combinations
+
+        # Balance repeated physical viewpoints, not camera names. Different
+        # arm angles supply independent geometry even with one sensor, while
+        # dozens of identical fixed-camera frames supply only one viewpoint.
+        normalized = matrices / np.linalg.norm(matrices, axis=(1, 2))[:, None, None]
+        for index in range(len(projections)):
+            same = next((j for j in range(index) if np.allclose(normalized[index], normalized[j], rtol=1e-5, atol=1e-7)), None)
+            if same is not None:
+                viewpoint_ids[index] = viewpoint_ids[same]
+        balanced = weights.copy()
+        for viewpoint in set(viewpoint_ids):
+            group = viewpoint_ids == viewpoint
+            balanced[group] /= max(1, int(np.count_nonzero(group & (weights > 0))))
+        best = None
+        for pair in combinations(np.flatnonzero(weights > 0), 2):
+            try:
+                candidate = _triangulate(matrices[list(pair)], pixels[list(pair)], weights[list(pair)])
+            except ValueError:
+                continue
+            candidate_errors = _errors(candidate, projections, observations)
+            support = (weights > 0) & (candidate_errors <= rejection_threshold_px)
+            if support.sum() < 2 or not support[list(pair)].all():
+                continue
+            rank = (len(set(viewpoint_ids[support])), float(balanced[support].sum()),
+                    -float(np.median(candidate_errors[support])))
+            if best is None or rank > best[0]:
+                best = rank, candidate, pair
+        if best is None:
+            raise ValueError("各視角沒有一致的三維尖端解。")
+        _, point, seed_indices = best
+    else:
+        point = _triangulate(projections[:2], observations[:2], weights[:2])
     errors = _errors(point, projections, observations)
-    if not np.isfinite(errors[:2]).all():
+    if not np.isfinite(errors[list(seed_indices)]).all():
         raise ValueError("雙鏡頭基準點位於相機後方或無法投影。")
     used = (weights > 0) & (errors <= rejection_threshold_px)
     if used.sum() < 2:
@@ -271,10 +309,10 @@ def robust_multiview_triangulate(
     for _ in range(min(8, max(1, len(projections) - 1))):
         selected = np.flatnonzero(used)
         active_weights = weights[selected].copy()
-        if camera_ids is not None:
+        if camera_ids is not None or seed_policy == "consensus":
             # Repeated fixed frames must not outweigh a different viewpoint
             # simply because a camera happened to record more snapshots.
-            active_cameras = np.asarray(camera_ids)[selected]
+            active_cameras = viewpoint_ids[selected] if seed_policy == "consensus" else np.asarray(camera_ids)[selected]
             for camera in set(active_cameras):
                 group = active_cameras == camera
                 active_weights[group] /= int(group.sum())
@@ -295,7 +333,8 @@ def robust_multiview_triangulate(
         point=point,
         reprojection_errors_px=tuple(float(value) for value in errors),
         used_observations=tuple(bool(value) for value in used),
-        quality={"aggregation_method": "camera_balanced_huber_reprojection",
+        quality={"aggregation_method": "viewpoint_balanced_huber_reprojection" if seed_policy == "consensus" else "camera_balanced_huber_reprojection",
+                 "seed_policy": seed_policy, "seed_observation_indices": [int(i) for i in seed_indices],
                  "input_observation_count": len(projections), "accepted_observation_count": int(used.sum()),
                  "rejected_observation_count": int((~used).sum()),
                  "median_reprojection_error_px": float(np.median(errors[used])),

@@ -56,7 +56,7 @@ async def camera_stream(
         )
         if intrinsics.status != "valid":
             raise CalibrationError(
-                f"相機 {camera_id} 沒有可用的有效內參，無法即時去畸變。"
+                f"相機 {camera_id} 沒有可用的有效內參，無法即時變形校正。"
             )
         frame_undistorter = LiveFrameUndistorter(intrinsics)
     # A reconnect or settings update briefly reports `connected=False` while

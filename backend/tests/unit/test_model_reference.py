@@ -188,11 +188,15 @@ def _reference_service_fixture(tmp_path):
         views.append(view)
         manifest[view.view_id] = {"undistorted_path": path.name, "valid_pixel_mask_path": path.name}
     state["run"] = state["run"].model_copy(update={"method_name": "rotating", "parameters": {
-        "pose_strategy": MarkerlessPoseSettings(baseline_mm=1000, top_height_mm=1000).model_dump(), "reconstruction": {"training_iterations": 10}},
+        "pose_strategy": MarkerlessPoseSettings(baseline_mm=1000, top_height_mm=1000).model_dump(),
+        "tip_analysis": {"tracking_mode": "legacy_candidates"}, "reconstruction": {"training_iterations": 10}},
         "intrinsics_snapshot": {}})
     service._write_processing_preview = lambda *args, **kwargs: None
     state["models"] = {}
-    service.repository.upsert_round_model = lambda item: state["models"].update({item.round_key: item})
+    def upsert_round_model(item):
+        state["models"][item.round_key] = item
+        return item
+    service.repository.upsert_round_model = upsert_round_model
     service.repository.list_round_models = lambda analysis_id: list(state["models"].values())
     artifacts = service._artifacts(state["run"])
     artifacts.write_round_model_result = lambda item: None

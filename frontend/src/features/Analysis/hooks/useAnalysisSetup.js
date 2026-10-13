@@ -26,7 +26,6 @@ import {
   loadAnalysisSetupOptions,
   startAnalysisSourceScan,
   startAnalysisRun,
-  validateAnalysisRun,
 } from "../lib/analysisApiUtils";
 import {
   analysisCameraSourcesPayload,
@@ -532,11 +531,7 @@ export default function useAnalysisSetup({
       if (mountedRef.current) {
         setMutationError(analysisMutationErrorMessage(
           error,
-          kind === "create"
-            ? "建立分析"
-            : kind === "validate"
-              ? "驗證分析"
-              : "開始分析",
+          "開始分析",
         ));
         setMutationRequiresRefresh(mutationOutcomeUnknown(error));
       }
@@ -550,7 +545,7 @@ export default function useAnalysisSetup({
     }
   }
 
-  async function createRun() {
+  async function startRun() {
     try {
       validateAnalysisSetupStep(
         setup,
@@ -565,79 +560,38 @@ export default function useAnalysisSetup({
     }
 
     const payload = buildAnalysisCreatePayload(setup);
-    const result = await runMutation(
-      "create",
-      (signal) => createAnalysisRun(
-        payload,
-        signal,
-      ),
-    );
-    if (!result) return false;
-
-    const run = normalizeCreatedAnalysisRun(result, {
-      record_id: setup.recordId,
-      method_name: setup.method,
-      method_version: setup.method === "rotating" ? "1.0.0" : "2.0.0",
-      status: "draft",
-      progress: 0,
-      current_frame: 0,
-      total_frames: 0,
-    });
-
-    if (!run.analysis_id) {
-      setMutationError("建立分析的回應缺少分析 ID，結果尚未確認。請返回分析首頁確認狀態，勿立即重送。");
-      setMutationRequiresRefresh(true);
-      return false;
-    }
-
-    setCreatedRun(run);
-    setStepError("");
-    return true;
-  }
-
-  async function validateRun() {
-    if (!createdRun?.analysis_id) return false;
-
-    const result = await runMutation(
-      "validate",
-      (signal) => validateAnalysisRun(
-        createdRun.analysis_id,
-        signal,
-      ),
-    );
-    if (!result) return false;
-
-    setCreatedRun((previous) => normalizeCreatedAnalysisRun(
-      result,
-      {
-        ...previous,
-        status: "validating",
-        stage: "validating",
-      },
-    ));
-    return true;
-  }
-
-  async function startRun() {
-    if (!createdRun?.analysis_id) return false;
-
-    const result = await runMutation(
-      "start",
-      (signal) => startAnalysisRun(
-        createdRun.analysis_id,
-        signal,
-      ),
-    );
-    if (!result) return false;
-
-    setCreatedRun((previous) => normalizeCreatedAnalysisRun(
-      result,
-      {
-        ...previous,
+    const result = await runMutation("start", async (signal) => {
+      let run = createdRun;
+      if (!run) {
+        const created = await createAnalysisRun(payload, signal);
+        if (!mountedRef.current || signal.aborted) return null;
+        run = normalizeCreatedAnalysisRun(created, {
+          record_id: setup.recordId,
+          method_name: setup.method,
+          method_version: setup.method === "rotating" ? "1.0.0" : "2.0.0",
+          status: "draft",
+          progress: 0,
+          current_frame: 0,
+          total_frames: 0,
+        });
+        if (!run.analysis_id) {
+          throw new UnknownMutationOutcomeError("建立分析的回應缺少分析 ID，請返回分析首頁確認狀態，勿立即重送。");
+        }
+        // Keep a successfully created draft if starting fails, so retrying the
+        // same action never creates a duplicate analysis.
+        setCreatedRun(run);
+      }
+      const started = await startAnalysisRun(run.analysis_id, signal);
+      return normalizeCreatedAnalysisRun(started, {
+        ...run,
         status: "processing",
-      },
-    ));
-    return true;
+      });
+    });
+    if (!result) return false;
+
+    setCreatedRun(result);
+    setStepError("");
+    return result;
   }
 
   return {
@@ -666,8 +620,6 @@ export default function useAnalysisSetup({
     goToStep,
     nextStep,
     previousStep,
-    createRun,
-    validateRun,
     startRun,
     clearMutationError: () => setMutationError(""),
   };

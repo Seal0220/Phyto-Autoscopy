@@ -67,7 +67,7 @@ class LiveFrameUndistorter:
             cv2.IMREAD_COLOR,
         )
         if image is None:
-            raise CalibrationError("即時影像無法解碼，不能套用去畸變。")
+            raise CalibrationError("即時影像無法解碼，不能套用變形校正。")
 
         height, width = image.shape[:2]
         maps = self._undistortion_maps((width, height))
@@ -84,5 +84,5 @@ class LiveFrameUndistorter:
             [cv2.IMWRITE_JPEG_QUALITY, 90],
         )
         if not encoded:
-            raise CalibrationError("去畸變影像無法編碼。")
+            raise CalibrationError("變形校正影像無法編碼。")
         return buffer.tobytes()

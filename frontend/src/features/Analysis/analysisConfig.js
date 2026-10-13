@@ -32,7 +32,7 @@ export const ANALYSIS_SETUP_STEPS = [
   },
   {
     id: 4,
-    label: "確認並建立",
+    label: "確認並開始",
   },
 ];
 
@@ -42,7 +42,7 @@ export const ANALYSIS_STATUS_META = {
     tone: "neutral",
   },
   validating: {
-    label: "驗證中",
+    label: "分析準備中",
     tone: "warning",
   },
   pausing: {
@@ -95,14 +95,14 @@ export const ANALYSIS_STAGE_LABELS = {
   waiting_for_tip_seed: "等待第一輪尖端標記；儲存並確認後自動繼續",
   converting_images: "轉換 TIFF 影像",
   phase: "階段完成",
-  validating: "驗證輸入資料",
+  validating: "準備分析資料",
   validating_images: "轉檔並檢查影像",
   verifying_input_files: "核對原始檔案內容",
   checking_reconstruction_environment: "檢查重建環境",
-  validation_completed: "驗證完成",
+  validation_completed: "資料準備完成",
   grouping_rounds: "整理分析輪次",
   snapshotting_intrinsics: "固化相機內參",
-  undistorting_images: "套用內參並去畸變",
+  undistorting_images: "套用內參並變形校正",
   detecting_aruco: "偵測 ArUco 基準",
   estimating_camera_poses: "估算相機姿態",
   checking_pose_consistency: "檢查姿態一致性",

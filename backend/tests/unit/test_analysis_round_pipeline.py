@@ -153,6 +153,20 @@ def test_round_finishes_model_tip_and_global_chart_before_next_round(pipeline, m
     assert service.get_progress("analysis-test").progress == 1
 
 
+def test_queued_model_repairs_all_precede_normal_round_processing(pipeline, monkeypatch):
+    from app.analysis.reconstruction.model_repair import repair_directory
+    service, repository, artifacts, events, _, _ = pipeline
+    keys = [item.round_key for item in repository.list_rounds('analysis-test')]
+    for key in keys:
+        request = repair_directory(artifacts.root, key) / 'request.json'
+        write_json_atomic(request, {'status': 'pending'})
+    monkeypatch.setattr(service, '_repair_requested_round_model',
+                        lambda run, key, event: events.append(('repair', key)))
+    service._run_job('analysis-test', Event())
+    assert events[:3] == [('repair', keys[0]), ('repair', keys[1]), ('preprocess', keys[0])]
+    assert sum(event[0] == 'repair' for event in events) == 2
+
+
 def test_bad_round_records_missing_tip_and_continues_other_rounds(pipeline, monkeypatch):
     service, repository, artifacts, events, _, tip = pipeline
 
@@ -233,7 +247,7 @@ def test_retry_deferred_round_keeps_other_round_models_and_trajectory(pipeline, 
 
 
 @pytest.mark.parametrize("remains_invalid", [False, True])
-def test_another_rounds_rig_never_replaces_independent_round_geometry(pipeline, monkeypatch, remains_invalid):
+def test_shared_fixed_rig_backfills_measurements_without_replacing_existing_models(pipeline, monkeypatch, remains_invalid):
     from app.core.exceptions import AnalysisReviewRequiredError
     service, repository, artifacts, events, _, _ = pipeline
     original = service._run_round_preprocessing
@@ -261,8 +275,9 @@ def test_another_rounds_rig_never_replaces_independent_round_geometry(pipeline, 
     monkeypatch.setattr(service, "_run_tip_markers", tip)
     service._run_job("analysis-test", Event())
     rounds = repository.list_rounds("analysis-test")
-    assert [item.status for item in rounds] == ["alignment_pending", "tip_completed"]
-    assert [key for kind, key in events if kind == "model"] == [rounds[1].round_key]
+    assert [item.status for item in rounds] == ["alignment_pending" if remains_invalid else "tip_completed", "tip_completed"]
+    expected_models = [rounds[1].round_key] if remains_invalid else [rounds[1].round_key, rounds[0].round_key]
+    assert [key for kind, key in events if kind == "model"] == expected_models
     path, contents, modified = published[0]
     assert path.read_bytes() == contents and path.stat().st_mtime_ns == modified
     events.clear()
@@ -416,7 +431,7 @@ def test_resume_keeps_a_real_quality_rejection_instead_of_repeating_tip_detectio
 
 
 @pytest.mark.parametrize("outdated_field", ["tip_candidate_version", "tip_analysis_version"])
-def test_tip_upgrade_refreshes_old_confirmed_tips_without_rebuilding_models(pipeline, outdated_field):
+def test_tip_upgrade_preserves_published_tips_without_rebuilding_models(pipeline, outdated_field):
     service, repository, artifacts, events, _, _ = pipeline
     service._run_job("analysis-test", Event())
     key = repository.list_rounds("analysis-test")[0].round_key
@@ -432,11 +447,131 @@ def test_tip_upgrade_refreshes_old_confirmed_tips_without_rebuilding_models(pipe
 
     service._run_job("analysis-test", Event())
 
-    assert events == [("tip", key)]
+    assert events == []
     assert repository.get("analysis-test").status == "completed"
     assert all((artifacts.root / path).stat().st_mtime_ns == timestamp for path, timestamp in model_times.items())
     with StepJournal(artifacts.root) as journal:
-        assert journal.get("triangulating_tip_marker", key)["tip_candidate_version"] == analysis_service.TIP_CANDIDATE_VERSION
+        assert outdated_field not in journal.get("triangulating_tip_marker", key)
+
+
+@pytest.mark.parametrize("image_confirmed", [False, True])
+def test_resume_keeps_results_when_pipeline_and_tracker_versions_change(pipeline, monkeypatch, image_confirmed):
+    service, repository, artifacts, events, _, _ = pipeline
+    service._run_job("analysis-test", Event())
+    if image_confirmed:
+        run = repository.get("analysis-test")
+        repository.update_parameters(run.analysis_id, {
+            **run.parameters, "tip_analysis": {**run.parameters["tip_analysis"], "tracking_mode": "manual_seeded"},
+        }, run.updated_at)
+    for item in repository.list_tip_landmarks("analysis-test"):
+        repository.upsert_tip_landmark(item.model_copy(update={
+            "image_tip_confirmed": image_confirmed,
+            "tracking": {"version": analysis_service.TIP_TRACKING_VERSION - 1},
+        }))
+    tips = repository.list_tip_landmarks("analysis-test")
+    file_times = {model.model_path: (artifacts.root / model.model_path).stat().st_mtime_ns
+                  for model in repository.list_round_models("analysis-test")}
+    # A manual correction/backfill can change the exported tip's timestamp,
+    # invalidating a cache entry without invalidating the saved result.
+    artifacts.write_tip_landmark(tips[0])
+    monkeypatch.setattr(service, "_round_pipeline_signature", lambda _: "updated-pipeline-version")
+    monkeypatch.setattr(service, "_ensure_initial_tip_seed", lambda *args: pytest.fail("existing seed must survive resume"))
+    monkeypatch.setattr(service, "_track_fixed_tip", lambda *args: pytest.fail("saved tips must not be tracked again"))
+    events.clear()
+    repository.update_state("analysis-test", status="processing", progress=.89, updated_at="2026-10-12T00:00:00Z")
+    progress = []
+    service.progress_callback = lambda item: progress.append(item.progress)
+
+    service._run_job("analysis-test", Event())
+
+    assert events == []
+    assert repository.list_tip_landmarks("analysis-test") == tips
+    assert all((artifacts.root / path).stat().st_mtime_ns == modified for path, modified in file_times.items())
+    assert progress and min(progress) >= .89
+    assert progress == sorted(progress)
+    assert repository.get("analysis-test").status == "completed"
+
+
+def test_queued_repairs_preserve_completed_rounds_and_resume_progress(pipeline, monkeypatch):
+    from app.analysis.reconstruction.model_repair import repair_directory
+    service, repository, artifacts, events, _, _ = pipeline
+    service._run_job("analysis-test", Event())
+    first = repository.list_rounds("analysis-test")[0]
+    write_json_atomic(repair_directory(artifacts.root, first.round_key) / "request.json", {"status": "pending"})
+
+    def repair(run, key, event):
+        events.append(("repair", key))
+        service._set_state(run, stage="building_reference_model", progress=.22)
+
+    monkeypatch.setattr(service, "_repair_requested_round_model", repair)
+    events.clear()
+    repository.update_state("analysis-test", status="processing", progress=.89, updated_at="2026-10-12T00:00:00Z")
+    progress = []
+    service.progress_callback = lambda item: progress.append(item.progress)
+
+    service._run_job("analysis-test", Event())
+
+    assert events == [("repair", first.round_key)]
+    assert progress and min(progress) >= .89
+    assert progress == sorted(progress)
+
+
+def test_new_calibration_measures_saved_tip_without_model_or_tracker_work(pipeline, monkeypatch):
+    service, repository, artifacts, events, _, _ = pipeline
+    service._run_job("analysis-test", Event())
+    first = repository.list_rounds("analysis-test")[0]
+    landmark = repository.list_tip_landmarks("analysis-test")[0].model_copy(update={
+        "valid": False, "x_mm": None, "y_mm": None, "z_mm": None, "image_tip_confirmed": True,
+        "image_observations": [
+            {"view_id": "1-top", "x_px": 16.12, "y_px": 12},
+            {"view_id": "1-side", "x_px": 14.92, "y_px": 12},
+        ],
+        "tracking": {"version": analysis_service.TIP_TRACKING_VERSION - 1},
+    })
+    repository.upsert_tip_landmark(landmark)
+    repository.update_round(first.model_copy(update={"status": "tip_only"}))
+    repository.replace_camera_poses("analysis-test", [], round_key=first.round_key)
+    top, side = np.eye(4), np.eye(4)
+    top[2, 3] = side[2, 3] = 100
+    side[0, 3] = -10
+    run = repository.get("analysis-test")
+    service._save_step(run, "aligning_model_cameras", "registration", service._stereo_pose_signature(run),
+                       {"poses": {"top": top.tolist(), "side": side.tolist()}, "quality": {"verified": True}})
+    monkeypatch.setattr(service, "_track_fixed_tip", lambda *args: pytest.fail("saved observations must be measured directly"))
+    events.clear()
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-12T00:00:00Z")
+
+    service._run_job("analysis-test", Event())
+
+    measured = repository.list_tip_landmarks("analysis-test")[0]
+    assert events == []
+    assert measured.valid
+    assert [measured.x_mm, measured.y_mm, measured.z_mm] == pytest.approx([1, 0, 100])
+    assert measured.image_observations == landmark.image_observations
+    assert measured.tracking["version"] == landmark.tracking["version"]
+    assert {pose.camera_id for pose in repository.list_camera_poses("analysis-test", first.round_key)} == {"top", "side"}
+
+
+def test_resume_keeps_failed_round_when_calibration_changes(pipeline, monkeypatch):
+    from app.core.exceptions import AnalysisError
+    service, repository, artifacts, events, _, _ = pipeline
+    original = service._run_round_preprocessing
+
+    def fail_first(run, event, *, round_key):
+        if round_key.endswith("round.01"):
+            raise AnalysisError("saved failure")
+        return original(run, event, round_key=round_key)
+
+    monkeypatch.setattr(service, "_run_round_preprocessing", fail_first)
+    service._run_job("analysis-test", Event())
+    tips = repository.list_tip_landmarks("analysis-test")
+    monkeypatch.setattr(service, "_shared_rig_signature", lambda _: "new-rig")
+    events.clear()
+    repository.update_state("analysis-test", status="processing", updated_at="2026-10-12T00:00:00Z")
+    service._run_job("analysis-test", Event())
+    assert events == []
+    assert repository.list_tip_landmarks("analysis-test") == tips
+    assert repository.list_rounds("analysis-test")[0].status == "failed"
 
 
 @pytest.mark.parametrize("all_missing", [False, True])

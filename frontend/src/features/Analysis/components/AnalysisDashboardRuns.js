@@ -58,8 +58,8 @@ function primaryAction(
   }
   if (["needs_review", "reviewing"].includes(run.status)) {
     return {
-      label: "人工修正",
-      onClick: () => callbacks.onReview(run.analysis_id),
+      label: "查看分析",
+      onClick: () => callbacks.onOpen(run.analysis_id),
     };
   }
   if (COMPLETED_STATUSES.has(run.status)) {
@@ -71,7 +71,7 @@ function primaryAction(
   const label = ACTIVE_STATUSES.has(run.status)
     ? "查看進度"
     : run.status === "ready"
-      ? "前往開始"
+      ? "查看分析"
       : ["failed", "cancelled"].includes(run.status)
         ? "查看並重試"
         : "查看分析";
@@ -87,12 +87,11 @@ export default function AnalysisDashboardRuns({
   exportingIds,
   onExport,
   onOpen,
-  onReview,
   onResults,
 }) {
   const [filter, setFilter] = useState("all");
   const visibleRuns = runs.filter((run) => matchesFilter(run, filter));
-  const callbacks = { onOpen, onReview, onResults };
+  const callbacks = { onOpen, onResults };
 
   return (
     <Panel aria-label="分析紀錄">
@@ -221,7 +220,7 @@ export default function AnalysisDashboardRuns({
                         className="size-3.5 shrink-0"
                         aria-hidden="true"
                       />
-                      詳情
+                      查看分析
                     </Button>
                   ) : null}
                   <Button

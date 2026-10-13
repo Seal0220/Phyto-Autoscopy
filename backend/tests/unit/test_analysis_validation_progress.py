@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.analysis.record_validator import CaptureFrame
+from app.analysis.checkpoints import StepJournal
 from app.core.exceptions import AnalysisPausedError
 from app.models.analysis_models import AnalysisRun
 from app.services import analysis_service
@@ -149,3 +150,56 @@ def test_validation_checks_frozen_inputs_and_defers_round_processing(monkeypatch
     assert completed.stage == "validation_completed"
     assert completed.progress == 1
     assert persisted[0]["validation_image_probe_backends"] == probe.backend_counts
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_start_validates_and_processes_in_one_worker_only_after_success(tmp_path, fails):
+    service, initial = _service(tmp_path), _run()
+    state, events, starts = [initial], [], []
+    service._lock = RLock()
+    service._require_run = lambda _: state[0]
+    service._log = lambda *args: None
+    service._runner = SimpleNamespace(is_active=lambda _: False, start=lambda key: starts.append(key) or True)
+    service.repository.clear_results = lambda _: events.append("clear")
+    service._artifacts = lambda _: SimpleNamespace(root=tmp_path, clear_pose_alignment=lambda: None)
+
+    def set_state(current, **kwargs):
+        state[0] = current.model_copy(update=kwargs)
+        return state[0]
+
+    def validate(current, event):
+        events.append("validate")
+        if fails:
+            raise ValueError("invalid frozen input")
+        return set_state(current, status="ready")
+
+    service._set_state = set_state
+    service._record_failure = lambda current, *args, **kwargs: set_state(current, status="failed")
+    service._validate_round_analysis = validate
+    service._run_round_pipeline = lambda *args: events.append("process")
+    assert service.start(initial.analysis_id).status == "validating"
+    assert events == []
+    service._run_job(initial.analysis_id, Event())
+    assert starts == [initial.analysis_id]
+    assert events == (["validate"] if fails else ["validate", "clear", "process"])
+    assert state[0].status == ("failed" if fails else "processing")
+
+
+def test_pausing_validation_retains_automatic_start_on_resume(tmp_path):
+    service, initial = _service(tmp_path), _run().model_copy(update={"status": "validating"})
+    state = [initial]
+    service._require_run = lambda _: state[0]
+    service._log = lambda *args: None
+    service._runner = SimpleNamespace(pause=lambda _: False, wait_until_idle=lambda _: True, start=lambda _: True)
+
+    def set_state(current, **kwargs):
+        state[0] = current.model_copy(update=kwargs)
+        return state[0]
+
+    service._set_state = set_state
+    with StepJournal(tmp_path) as journal:
+        journal.save("control", "mode", "", {"mode": "validating", "start_after_validation": True})
+    assert service.pause(initial.analysis_id).status == "paused"
+    assert service.resume(initial.analysis_id).status == "validating"
+    with StepJournal(tmp_path) as journal:
+        assert journal.get("control", "mode")["start_after_validation"] is True

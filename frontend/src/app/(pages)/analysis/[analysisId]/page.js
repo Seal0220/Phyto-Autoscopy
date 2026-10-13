@@ -15,6 +15,7 @@ export const metadata = {
 
 export default async function AnalysisRunPage({
   params,
+  searchParams,
 }) {
   const session = await getSession();
 
@@ -27,5 +28,16 @@ export default async function AnalysisRunPage({
     notFound();
   }
 
-  return <AnalysisRun analysisId={analysisId} />;
+  const query = await searchParams;
+  const initialRoundKey = typeof query?.round_key === "string" && query.round_key.length <= 512
+    ? query.round_key : undefined;
+  const initialTipFilter = query?.tip_filter === "missing" ? "missing" : "all";
+  return (
+    <AnalysisRun
+      key={`${analysisId}:${initialRoundKey || ""}:${initialTipFilter}`}
+      analysisId={analysisId}
+      initialRoundKey={initialRoundKey}
+      initialTipFilter={initialTipFilter}
+    />
+  );
 }

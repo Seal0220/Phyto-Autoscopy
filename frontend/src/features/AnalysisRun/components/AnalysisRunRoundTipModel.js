@@ -3,6 +3,7 @@
 import RetryMessage from "@/components/feedback/RetryMessage";
 import useAnalysisRunModelPreview from "../hooks/useAnalysisRunModelPreview";
 import AnalysisRunModelReference from "./AnalysisRunModelReference";
+import { trackedModelTipLandmark } from "../lib/analysisModelCoordinateUtils";
 
 export default function AnalysisRunRoundTipModel({
   analysisId,
@@ -30,7 +31,7 @@ export default function AnalysisRunRoundTipModel({
     <AnalysisRunModelReference
       analysisId={analysisId}
       reference={preview.reference}
-      landmark={selected == null ? landmark : null}
+      landmark={selected == null ? trackedModelTipLandmark(preview.reference, landmark) || landmark : null}
       selectedPointId={selected}
       pointIds={selected == null ? [] : [selected]}
       disabled={tip.saving || tip.unknown}

@@ -10,13 +10,37 @@ import pytest
 
 from app.analysis.pose_alignment.model_reference import aggregate_fixed_camera_poses
 from app.analysis.reconstruction.multiview import robust_multiview_triangulate
-from app.analysis.reconstruction.reference_sfm import prepare_reference_feature_masks, reference_image_name, reference_initial_pair
+from app.analysis.reconstruction.reference_sfm import (prepare_reference_feature_masks, reference_image_name,
+    reference_initial_pair, reference_geometry_check, reference_geometry_rank)
 from app.analysis.rounds.view_selector import select_round_reconstruction_views
 from app.analysis.tip.candidate_detector import TipCandidate2D
 from app.analysis.tip.candidate_matcher import TipCandidateView, triangulate_tip_hypotheses
 from app.models.analysis_models import CameraPoseResult
 from test_model_reference import _reference_service_fixture, _reference_model_result, _rig
 from test_multiview_reconstruction import _projection, _project
+
+
+def test_low_pixel_residual_does_not_accept_an_inconsistent_orbit():
+    from test_model_reference import _reference
+    reference = _reference()
+    views = [{**view, "undistorted_path": f"{view['view_id']}.png"} for view in reference["views"]]
+
+    def reconstruction(distort):
+        images = {}
+        for index, view in enumerate(views):
+            pose = np.asarray(view["pose"]).copy()
+            if distort:
+                pose[:3, :3] = cv2.Rodrigues(np.array([.1 * (-1) ** index, 0., 0.]))[0] @ pose[:3, :3]
+            images[index] = SimpleNamespace(name=reference_image_name(view),
+                cam_from_world=lambda pose=pose: SimpleNamespace(matrix=lambda: pose[:3]))
+        return SimpleNamespace(reg_image_ids=lambda: list(images), image=images.__getitem__,
+                               compute_mean_reprojection_error=lambda: .5)
+
+    good = reference_geometry_check(reconstruction(False), views)
+    bad = reference_geometry_check(reconstruction(True), views)
+    assert good["status"] == "passed" and bad["status"] == "unstable"
+    assert reference_geometry_rank(good) > reference_geometry_rank(bad)
+    assert not good["absolute_accuracy_verified"]
 
 
 def test_joint_sfm_initialization_uses_image_parallax_instead_of_repeated_fixed_frames():
@@ -148,7 +172,7 @@ def test_bounded_tip_seeds_still_fuse_all_three_cameras_and_every_snapshot():
     assert result[0].aggregation_quality["supporting_camera_counts"] == {"top": 20, "side": 20, "rotating": 20}
 
 
-def test_reference_auto_alignment_trains_all_fixed_frames_once_in_shared_coordinates(tmp_path, monkeypatch):
+def test_reference_trains_orbit_once_then_localizes_all_fixed_frames(tmp_path, monkeypatch):
     from app.services import analysis_service
     service, state, reference, views, manifest = _reference_service_fixture(tmp_path)
     for camera in ("top", "side"):
@@ -162,14 +186,15 @@ def test_reference_auto_alignment_trains_all_fixed_frames_once_in_shared_coordin
 
     def worker(job, output, event, **kwargs):
         calls.append(job.get("reference_action") or "train")
-        if job.get("reference_action") == "rotating":
+        if job.get("reference_action") in {"rotating", "register_fixed"}:
             by_id = {v["view_id"]: v for v in reference["views"]}
             reference["views"] = [{**v, "pose": _rig()[v["camera_id"]].tolist() if v["camera_id"] in {"top", "side"}
                                    else by_id[v["view_id"]]["pose"]} for v in job["selected_views"]]
             reference["sparse_path"] = str(tmp_path / "sparse")
             return reference
         assert job.get("reference_action") is None
-        assert len(job["selected_views"]) == 18
+        assert len(job["selected_views"]) == 12
+        assert {v["camera_id"] for v in job["selected_views"]} == {"rotating"}
         assert all("later" not in v["view_id"] for v in job["selected_views"])
         return _reference_model_result(job, output)
 
@@ -177,7 +202,7 @@ def test_reference_auto_alignment_trains_all_fixed_frames_once_in_shared_coordin
     try:
         registration = service._prepare_model_reference(state["run"], views, manifest, Event())
         service._prepare_model_reference(state["run"], views, manifest, Event())
-        assert calls == ["rotating", "train"]
+        assert calls == ["rotating", "train", "register_fixed"]
         assert registration["quality"]["fixed_pose_consensus"]["top"]["observation_count"] == 3
     finally:
         service._runner.close()

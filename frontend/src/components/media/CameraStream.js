@@ -271,10 +271,10 @@ export default function CameraStream({
   }
   const streamSource = `${source}${separator}${streamParameters.toString()}`;
   const undistortionTitle = !calibrated
-    ? "尚無有效內參，無法套用去畸變"
+    ? "尚無有效內參，無法套用變形校正"
     : undistortionEnabled
       ? "顯示原始影像"
-      : "套用即時去畸變";
+      : "套用即時變形校正";
   const crosshairTitle = crosshairVisible
     ? "隱藏中心十字"
     : "顯示中心十字";

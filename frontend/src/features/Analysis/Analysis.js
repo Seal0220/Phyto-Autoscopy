@@ -172,9 +172,6 @@ export default function Analysis() {
             onOpen={(analysisId) => router.push(
               `/analysis/${encodeURIComponent(analysisId)}`,
             )}
-            onReview={(analysisId) => router.push(
-              `/analysis/${encodeURIComponent(analysisId)}/review`,
-            )}
             onResults={(analysisId) => router.push(
               `/analysis/${encodeURIComponent(analysisId)}/results`,
             )}

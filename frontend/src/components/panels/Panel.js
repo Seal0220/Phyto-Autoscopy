@@ -43,10 +43,15 @@ export function PanelHeader({
 export function StatusPill({
   children,
   tone = "neutral",
+  compact = false,
 }) {
   return (
     <span
-      className={`inline-flex min-h-7 min-w-0 items-center justify-center gap-2 rounded-full border px-3 py-1 text-center text-[11px] font-black tracking-[0.04em] whitespace-nowrap before:size-1.5 before:shrink-0 before:rounded-full before:bg-current ${TONE_STYLES[tone] || TONE_STYLES.neutral}`}
+      className={`inline-flex min-w-0 items-center justify-center rounded-full border text-center font-black before:size-1.5 before:shrink-0 before:rounded-full before:bg-current
+        ${compact
+          ? "min-h-5 max-w-full gap-1 px-2 py-0.5 text-[10px] leading-tight whitespace-normal break-words"
+          : "min-h-7 gap-2 px-3 py-1 text-[11px] tracking-[0.04em] whitespace-nowrap"
+        } ${TONE_STYLES[tone] || TONE_STYLES.neutral}`}
     >
       {children}
     </span>

@@ -81,7 +81,7 @@ def test_edit_found_or_missing_tip_updates_chart_while_next_model_trains(pipelin
         release.set()
 
 
-def test_pending_clicks_resolve_without_camera_review_or_model_work(pipeline):
+def test_pending_clicks_resolve_without_camera_review_or_model_work(pipeline, monkeypatch):
     service, repository, artifacts, events, _, _ = pipeline
     service._run_job("analysis-test", Event())
     first = repository.list_rounds("analysis-test")[0]
@@ -98,15 +98,45 @@ def test_pending_clicks_resolve_without_camera_review_or_model_work(pipeline):
     assert correction.corrected_tip.x_mm is None
     assert correction.observations == request.observations
     assert not repository.list_tip_trajectory("analysis-test")[0].valid
+    correction = correction.model_copy(update={"model_point_id": 7, "model_signature": "old-model-signature",
+        "model_point_relative_xyz": [1., 2., 3.]})
+    repository.update_tip_correction(correction)
+    monkeypatch.setattr(service, "_resolve_tip_model_selection", lambda *args: pytest.fail("Saved image clicks must not need a model pick"))
     repository.replace_camera_poses("analysis-test", poses, round_key=first.round_key)
     service._refresh_tip_correction_artifacts(repository.get("analysis-test"))
     resolved = repository.list_tip_corrections("analysis-test")[-1]
     assert resolved.correction_id == correction.correction_id
     assert not resolved.pending_alignment and resolved.corrected_tip.valid
     assert resolved.observations == request.observations
+    assert (resolved.model_point_id, resolved.model_signature, resolved.model_point_relative_xyz) == (
+        correction.model_point_id, correction.model_signature, correction.model_point_relative_xyz)
     assert repository.list_tip_trajectory("analysis-test")[0].manually_corrected
     assert events == work
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+def test_metric_backfill_reuses_saved_clicks_and_preserves_models_and_lifecycle(pipeline):
+    service, repository, artifacts, events, _, _ = pipeline
+    service._run_job("analysis-test", Event())
+    first = repository.list_rounds("analysis-test")[0]
+    request = _clicks(repository, first.round_key)
+    tip = repository.list_tip_landmarks("analysis-test")[0]
+    observations = [item.model_dump(mode="json") for item in request.observations]
+    repository.upsert_tip_landmark(tip.model_copy(update={"valid": False, "x_mm": None, "y_mm": None, "z_mm": None,
+        "image_tip_confirmed": True, "image_observations": observations}))
+    run = repository.get("analysis-test")
+    work = events.copy()
+    models = repository.list_round_models(run.analysis_id)
+    bytes_before = [(artifacts.root / model.model_path).read_bytes() for model in models]
+    result = service.refresh_existing_tip_measurements(run.analysis_id)
+    measured = repository.list_tip_landmarks(run.analysis_id)[0]
+    assert result["updated_rounds"] == 1 and measured.valid
+    np.testing.assert_allclose([measured.x_mm, measured.y_mm, measured.z_mm], [1., 2., 100.], atol=1e-5)
+    assert measured.image_observations == observations
+    after = repository.get(run.analysis_id)
+    assert (after.status, after.stage, after.progress) == (run.status, run.stage, run.progress)
+    assert events == work and repository.list_round_models(run.analysis_id) == models
+    assert [(artifacts.root / model.model_path).read_bytes() for model in models] == bytes_before
 
 
 def test_late_automatic_tip_result_never_overwrites_live_manual_clicks(pipeline, monkeypatch):

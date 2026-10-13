@@ -1,9 +1,12 @@
 "use client";
 
+import { FiSave } from "react-icons/fi";
+import { createPortal } from "react-dom";
+
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
 import RetryMessage from "@/components/feedback/RetryMessage";
-import FormalTipReviewRoundImage from "@/features/TipReview/components/FormalTipReviewRoundImage";
+import AnalysisRunRoundTipImage from "./AnalysisRunRoundTipImage";
 import useAnalysisRunTipCorrection from "../hooks/useAnalysisRunTipCorrection";
 import AnalysisRunRoundTipModel from "./AnalysisRunRoundTipModel";
 
@@ -15,12 +18,15 @@ export default function AnalysisRunRoundTipEditor({
   landmark,
   correction,
   onSaved,
+  onFinishEditing,
   initializing = false,
   features = [],
   activeFeature,
   onActiveFeature,
+  actionElement,
 }) {
   const fixedViews = ["top", "side"].map((camera) => views.find((view) => view.camera_id === camera)).filter(Boolean);
+  const modelReady = model?.status === "completed" && Boolean(model.model_path || model.plant_model_path);
   const tip = useAnalysisRunTipCorrection({
     analysisId,
     roundKey,
@@ -28,17 +34,35 @@ export default function AnalysisRunRoundTipEditor({
     correction,
     landmark,
     onSaved,
+    initializing,
+    requireModel: modelReady,
   });
-  const modelReady = model?.status === "completed" && (model.model_path || model.plant_model_path);
+  const saveAction = (
+    <Button
+      variant="primary"
+      disabled={tip.saving || tip.unknown}
+      onClick={async () => {
+        if (await tip.save()) onFinishEditing?.();
+      }}
+    >
+      <FiSave
+        className="size-4 shrink-0"
+        aria-hidden="true"
+      />
+      {tip.saving ? "確認中…" : initializing ? "確認尖端並開始追蹤" : "儲存尖端"}
+    </Button>
+  );
   return (
-    <div className="grid min-w-0 gap-3">
+    <div className="@container grid min-w-0 gap-3">
       <p className="m-0 text-sm text-neutral-300">
-        {initializing ? "先在俯視與側視標記同一個生長尖端。儲存後確認影像目標可追蹤，即自動繼續後續輪次。"
+        {initializing ? modelReady
+          ? "第一輪模型已完成。請在俯視、側視及下方模型標記同一生長尖端；確認追蹤起點後，自動處理後續輪次。"
+          : "請在俯視與側視標記同一生長尖端，確認追蹤起點後自動處理後續輪次。"
           : "在俯視與側視標記同一生長尖端，會更新後續追蹤目標。下方模型可輔助觀察本輪位置。"}
       </p>
-      <div className="grid min-w-0 gap-3 min-[720px]:grid-cols-2">
+      <div className="grid min-w-0 gap-3 @min-[720px]:grid-cols-2">
         {fixedViews.map((view, index) => (
-          <FormalTipReviewRoundImage
+          <AnalysisRunRoundTipImage
             key={view.view_id}
             analysisId={analysisId}
             view={view}
@@ -54,24 +78,25 @@ export default function AnalysisRunRoundTipEditor({
           />
         ))}
       </div>
-      {modelReady && !initializing ? (
+      {modelReady ? (
         <AnalysisRunRoundTipModel
           analysisId={analysisId}
           model={model}
           landmark={landmark}
           tip={tip}
         />
-      ) : <p role="status">本輪模型尚未完成，可先儲存俯視與側視尖端標記。</p>}
-      <ActionRow>
-        <Button
-          variant="primary"
-          disabled={tip.saving || tip.unknown}
-          onClick={tip.save}
-        >
-          {tip.saving ? "確認中…" : initializing ? "確認尖端並開始追蹤" : "儲存尖端"}
-        </Button>
-        {tip.notice ? <p className="m-0 text-sm text-neutral-300" role="status">{tip.notice}</p> : null}
-      </ActionRow>
+      ) : !initializing ? <p role="status">本輪模型尚未完成，可先儲存俯視與側視尖端標記。</p> : null}
+      {actionElement === undefined ? (
+        <ActionRow>
+          {saveAction}
+          {tip.notice ? <p className="m-0 text-sm text-neutral-300" role="status">{tip.notice}</p> : null}
+        </ActionRow>
+      ) : (
+        <>
+          {actionElement ? createPortal(saveAction, actionElement) : null}
+          {tip.notice ? <p className="m-0 text-sm text-neutral-300" role="status">{tip.notice}</p> : null}
+        </>
+      )}
       {tip.error ? (
         <RetryMessage
           message={tip.error}

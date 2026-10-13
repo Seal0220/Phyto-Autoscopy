@@ -42,7 +42,7 @@ function harness(saveRequest, onSaved = async () => true) {
   const dependencies = {
     react,
     "@/lib/httpUtils": { messageFromError: (error) => error.message },
-    "@/features/TipReview/lib/formalTipReviewApiUtils": { saveFormalTipCorrection: saveRequest },
+    "../lib/analysisRoundTipApiUtils": { saveAnalysisRoundTip: saveRequest },
     "../lib/analysisRunApiUtils": { UnknownAnalysisMutationOutcomeError: UnknownOutcome },
     "../lib/analysisRoundTipUtils": { tipCorrectionPayload },
   };
@@ -84,7 +84,7 @@ test("automatically tracked image points remain editable and confirmation differ
   assert.equal(app.render().points.top.x_px, 10);
   app.render().updatePoint("top", { x_px: 12, y_px: 22 });
   assert.equal(app.render({ landmark: { ...landmark } }).points.top.x_px, 12);
-  await app.render().save();
+  assert.equal(await app.render().save(), true);
   assert.match(app.render().notice, /影像已確認/);
   assert.match(app.render().notice, /量測校正通過/);
   app.unmount();
@@ -95,10 +95,10 @@ test("duplicate saves are blocked and uncertain saves require a confirmed read b
   const app = harness(() => { calls++; return new Promise((_, failure) => { reject = failure; }); }, async () => readSucceeded);
   const hook = app.marked();
   const saved = hook.save();
-  await hook.save();
+  assert.equal(await hook.save(), false);
   assert.equal(calls, 1);
   reject(new UnknownOutcome("結果不確定"));
-  await saved;
+  assert.equal(await saved, false);
   assert.equal(app.render().saving, false);
   assert.equal(app.render().unknown, true);
   await app.render().save();
@@ -114,7 +114,7 @@ test("duplicate saves are blocked and uncertain saves require a confirmed read b
 test("successful writes remain confirmed even if refreshing the screen fails", async () => {
   let calls = 0;
   const app = harness(async () => { calls++; return { pending_alignment: true }; }, async () => { throw new Error("read failed"); });
-  await app.marked().save();
+  assert.equal(await app.marked().save(), false);
   assert.equal(calls, 1);
   assert.equal(app.render().unknown, false);
   assert.match(app.render().notice, /已儲存/);
@@ -132,13 +132,13 @@ test("a late completion cannot update another round or refresh after unmount", a
   app.render({ roundKey: "round.95" });
   assert.equal(signal.aborted, true);
   resolve({});
-  await saving;
+  assert.equal(await saving, false);
   assert.equal(reloads, 0);
   assert.equal(app.render().notice, "");
   app.unmount();
 });
 
-test("image and model edits alternate safely and a saved model anchor can be modified", async () => {
+test("image and model edits preserve each other and a saved model anchor can be modified", async () => {
   const payloads = [];
   const app = harness(async (_, payload) => { payloads.push(payload); return {}; });
   const reference = { signature: "b".repeat(64) };
@@ -149,12 +149,12 @@ test("image and model edits alternate safely and a saved model anchor can be mod
   assert.equal(payloads[0].model_point_id, 8);
   assert.equal(payloads[0].observations, undefined);
   const images = app.marked();
-  assert.equal(images.modelSelection, null);
+  assert.equal(images.modelSelection.pointId, 8);
   await images.save();
-  assert.equal(payloads[1].model_point_id, undefined);
+  assert.equal(payloads[1].model_point_id, 8);
   assert.equal(payloads[1].observations.length, 2);
   app.render().selectModelPoint(12, reference);
-  assert.deepEqual(app.render().points, {});
+  assert.equal(Object.keys(app.render().points).length, 2);
   app.render().selectModelPoint(null, reference);
   assert.equal(app.render().modelSelection, null);
   app.unmount();

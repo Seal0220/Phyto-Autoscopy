@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
 import NotificationsProvider from "@/features/Notifications/components/NotificationsProvider";
 import PhytoSocketProvider from "@/hooks/PhytoSocketProvider";
+import PageDataCacheProvider from "@/hooks/PageDataCacheProvider";
 import { getSession } from "@/lib/session";
 
 const chiron = localFont({
@@ -26,12 +27,14 @@ export default async function RootLayout({ children }) {
       <body className={`${chiron.variable} min-w-[320px] overflow-x-hidden bg-[#06100c] text-white antialiased [font-family:var(--font-chiron)]`}>
         <NotificationsProvider>
           {session ? (
+            <PageDataCacheProvider key={session.username}>
             <PhytoSocketProvider>
               <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
                 <MainNavigation />
                 {children}
               </main>
             </PhytoSocketProvider>
+            </PageDataCacheProvider>
           ) : children}
         </NotificationsProvider>
       </body>

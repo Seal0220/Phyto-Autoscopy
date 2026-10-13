@@ -2,6 +2,7 @@ import InformationGrid from "@/components/data/InformationGrid";
 import { StatusPill } from "@/components/panels/Panel";
 
 import { ANALYSIS_CAMERA_LABELS } from "@/features/Analysis/analysisConfig";
+import { formatDisplayMessage } from "@/lib/formatUtils";
 
 const POSE_SOURCE_LABELS = {
   rig_stereo: "雙鏡頭姿態",
@@ -49,7 +50,7 @@ function AnalysisPoseRow({
   const messages = [
     pose.failure_reason,
     ...warnings,
-  ].filter(Boolean);
+  ].filter(Boolean).map(formatDisplayMessage);
 
   return (
     <li className="grid min-w-0 gap-2 border-b border-white/15 py-3 last:border-b-0">

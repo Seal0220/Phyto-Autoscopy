@@ -29,6 +29,7 @@ import {
 } from "./mainNavigationConfig";
 import { postMainNavigationAction } from "./lib/mainNavigationApiUtils";
 import { isMainNavigationItemActive } from "./lib/mainNavigationUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 export default function MainNavigation() {
   const pathname = usePathname();
@@ -56,6 +57,7 @@ export default function MainNavigation() {
 
   useEffect(() => {
     if (authExpired) {
+      invalidatePageData();
       window.location.replace("/");
     }
   }, [authExpired]);
@@ -155,6 +157,10 @@ export default function MainNavigation() {
     ? CAPTURE_SECONDARY_NAVIGATION_ITEMS
     : [];
   const hasSecondaryNavigation = secondaryItems.length > 0;
+  const sectionLabel = MAIN_NAVIGATION_ITEMS.find((item) => isMainNavigationItemActive(
+    pathname,
+    item.href,
+  ))?.label || "控制台";
   const isConnected = connection === "connected";
   const motorConnected = snapshot?.motor?.connected;
 
@@ -173,14 +179,14 @@ export default function MainNavigation() {
               PHYTO-AUTOSCOPY
             </strong>
             <span className="block pt-0.5 text-[11px] font-bold text-neutral-300">
-              控制台
+              {sectionLabel}
             </span>
           </div>
         </div>
 
-        <div className="flex flex-row gap-4 justify-center items-center">
+        <div className="flex min-w-0 items-center justify-center gap-4 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:flex-wrap max-[980px]:justify-start max-[980px]:gap-2">
           <nav
-            className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:w-full"
             aria-label="主要導覽"
           >
             {MAIN_NAVIGATION_ITEMS.map((item) => {
@@ -207,7 +213,7 @@ export default function MainNavigation() {
 
           {hasSecondaryNavigation ? (
             <nav
-              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:w-full"
+              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:w-full"
               aria-label="捕捉頁面導覽"
             >
               {secondaryItems.map((item) => (
