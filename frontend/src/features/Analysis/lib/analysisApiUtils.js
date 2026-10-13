@@ -7,6 +7,7 @@ import {
   UnknownMutationOutcomeError,
   withRequestTimeout,
 } from "@/lib/httpUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 async function requestAnalysisJson(
   path,
@@ -19,6 +20,7 @@ async function requestAnalysisJson(
   } = {},
 ) {
   const isMutation = method !== "GET" && !readOnly;
+  if (isMutation) invalidatePageData("analysis:");
 
   try {
     return await withRequestTimeout(
@@ -73,6 +75,8 @@ async function requestAnalysisJson(
       );
     }
     throw error;
+  } finally {
+    if (isMutation) invalidatePageData("analysis:");
   }
 }
 

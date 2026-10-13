@@ -6,6 +6,13 @@ import {
   UnknownMutationOutcomeError,
   withRequestTimeout,
 } from "@/lib/httpUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
+
+function invalidateCalibrationData() {
+  invalidatePageData("calibration:");
+  invalidatePageData("analysis:");
+  invalidatePageData("settings:cameras");
+}
 
 export async function requestUnifiedCalibration(
   path,
@@ -17,6 +24,7 @@ export async function requestUnifiedCalibration(
   } = {},
 ) {
   const isMutation = method !== "GET";
+  if (isMutation) invalidateCalibrationData();
 
   try {
     return await withRequestTimeout(
@@ -70,18 +78,25 @@ export async function requestUnifiedCalibration(
       );
     }
     throw error;
+  } finally {
+    if (isMutation) invalidateCalibrationData();
   }
 }
 
-export function loadUnifiedCalibrationWorkspace(signal) {
+export function loadUnifiedCalibrationWorkspace(
+  signal,
+  { catalog } = {},
+) {
   return Promise.all([
     requestUnifiedCalibration("/api/calibration/status", { signal }),
-    requestUnifiedCalibration("/api/calibration/boards", { signal }),
-    ...["top", "side", "rotating"].map((cameraId) => (
-      requestUnifiedCalibration(
-        `/api/calibration/intrinsics/${cameraId}/runs`,
-        { signal },
-      )
-    )),
+    ...(catalog || [
+      requestUnifiedCalibration("/api/calibration/boards", { signal }),
+      ...["top", "side", "rotating"].map((cameraId) => (
+        requestUnifiedCalibration(
+          `/api/calibration/intrinsics/${cameraId}/runs`,
+          { signal },
+        )
+      )),
+    ]),
   ]);
 }

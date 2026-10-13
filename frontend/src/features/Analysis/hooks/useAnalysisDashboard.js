@@ -14,6 +14,7 @@ import {
 } from "@/lib/httpUtils";
 import { downloadAnalysisExport } from "@/features/AnalysisRun/lib/analysisRunApiUtils";
 import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 import { loadAnalysisDashboard } from "../lib/analysisApiUtils";
 import {
@@ -32,9 +33,11 @@ const POLLING_STATUSES = new Set([
 const ACTIVE_POLL_INTERVAL_MS = 5_000;
 
 export default function useAnalysisDashboard() {
-  const [sources, setSources] = useState([]);
-  const [runs, setRuns] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cache = usePageDataCache();
+  const cacheKey = "analysis:dashboard";
+  const [sources, setSources] = useState(() => cache.read(cacheKey)?.value.sources || []);
+  const [runs, setRuns] = useState(() => cache.read(cacheKey)?.value.runs || []);
+  const [loading, setLoading] = useState(() => !cache.read(cacheKey));
   const [loadError, setLoadError] = useState("");
   const [exportingIds, setExportingIds] = useState(() => new Set());
   const [exportFailure, setExportFailure] = useState(null);
@@ -65,13 +68,19 @@ export default function useAnalysisDashboard() {
     };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({
+    preferCache = false,
+    silent = false,
+  } = {}) => {
     if (loadingRef.current) return false;
+    const cached = cache.read(cacheKey);
+    if (preferCache && cached?.fresh) return true;
 
     const controller = new AbortController();
+    const cacheVersion = cache.version;
     controllerRef.current = controller;
     loadingRef.current = true;
-    setLoading(true);
+    if (!silent && !(preferCache && cached)) setLoading(true);
 
     try {
       const [sourcePayload, runPayload] = await loadAnalysisDashboard(
@@ -87,6 +96,16 @@ export default function useAnalysisDashboard() {
 
       setSources(nextSources);
       setRuns(nextRuns);
+      cache.write(
+        cacheKey,
+        { sources: nextSources, runs: nextRuns },
+        cacheVersion,
+      );
+      cache.write(
+        "analysis:sources",
+        nextSources,
+        cacheVersion,
+      );
       setLoadError("");
       return true;
     } catch (error) {
@@ -111,19 +130,29 @@ export default function useAnalysisDashboard() {
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, []);
+  }, [cache]);
 
   useEffect(() => {
-    void load();
+    void load({ preferCache: true });
   }, [load]);
 
   useEffect(() => {
     if (!snapshot?.analysis) return;
+    cache.update(
+      cacheKey,
+      (current) => ({
+        ...current,
+        runs: mergeAnalysisProgress(
+          current.runs,
+          snapshot.analysis,
+        ),
+      }),
+    );
     setRuns((current) => mergeAnalysisProgress(
       current,
       snapshot.analysis,
     ));
-  }, [snapshot]);
+  }, [cache, snapshot]);
 
   const hasPollingRun = runs.some((run) => POLLING_STATUSES.has(run.status));
 
@@ -132,7 +161,7 @@ export default function useAnalysisDashboard() {
 
     function refreshVisibleRun() {
       if (document.visibilityState === "visible") {
-        void load();
+        void load({ silent: true });
       }
     }
 

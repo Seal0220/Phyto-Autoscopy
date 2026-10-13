@@ -19,6 +19,7 @@ import {
 import SettingsGear from "@/components/panels/SettingsGear";
 import { IMAGE_PREVIEW_META } from "@/features/ImagePreview/imagePreviewConfig";
 import { updateCameraMeteringRegion } from "@/lib/cameraUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 import ImagePreviewSettings from "./components/ImagePreviewSettings";
 
@@ -41,29 +42,39 @@ export default function ImagePreview({
   onRunAction,
   onNotify,
 }) {
+  const cache = usePageDataCache();
+  const cacheKey = "calibration:intrinsics";
   const [calibratedCameraIds, setCalibratedCameraIds] = useState(
-    () => new Set(),
+    () => validCalibrationIds(cache.read(cacheKey)?.value),
   );
   const cameraBusy = [...busyActions].some((action) => action.startsWith("camera."));
 
   useEffect(() => {
     let mounted = true;
+    if (cache.read(cacheKey)?.fresh) return undefined;
+    const controller = new AbortController();
+    const cacheVersion = cache.version;
 
     async function loadCalibrations() {
       try {
         const response = await fetch("/api/calibration/intrinsics", {
           cache: "no-store",
+          signal: controller.signal,
         });
         if (!response.ok) {
           throw new Error("讀取相機校正狀態失敗。");
         }
         const intrinsics = await response.json();
-        if (mounted) {
+        if (mounted && !controller.signal.aborted) {
           setCalibratedCameraIds(validCalibrationIds(intrinsics));
+          cache.write(
+            cacheKey,
+            intrinsics,
+            cacheVersion,
+          );
         }
       } catch (error) {
-        if (mounted) {
-          setCalibratedCameraIds(new Set());
+        if (mounted && error?.name !== "AbortError") {
           onNotify?.(
             error instanceof Error
               ? error.message
@@ -77,8 +88,9 @@ export default function ImagePreview({
     void loadCalibrations();
     return () => {
       mounted = false;
+      controller.abort();
     };
-  }, [onNotify]);
+  }, [cache, onNotify]);
 
   return (
     <Panel

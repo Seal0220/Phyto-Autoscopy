@@ -1,7 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { createPageDataCache, PAGE_CACHE_INVALIDATED_EVENT } from "@/lib/pageDataCache";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import {
+  createPageDataCache,
+  PAGE_CACHE_INVALIDATED_EVENT,
+} from "@/lib/pageDataCache";
 
 const PageDataCacheContext = createContext(null);
 
@@ -15,7 +23,11 @@ export default function PageDataCacheProvider({ children }) {
       cache.clear();
     };
   }, [cache]);
-  return <PageDataCacheContext.Provider value={cache}>{children}</PageDataCacheContext.Provider>;
+  return (
+    <PageDataCacheContext.Provider value={cache}>
+      {children}
+    </PageDataCacheContext.Provider>
+  );
 }
 
 export function usePageDataCache() {

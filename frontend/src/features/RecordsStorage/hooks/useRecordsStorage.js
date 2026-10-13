@@ -13,11 +13,14 @@ import {
   parseJsonResponse,
   responseErrorMessage,
 } from "@/lib/httpUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 export default function useRecordsStorage({
   onNotify,
 }) {
-  const [records, setRecords] = useState([]);
+  const cache = usePageDataCache();
+  const cacheKey = "records:list";
+  const [records, setRecords] = useState(() => cache.read(cacheKey)?.value || []);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const loadingRef = useRef(false);
@@ -43,6 +46,7 @@ export default function useRecordsStorage({
 
   const loadRecords = useCallback(async ({
     queueIfBusy = false,
+    preferCache = false,
   } = {}) => {
     if (loadingRef.current) {
       if (queueIfBusy) {
@@ -51,11 +55,14 @@ export default function useRecordsStorage({
 
       return false;
     }
+    const cached = cache.read(cacheKey);
+    if (preferCache && cached?.fresh) return true;
 
     const controller = new AbortController();
+    const cacheVersion = cache.version;
     loadingRef.current = true;
     loadAbortRef.current = controller;
-    setLoading(true);
+    if (!(preferCache && cached)) setLoading(true);
     setLoadError("");
 
     try {
@@ -79,6 +86,11 @@ export default function useRecordsStorage({
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setRecords(payload);
+      cache.write(
+        cacheKey,
+        payload,
+        cacheVersion,
+      );
       setLoadError("");
       return true;
     } catch (error) {
@@ -113,10 +125,10 @@ export default function useRecordsStorage({
         }
       }
     }
-  }, [onNotify]);
+  }, [cache, onNotify]);
 
   useEffect(() => {
-    void loadRecords();
+    void loadRecords({ preferCache: true });
   }, [loadRecords]);
 
   return {

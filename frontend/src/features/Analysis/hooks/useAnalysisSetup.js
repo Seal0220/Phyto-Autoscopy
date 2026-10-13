@@ -13,6 +13,7 @@ import {
   RequestTimeoutError,
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 import {
   ANALYSIS_SETUP_STEPS,
@@ -92,7 +93,9 @@ function cancelActiveSourceScan(
 export default function useAnalysisSetup({
   initialRecordId = "",
 }) {
-  const [sources, setSources] = useState([]);
+  const cache = usePageDataCache();
+  const cacheKey = "analysis:sources";
+  const [sources, setSources] = useState(() => cache.read(cacheKey)?.value || []);
   const [setup, setSetup] = useState(() => (
     createInitialAnalysisSetup(initialRecordId)
   ));
@@ -242,23 +245,32 @@ export default function useAnalysisSetup({
     }
   }, []);
 
-  const loadOptions = useCallback(async () => {
+  const loadOptions = useCallback(async ({ preferCache = false } = {}) => {
     if (loadingRef.current) return false;
 
     const controller = new AbortController();
+    const cached = cache.read(cacheKey);
+    const cacheVersion = cache.version;
     loadControllerRef.current = controller;
     loadingRef.current = true;
-    setLoading(true);
+    if (!(preferCache && cached)) setLoading(true);
 
     try {
-      const sourcePayload = await loadAnalysisSetupOptions(
-        controller.signal,
+      const reuse = preferCache && cached?.fresh;
+      const nextSources = reuse ? cached.value : analysisSourcesFromPayload(
+        await loadAnalysisSetupOptions(controller.signal),
       );
-      const nextSources = analysisSourcesFromPayload(sourcePayload);
 
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setSources(nextSources);
+      if (!reuse) {
+        cache.write(
+          cacheKey,
+          nextSources,
+          cacheVersion,
+        );
+      }
       const selectedSource = nextSources.find(
         (source) => source.record_id === setupRef.current.recordId,
       );
@@ -296,10 +308,10 @@ export default function useAnalysisSetup({
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [performSourceScan]);
+  }, [cache, performSourceScan]);
 
   useEffect(() => {
-    void loadOptions();
+    void loadOptions({ preferCache: true });
   }, [loadOptions]);
 
   async function selectRecord(recordId) {

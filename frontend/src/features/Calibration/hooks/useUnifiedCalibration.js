@@ -13,6 +13,7 @@ import {
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
 import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 import {
   loadUnifiedCalibrationWorkspace,
@@ -34,6 +35,8 @@ function currentIntrinsicRun(value) {
 export default function useUnifiedCalibration({
   polling = false,
 }) {
+  const cache = usePageDataCache();
+  const cacheKey = "calibration:workspace";
   const {
     snapshot,
     connection,
@@ -41,8 +44,8 @@ export default function useUnifiedCalibration({
     resetSocketError,
   } = usePhytoSocketContext();
   const [status, setStatus] = useState(null);
-  const [boards, setBoards] = useState([]);
-  const [runs, setRuns] = useState({});
+  const [boards, setBoards] = useState(() => cache.read(cacheKey)?.value.boards || []);
+  const [runs, setRuns] = useState(() => cache.read(cacheKey)?.value.runs || {});
   const [loading, setLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState("");
   const [error, setError] = useState("");
@@ -72,10 +75,15 @@ export default function useUnifiedCalibration({
     };
   }, []);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({
+    quiet = false,
+    preferCache = false,
+  } = {}) => {
     if (loadControllerRef.current) return false;
 
     const controller = new AbortController();
+    const cacheVersion = cache.version;
+    const cached = cache.read(cacheKey);
     loadControllerRef.current = controller;
     if (!quiet) setLoading(true);
 
@@ -86,16 +94,35 @@ export default function useUnifiedCalibration({
         topRuns,
         sideRuns,
         rotatingRuns,
-      ] = await loadUnifiedCalibrationWorkspace(controller.signal);
+      ] = await loadUnifiedCalibrationWorkspace(
+        controller.signal,
+        {
+          catalog: preferCache && cached?.fresh ? cached.value.catalog : undefined,
+        },
+      );
       if (!mountedRef.current || controller.signal.aborted) return false;
       setStatus(nextStatus);
       setOwnsLock(Boolean(nextStatus?.lock_owned_by_requester));
-      setBoards(Array.isArray(nextBoards) ? nextBoards : []);
-      setRuns({
+      const nextRuns = {
         top: currentIntrinsicRun(topRuns),
         side: currentIntrinsicRun(sideRuns),
         rotating: currentIntrinsicRun(rotatingRuns),
-      });
+      };
+      const normalizedBoards = Array.isArray(nextBoards) ? nextBoards : [];
+      setBoards(normalizedBoards);
+      setRuns(nextRuns);
+      // Reading lock ownership must not extend the lifetime of cached catalogs.
+      if (!(preferCache && cached?.fresh)) {
+        cache.write(
+          cacheKey,
+          {
+            boards: normalizedBoards,
+            runs: nextRuns,
+            catalog: [nextBoards, topRuns, sideRuns, rotatingRuns],
+          },
+          cacheVersion,
+        );
+      }
       setError("");
       setRequiresRefresh(false);
       return true;
@@ -114,10 +141,10 @@ export default function useUnifiedCalibration({
         if (mountedRef.current && !quiet) setLoading(false);
       }
     }
-  }, []);
+  }, [cache]);
 
   useEffect(() => {
-    void load();
+    void load({ preferCache: true });
   }, [load]);
 
   useEffect(() => {

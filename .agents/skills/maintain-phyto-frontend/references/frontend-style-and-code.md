@@ -110,7 +110,7 @@ frontend/src/
 
 Every `page.js` belongs below `app/(pages)/`, including the root `/` entry. Never place a page beside `app/layout.js` or inside `app/api`; keep `layout.js`, `actions/`, `api/`, `globals.css`, and application assets outside the route group. Because `(pages)` is a Next.js route group, it organizes source files without adding a URL segment.
 
-`app/layout.js` owns the authenticated application shell. After resolving the login session, it mounts the single `PhytoSocketProvider`, the page-level `main` background and horizontal padding, and `MainNavigation` once around authenticated page content. Feature entries must not repeat this shell; they begin with their own max-width, top-spacing, responsive grid, and panels. The unauthenticated login keeps its dedicated centered `main` because the root layout does not mount the authenticated shell without a valid session.
+`app/layout.js` owns the authenticated application shell. After resolving the login session, it mounts `PageDataCacheProvider`, the single `PhytoSocketProvider`, the page-level `main` background and horizontal padding, and `MainNavigation` once around authenticated page content. Feature entries must not repeat this shell; they begin with their own max-width, top-spacing, responsive grid, and panels. The unauthenticated login keeps its dedicated centered `main` because the root layout does not mount the authenticated shell without a valid session.
 
 ### 3.1 `components`
 
@@ -908,6 +908,8 @@ Preserve these current security and transport expectations:
 - errors returned to the browser do not leak credentials or internal stack details.
 
 Do not bypass shared `api-proxy`, `backend`, `http`, or `session` helpers with an ad hoc route implementation.
+
+Authenticated page snapshots live only in the root `PageDataCacheProvider`, with a 30-second freshness window and a bounded 16-entry LRU. Shared `NavLink` uses Next.js `Link` so internal navigation preserves this provider and the single status socket. Feature hooks restore cached successful reads immediately, reuse fresh snapshots on entry, and refresh stale snapshots in the background. Manual refresh and polling always read through the authenticated BFF. Cache committed settings only, never unsaved drafts, mutations, auth checks, live streams, or calibration lock ownership. Invalidate affected snapshots before and after mutations, and clear them on logout or auth expiry. Status socket changes mark related analysis and record catalogs stale even when their pages are closed. Request versions prevent an older in-flight read from repopulating an invalidated cache; never persist page snapshots to local storage or share a module singleton between authenticated server requests.
 
 ### 11.4 Formatting and validation
 

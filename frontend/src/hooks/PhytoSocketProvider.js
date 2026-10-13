@@ -7,12 +7,14 @@ import {
 
 import usePhytoSocket from "@/hooks/usePhytoSocket";
 import useSessionGuard from "@/hooks/useSessionGuard";
+import usePageDataCacheSync from "@/hooks/usePageDataCacheSync";
 
 const PhytoSocketContext = createContext(null);
 
 export default function PhytoSocketProvider({ children }) {
   useSessionGuard();
   const socket = usePhytoSocket();
+  usePageDataCacheSync(socket.snapshot);
 
   return (
     <PhytoSocketContext.Provider value={socket}>

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as config from "../src/features/Analysis/analysisConfig.js";
 import * as http from "../src/lib/httpUtils.js";
+import { createPageDataCache } from "../src/lib/pageDataCache.js";
 
 const require = createRequire(import.meta.url);
 const swc = require("next/dist/build/swc");
@@ -29,6 +30,7 @@ function load(path, dependencies) {
 const utils = load("lib/analysisUtils.js", { "../analysisConfig.js": config });
 
 function harness(api) {
+  const cache = createPageDataCache();
   const state = [], refs = [], callbacks = [], effects = [], pending = [];
   let index = 0;
   const changed = (left, right) => !left || left.length !== right.length || right.some((value, i) => value !== left[i]);
@@ -59,6 +61,7 @@ function harness(api) {
   const hook = load("hooks/useAnalysisSetup.js", {
     react,
     "@/lib/httpUtils": http,
+    "@/hooks/PageDataCacheProvider": { usePageDataCache: () => cache },
     "../analysisConfig": config,
     "../lib/analysisUtils": {
       ...utils,

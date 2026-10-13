@@ -22,6 +22,7 @@ import {
   messageFromError,
   RequestTimeoutError,
 } from "@/lib/httpUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 import {
   CAPTURE_SECONDARY_NAVIGATION_ITEMS,
@@ -29,7 +30,6 @@ import {
 } from "./mainNavigationConfig";
 import { postMainNavigationAction } from "./lib/mainNavigationApiUtils";
 import { isMainNavigationItemActive } from "./lib/mainNavigationUtils";
-import { invalidatePageData } from "@/lib/pageDataCache";
 
 export default function MainNavigation() {
   const pathname = usePathname();
@@ -122,6 +122,7 @@ export default function MainNavigation() {
         "登出失敗，請稍後重試。",
         controller.signal,
       );
+      invalidatePageData();
       window.location.assign("/");
     } catch (error) {
       if (error?.name === "AbortError" && !mountedRef.current) return;

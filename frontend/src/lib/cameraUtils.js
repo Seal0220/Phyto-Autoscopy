@@ -5,11 +5,13 @@ import {
   responseErrorMessage,
   UnknownMutationOutcomeError,
 } from "@/lib/httpUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 export async function updateCameraMeteringRegion(
   cameraId,
   region,
 ) {
+  invalidatePageData("settings:cameras");
   try {
     const response = await fetch(
       `/api/cameras/${encodeURIComponent(cameraId)}/metering-region`,
@@ -45,5 +47,7 @@ export async function updateCameraMeteringRegion(
       );
     }
     throw error;
+  } finally {
+    invalidatePageData("settings:cameras");
   }
 }

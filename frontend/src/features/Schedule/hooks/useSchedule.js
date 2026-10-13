@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import { cloneValue } from "@/features/Settings/lib/settingsUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
+import { invalidatePageData } from "@/lib/pageDataCache";
 import {
   abortRequest,
   messageFromError,
@@ -32,6 +34,7 @@ export default function useSchedule({
   onRunAction,
   onStarted,
 }) {
+  const cache = usePageDataCache();
   const [schedule, setSchedule] = useState(INITIAL_SCHEDULE);
   const [defaultsLoading, setDefaultsLoading] = useState(true);
   const [defaultsSaving, setDefaultsSaving] = useState(false);
@@ -71,42 +74,53 @@ export default function useSchedule({
     }));
   }), []);
 
-  const loadDefaults = useCallback(async () => {
+  const loadDefaults = useCallback(async ({ preferCache = false } = {}) => {
     if (loadingDefaultsRef.current) return false;
 
     const controller = new AbortController();
+    const cacheVersion = cache.version;
+    const cachedSchedule = cache.read("settings:schedule");
+    const cachedCameras = cache.read("settings:cameras");
+    const reuse = preferCache && cachedSchedule?.fresh && cachedCameras?.fresh;
     loadingDefaultsRef.current = true;
     defaultsAbortRef.current = controller;
     setDefaultsLoading(true);
     setDefaultsLoadError("");
 
     try {
-      const [scheduleResponse, camerasResponse] = await Promise.all([
-        fetch("/api/settings/schedule", {
-          cache: "no-store",
-          signal: controller.signal,
-        }),
-        fetch("/api/settings/cameras", {
-          cache: "no-store",
-          signal: controller.signal,
-        }),
-      ]);
-      const [schedulePayload, camerasPayload] = await Promise.all([
-        parseJsonResponse(scheduleResponse),
-        parseJsonResponse(camerasResponse),
-      ]);
+      let schedulePayload;
+      let camerasPayload;
+      if (reuse) {
+        schedulePayload = cachedSchedule.value;
+        camerasPayload = cachedCameras.value;
+      } else {
+        const [scheduleResponse, camerasResponse] = await Promise.all([
+          fetch("/api/settings/schedule", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+          fetch("/api/settings/cameras", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+        ]);
+        [schedulePayload, camerasPayload] = await Promise.all([
+          parseJsonResponse(scheduleResponse),
+          parseJsonResponse(camerasResponse),
+        ]);
 
-      if (!scheduleResponse.ok) {
-        throw new Error(responseErrorMessage(
-          schedulePayload,
-          "讀取排程預設失敗。",
-        ));
-      }
-      if (!camerasResponse.ok) {
-        throw new Error(responseErrorMessage(
-          camerasPayload,
-          "讀取攝影機設定失敗。",
-        ));
+        if (!scheduleResponse.ok) {
+          throw new Error(responseErrorMessage(
+            schedulePayload,
+            "讀取排程預設失敗。",
+          ));
+        }
+        if (!camerasResponse.ok) {
+          throw new Error(responseErrorMessage(
+            camerasPayload,
+            "讀取攝影機設定失敗。",
+          ));
+        }
       }
 
       if (
@@ -121,6 +135,18 @@ export default function useSchedule({
       }
 
       if (!mountedRef.current || controller.signal.aborted) return false;
+      if (!reuse) {
+        cache.write(
+          "settings:schedule",
+          schedulePayload,
+          cacheVersion,
+        );
+        cache.write(
+          "settings:cameras",
+          camerasPayload,
+          cacheVersion,
+        );
+      }
 
       settingsPayloadsRef.current = {
         schedule: cloneValue(schedulePayload),
@@ -195,7 +221,7 @@ export default function useSchedule({
         }
       }
     }
-  }, [onNotify]);
+  }, [cache, onNotify]);
 
   const saveDefaults = useCallback(async () => {
     if (savingDefaultsRef.current || !settingsPayloadsRef.current) return false;
@@ -234,6 +260,8 @@ export default function useSchedule({
     savingDefaultsRef.current = true;
     saveDefaultsAbortRef.current = controller;
     setDefaultsSaving(true);
+    invalidatePageData("settings:schedule");
+    invalidatePageData("settings:cameras");
 
     try {
       const [scheduleResponse, camerasResponse] = await Promise.all([
@@ -345,6 +373,10 @@ export default function useSchedule({
       }
       return false;
     } finally {
+      invalidatePageData("settings:schedule");
+      invalidatePageData("settings:cameras");
+      invalidatePageData("analysis:");
+      invalidatePageData("calibration:");
       if (saveDefaultsAbortRef.current === controller) {
         saveDefaultsAbortRef.current = null;
         savingDefaultsRef.current = false;
@@ -357,7 +389,7 @@ export default function useSchedule({
   ]);
 
   useEffect(() => {
-    void loadDefaults();
+    void loadDefaults({ preferCache: true });
   }, [loadDefaults]);
 
   async function handleSubmit(event) {

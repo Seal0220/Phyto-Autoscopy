@@ -20,6 +20,8 @@ import {
   responseErrorMessage,
   withRequestTimeout,
 } from "@/lib/httpUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 export default function useSettings({
   group,
@@ -27,7 +29,9 @@ export default function useSettings({
   open,
   serializePayload,
 }) {
-  const [payload, setPayload] = useState(null);
+  const cache = usePageDataCache();
+  const cacheKey = `settings:${group}`;
+  const [payload, setPayload] = useState(() => cloneValue(cache.read(cacheKey)?.value || null));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -68,17 +72,20 @@ export default function useSettings({
     saveAbortRef.current = null;
     abortRequest(loadController);
     abortRequest(saveController);
-    setPayload(null);
+    setPayload(cloneValue(cache.read(cacheKey)?.value || null));
     setLoading(false);
     setSaving(false);
     setLoadFailed(false);
     setLoadError("");
-  }, [group]);
+  }, [cache, cacheKey, group]);
 
-  const loadGroup = useCallback(async () => {
-    if (loadingRef.current) return false;
+  const loadGroup = useCallback(async ({ preferCache = false } = {}) => {
+    if (loadingRef.current || savingRef.current) return false;
+    const cached = cache.read(cacheKey);
+    if (preferCache && cached?.fresh) return true;
 
     const controller = new AbortController();
+    const cacheVersion = cache.version;
     loadingRef.current = true;
     loadAbortRef.current = controller;
     setLoading(true);
@@ -126,6 +133,11 @@ export default function useSettings({
       if (!mountedRef.current || controller.signal.aborted) return false;
 
       setPayload(cloneValue(nextPayload));
+      cache.write(
+        cacheKey,
+        nextPayload,
+        cacheVersion,
+      );
       setLoadFailed(false);
       setLoadError("");
       return true;
@@ -154,12 +166,12 @@ export default function useSettings({
         }
       }
     }
-  }, [group, onNotify]);
+  }, [cache, cacheKey, group, onNotify]);
 
   useEffect(() => {
     if (!open || hasLoadedRef.current) return;
     hasLoadedRef.current = true;
-    void loadGroup();
+    void loadGroup({ preferCache: true });
   }, [loadGroup, open]);
 
   const updateField = useCallback(
@@ -178,12 +190,13 @@ export default function useSettings({
   );
 
   async function saveGroup() {
-    if (!payload || savingRef.current) return false;
+    if (!payload || savingRef.current || loadingRef.current) return false;
 
     const controller = new AbortController();
     let requestStarted = false;
     let responseReceived = false;
     let outcomeUnknown = false;
+    let committedPayload = null;
     savingRef.current = true;
     saveAbortRef.current = controller;
     setSaving(true);
@@ -193,6 +206,9 @@ export default function useSettings({
         ? serializePayload(payload)
         : serializeSettingsPayload(group, payload);
       requestStarted = true;
+      invalidatePageData(cacheKey);
+      invalidatePageData("analysis:");
+      if (group === "cameras") invalidatePageData("calibration:");
       const {
         response,
         result,
@@ -240,6 +256,7 @@ export default function useSettings({
         ? result.payload
         : nextPayload;
       setPayload(cloneValue(savedPayload));
+      committedPayload = savedPayload;
       onNotify?.("已儲存並立即套用。", "success");
       return true;
     } catch (error) {
@@ -267,6 +284,17 @@ export default function useSettings({
 
       return false;
     } finally {
+      if (requestStarted) {
+        invalidatePageData(cacheKey);
+        invalidatePageData("analysis:");
+        if (group === "cameras") invalidatePageData("calibration:");
+        if (committedPayload) {
+          cache.write(
+            cacheKey,
+            committedPayload,
+          );
+        }
+      }
       if (saveAbortRef.current === controller) {
         saveAbortRef.current = null;
         savingRef.current = false;

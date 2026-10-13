@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { usePhytoSocketContext } from "@/hooks/PhytoSocketProvider";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 import {
   abortRequest,
   messageFromError,
@@ -36,10 +37,12 @@ const POLLED_STATUSES = new Set([
 export default function useAnalysisRun({
   analysisId,
 }) {
-  const [run, setRun] = useState(null);
-  const [progress, setProgress] = useState(null);
-  const [formalData, setFormalData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cache = usePageDataCache();
+  const cacheKey = `analysis:run:${analysisId}`;
+  const [run, setRun] = useState(() => cache.read(cacheKey)?.value.run || null);
+  const [progress, setProgress] = useState(() => cache.read(cacheKey)?.value.progress || null);
+  const [formalData, setFormalData] = useState(() => cache.read(cacheKey)?.value.formalData || null);
+  const [loading, setLoading] = useState(() => !cache.read(cacheKey));
   const [loadError, setLoadError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [mutationError, setMutationError] = useState("");
@@ -63,10 +66,31 @@ export default function useAnalysisRun({
     resetSocketError,
   } = usePhytoSocketContext();
 
+  const rememberProgress = useCallback((next) => {
+    runStatusRef.current = next?.status || "";
+    lastResultsRevisionRef.current = next?.results_revision || null;
+    lastTerminalProgressRef.current = next && !POLLED_STATUSES.has(next.status)
+      ? `${analysisId}:${next.status}` : "";
+    lastRoundProgressRef.current = next?.round_key
+      ? `${next.round_key}:${next.round_progress === 1 ? "completed" : "processing"}` : "";
+  }, [analysisId]);
+
   const load = useCallback(async ({
     silent = false,
     confirmMutation = false,
+    preferCache = false,
   } = {}) => {
+    const cached = cache.read(cacheKey);
+    if (preferCache) {
+      setRun(cached?.value.run || null);
+      setProgress(cached?.value.progress || null);
+      setFormalData(cached?.value.formalData || null);
+      rememberProgress(cached?.value.progress);
+      setLoading(!cached);
+      setLoadError("");
+      if (cached?.fresh) return true;
+      silent = Boolean(cached);
+    }
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
     abortRequest(
@@ -74,6 +98,7 @@ export default function useAnalysisRun({
       "已由新的分析紀錄讀取取代。",
     );
     const controller = new AbortController();
+    const cacheVersion = cache.version;
     loadControllerRef.current = controller;
 
     if (!silent) setLoading(true);
@@ -84,13 +109,24 @@ export default function useAnalysisRun({
         analysisId,
         controller.signal,
       );
-      if (!mountedRef.current || generation !== loadGenerationRef.current) return false;
+      if (!mountedRef.current || controller.signal.aborted
+        || generation !== loadGenerationRef.current) return false;
 
       const normalizedRun = normalizeAnalysisRun(bundle.run);
-      runStatusRef.current = normalizedRun.status;
+      const normalizedProgress = normalizeAnalysisProgress(bundle.progress);
+      rememberProgress(normalizedProgress);
       setRun(normalizedRun);
-      setProgress(normalizeAnalysisProgress(bundle.progress));
+      setProgress(normalizedProgress);
       setFormalData(bundle.formalData);
+      cache.write(
+        cacheKey,
+        {
+          run: normalizedRun,
+          progress: normalizedProgress,
+          formalData: bundle.formalData,
+        },
+        cacheVersion,
+      );
       setLoadError("");
       if (confirmMutation) {
         setMutationOutcomeUnknown(false);
@@ -110,17 +146,21 @@ export default function useAnalysisRun({
       if (loadControllerRef.current === controller) {
         loadControllerRef.current = null;
       }
-      if (mountedRef.current && generation === loadGenerationRef.current && !silent) {
+      if (mountedRef.current && generation === loadGenerationRef.current) {
         setLoading(false);
       }
     }
-  }, [analysisId]);
+  }, [analysisId, cache, cacheKey, rememberProgress]);
 
   const applyProgress = useCallback((payload) => {
     const next = normalizeAnalysisProgress(payload);
     if (!mountedRef.current || next.analysis_id !== analysisId) return;
     runStatusRef.current = next.status;
     setProgress(next);
+    cache.update(
+      cacheKey,
+      (current) => ({ ...current, progress: next }),
+    );
     if (next.results_revision && next.results_revision !== lastResultsRevisionRef.current) {
       lastResultsRevisionRef.current = next.results_revision;
       void load({ silent: true });
@@ -142,7 +182,7 @@ export default function useAnalysisRun({
         void load({ silent: true });
       }
     }
-  }, [analysisId, load]);
+  }, [analysisId, cache, cacheKey, load]);
 
   const pollProgress = useCallback(async () => {
     const controller = new AbortController();
@@ -173,7 +213,7 @@ export default function useAnalysisRun({
 
   useEffect(() => {
     mountedRef.current = true;
-    void load();
+    void load({ preferCache: true });
 
     const interval = window.setInterval(() => {
       if (
@@ -310,9 +350,9 @@ export default function useAnalysisRun({
   }
 
   return {
-    run,
-    progress,
-    formalData,
+    run: run?.analysis_id === analysisId ? run : null,
+    progress: progress?.analysis_id === analysisId ? progress : null,
+    formalData: run?.analysis_id === analysisId ? formalData : null,
     loading,
     loadError,
     pendingAction,

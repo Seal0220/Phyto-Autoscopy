@@ -6,6 +6,7 @@ import {
 } from "@/lib/httpUtils";
 
 import { analysisRunActionRequest } from "./analysisRunUtils";
+import { invalidatePageData } from "@/lib/pageDataCache";
 
 export class UnknownAnalysisMutationOutcomeError extends Error {
   constructor(message) {
@@ -36,6 +37,7 @@ export async function requestAnalysisResource(
   } = {},
 ) {
   const isMutation = method !== "GET";
+  if (isMutation) invalidatePageData("analysis:");
 
   try {
     return await withRequestTimeout(
@@ -88,6 +90,8 @@ export async function requestAnalysisResource(
       );
     }
     throw error;
+  } finally {
+    if (isMutation) invalidatePageData("analysis:");
   }
 }
 

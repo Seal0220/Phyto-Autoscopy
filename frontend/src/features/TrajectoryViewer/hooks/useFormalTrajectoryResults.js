@@ -11,6 +11,7 @@ import {
   abortRequest,
   messageFromError,
 } from "@/lib/httpUtils";
+import { usePageDataCache } from "@/hooks/PageDataCacheProvider";
 
 import {
   downloadFormalTrajectoryExport,
@@ -39,8 +40,10 @@ const LIVE_STATUSES = new Set([
 export default function useFormalTrajectoryResults({
   analysisId,
 }) {
-  const [data, setData] = useState(EMPTY_DATA);
-  const [loading, setLoading] = useState(true);
+  const cache = usePageDataCache();
+  const cacheKey = `analysis:results:${analysisId}`;
+  const [data, setData] = useState(() => cache.read(cacheKey)?.value || EMPTY_DATA);
+  const [loading, setLoading] = useState(() => !cache.read(cacheKey));
   const [loadError, setLoadError] = useState("");
   const [exportPending, setExportPending] = useState(false);
   const [exportError, setExportError] = useState("");
@@ -49,12 +52,25 @@ export default function useFormalTrajectoryResults({
   const exportControllerRef = useRef(null);
   const statusRef = useRef("");
 
-  const load = useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async ({
+    silent = false,
+    preferCache = false,
+  } = {}) => {
+    const cached = cache.read(cacheKey);
+    if (preferCache) {
+      setData(cached?.value || EMPTY_DATA);
+      statusRef.current = cached?.value.run?.status || "";
+      setLoading(!cached);
+      setLoadError("");
+      if (cached?.fresh) return;
+      silent = Boolean(cached);
+    }
     abortRequest(
       loadControllerRef.current,
       "已由新的正式分析結果讀取取代。",
     );
     const controller = new AbortController();
+    const cacheVersion = cache.version;
     loadControllerRef.current = controller;
     if (!silent) {
       setLoading(true);
@@ -69,6 +85,11 @@ export default function useFormalTrajectoryResults({
         && loadControllerRef.current === controller) {
         statusRef.current = payload.run?.status || "";
         setData(payload);
+        cache.write(
+          cacheKey,
+          payload,
+          cacheVersion,
+        );
       }
     } catch (error) {
       if (error?.name !== "AbortError" && !controller.signal.aborted
@@ -84,11 +105,11 @@ export default function useFormalTrajectoryResults({
         if (mountedRef.current) setLoading(false);
       }
     }
-  }, [analysisId]);
+  }, [analysisId, cache, cacheKey]);
 
   useEffect(() => {
     mountedRef.current = true;
-    void load();
+    void load({ preferCache: true });
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible"
         && !loadControllerRef.current && LIVE_STATUSES.has(statusRef.current)) {
@@ -143,7 +164,7 @@ export default function useFormalTrajectoryResults({
   }, [analysisId]);
 
   return {
-    ...data,
+    ...(data.run?.analysis_id === analysisId ? data : EMPTY_DATA),
     loading,
     loadError,
     exportPending,

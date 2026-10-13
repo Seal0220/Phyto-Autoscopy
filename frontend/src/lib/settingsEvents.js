@@ -1,7 +1,12 @@
+import { invalidatePageData } from "@/lib/pageDataCache";
+
 export const CAMERA_SETTINGS_UPDATED_EVENT = "phyto:camera-settings-updated";
 
 export function emitCameraSettingsUpdated(detail) {
   if (typeof window === "undefined") return;
+  invalidatePageData("settings:cameras");
+  invalidatePageData("calibration:");
+  invalidatePageData("analysis:");
 
   window.dispatchEvent(new CustomEvent(
     CAMERA_SETTINGS_UPDATED_EVENT,
