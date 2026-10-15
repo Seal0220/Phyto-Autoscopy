@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
-  FiArrowLeft,
   FiDownload,
   FiRefreshCw,
 } from "react-icons/fi";
@@ -53,7 +51,6 @@ function displayNumber(
 export default function FormalTrajectoryViewer({
   analysisId,
 }) {
-  const router = useRouter();
   const { showNotification } = useNotificationsContext();
   const {
     run,
@@ -136,17 +133,6 @@ export default function FormalTrajectoryViewer({
                 />
                 {exportPending ? "匯出中…" : "匯出結果"}
               </Button>
-              <Button
-                onClick={() => router.push(
-                  `/analysis/${encodeURIComponent(analysisId)}`,
-                )}
-              >
-                <FiArrowLeft
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                返回分析
-              </Button>
             </div>
           )}
         />
@@ -165,7 +151,7 @@ export default function FormalTrajectoryViewer({
                   每輪完成後更新模型與尖端軌跡。
                 </p>
               ) : null}
-              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[980px]:grid-cols-3">
+              <div className="grid gap-3 min-[520px]:grid-cols-2 min-[720px]:grid-cols-3 min-[980px]:grid-cols-6">
                 <StatusCard
                   title="分析輪次"
                   content={rounds.length}
@@ -207,8 +193,11 @@ export default function FormalTrajectoryViewer({
               {validPoints.length ? (
                 <>
                   <FormalTrajectoryViewer3D
+                    key={analysisId}
                     analysisId={analysisId}
                     trajectory={trajectory}
+                    models={models}
+                    rounds={rounds}
                   />
                   <FormalTrajectoryCharts trajectory={trajectory} />
                 </>

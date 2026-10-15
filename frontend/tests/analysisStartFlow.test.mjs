@@ -154,6 +154,7 @@ test("the single start button opens progress directly after a successful start",
     react: { useEffect() {} },
     "next/navigation": { useRouter: () => ({ push: (route) => routes.push(route) }) },
     "@/features/Notifications/hooks/useNotificationsContext": { __esModule: true, default: () => ({ showNotification() {} }) },
+    "@/features/MainNavigation/hooks/useAnalysisSecondaryNavigation": { __esModule: true, default() {} },
     "./analysisConfig": config,
     "./hooks/useAnalysisSetup": { __esModule: true, default: () => ({
       sources: [], setup: { recordId: "record" }, currentStep: 4, highestStep: 4,

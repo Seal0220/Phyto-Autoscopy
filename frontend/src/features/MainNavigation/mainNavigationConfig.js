@@ -17,6 +17,11 @@ export const MAIN_NAVIGATION_ITEMS = [
   },
 ];
 
+export const ANALYSIS_SECONDARY_NAVIGATION_ITEMS = [
+  { href: "/analysis", label: "總覽" },
+  { href: "/analysis/new", label: "新增分析" },
+];
+
 export const CAPTURE_SECONDARY_NAVIGATION_ITEMS = [
   {
     href: "/capture#camera",

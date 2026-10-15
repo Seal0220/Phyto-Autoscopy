@@ -145,7 +145,7 @@ export default function ControlPanel() {
   }, [loadRecords, scheduleActive]);
 
   return (
-    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-35 min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-46">
+    <div className="mx-auto grid w-full max-w-[112.5rem] gap-4 pt-24 min-[981px]:grid-cols-[minmax(0,1fr)_minmax(18.75rem,22.5rem)] max-[980px]:pt-32">
         <ImagePreview
           imagePreviewById={imagePreviewById}
           busyActions={busyActions}

@@ -15,6 +15,7 @@ import Button from "@/components/buttons/Button";
 import { analysisRunActionAvailability } from "../lib/analysisRunUtils";
 
 export default function AnalysisRunActions({
+  autoRepair,
   exportPending,
   locked,
   onAction,
@@ -107,6 +108,20 @@ export default function AnalysisRunActions({
             aria-hidden="true"
           />
           {pendingAction === "retry" ? "準備中…" : "重建預覽"}
+        </Button>
+      ) : null}
+      {autoRepair?.visible ? (
+        <Button
+          variant="warning"
+          disabled={locked || autoRepair.disabled}
+          title={autoRepair.disabled ? autoRepair.disabledReason : undefined}
+          onClick={() => onAction("auto-repair")}
+        >
+          <FiRefreshCw
+            className="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {pendingAction === "auto-repair" ? "準備修正中…" : "自動修正與對齊"}
         </Button>
       ) : null}
       {available.reset ? (

@@ -1,8 +1,11 @@
+import Link from "next/link";
+
 import InnerPanel from "@/components/panels/InnerPanel";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import { analysisRoundResultsUrl } from "@/features/AnalysisRun/lib/analysisTipResultsUtils";
 
 import { formalTrajectoryModeColors } from "../lib/trajectoryUtils";
+import { TRAJECTORY_POINT_OUTLINE } from "../trajectoryViewerConfig";
 import {
   imageTipPlotLayout,
   imageTipTrajectorySeries,
@@ -102,7 +105,7 @@ export default function TrajectoryViewerImageTipCharts({
                         )).join(" ")}
                       />
                       {segment.points.map((point) => (
-                        <a
+                        <Link
                           key={point.roundKey}
                           href={analysisRoundResultsUrl(analysisId, point.roundKey)}
                           aria-label={`查看 ${segment.modeId} ${point.roundId} 尖端`}
@@ -113,10 +116,13 @@ export default function TrajectoryViewerImageTipCharts({
                             cy={layout.projectY(point.y_px)}
                             r={4}
                             fill={point.manuallyCorrected ? "white" : colors[segment.modeId]}
-                            className="stroke-transparent stroke-2 transition-colors group-hover:stroke-white group-focus-visible:stroke-white"
+                            stroke={TRAJECTORY_POINT_OUTLINE.color}
+                            strokeWidth={TRAJECTORY_POINT_OUTLINE.width}
+                            vectorEffect="non-scaling-stroke"
+                            className="transition-colors group-hover:stroke-white group-focus-visible:stroke-white"
                           />
                           <title>{`${segment.modeId} · ${point.roundId}：${point.x_px.toFixed(2)}, ${point.y_px.toFixed(2)} px`}</title>
-                        </a>
+                        </Link>
                       ))}
                     </g>
                   ))}

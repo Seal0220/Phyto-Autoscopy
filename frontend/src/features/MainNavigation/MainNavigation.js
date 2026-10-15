@@ -25,14 +25,19 @@ import {
 import { invalidatePageData } from "@/lib/pageDataCache";
 
 import {
-  CAPTURE_SECONDARY_NAVIGATION_ITEMS,
   MAIN_NAVIGATION_ITEMS,
 } from "./mainNavigationConfig";
+import { useMainNavigationContext } from "./components/MainNavigationProvider";
 import { postMainNavigationAction } from "./lib/mainNavigationApiUtils";
-import { isMainNavigationItemActive } from "./lib/mainNavigationUtils";
+import {
+  isMainNavigationItemActive,
+  isSecondaryNavigationItemActive,
+  secondaryNavigationGroups,
+} from "./lib/mainNavigationUtils";
 
 export default function MainNavigation() {
   const pathname = usePathname();
+  const { registration } = useMainNavigationContext();
   const { showNotification } = useNotificationsContext();
   const {
     authExpired,
@@ -154,10 +159,10 @@ export default function MainNavigation() {
     }
   }
 
-  const secondaryItems = pathname === "/capture"
-    ? CAPTURE_SECONDARY_NAVIGATION_ITEMS
-    : [];
-  const hasSecondaryNavigation = secondaryItems.length > 0;
+  const secondaryGroups = secondaryNavigationGroups(
+    pathname,
+    registration?.pathname === pathname ? registration.options : undefined,
+  );
   const sectionLabel = MAIN_NAVIGATION_ITEMS.find((item) => isMainNavigationItemActive(
     pathname,
     item.href,
@@ -167,7 +172,7 @@ export default function MainNavigation() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-300 border-b border-white/15 bg-[#07110d]/90 px-5 py-3 shadow-[0_14px_42px_rgba(0,0,0,0.14)] backdrop-blur-2xl max-[980px]:px-3 max-[980px]:py-2">
-      <div className="mx-auto grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 max-[980px]:grid-cols-[minmax(0,1fr)_auto] max-[980px]:gap-2">
+      <div className="mx-auto grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 max-[980px]:grid-cols-[minmax(0,1fr)_auto] max-[980px]:gap-2">
         <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-3">
           <span
             className="grid size-9 place-items-center rounded-2xl border border-emerald-200/20 bg-emerald-300/10"
@@ -185,9 +190,9 @@ export default function MainNavigation() {
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center justify-center gap-4 max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:flex-wrap max-[980px]:justify-start max-[980px]:gap-2">
+        <div className="flex min-w-0 items-center justify-start gap-3 overflow-x-auto max-[980px]:col-span-full max-[980px]:row-start-2 max-[980px]:gap-2">
           <nav
-            className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:w-full"
+            className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/15 bg-black/15 p-1"
             aria-label="主要導覽"
           >
             {MAIN_NAVIGATION_ITEMS.map((item) => {
@@ -212,21 +217,34 @@ export default function MainNavigation() {
             })}
           </nav>
 
-          {hasSecondaryNavigation ? (
+          {secondaryGroups.map((group) => (
             <nav
-              className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-white/15 bg-black/15 p-1 max-[980px]:w-full"
-              aria-label="捕捉頁面導覽"
+              key={group.id}
+              className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/15 bg-black/15 p-1"
+              aria-label={group.label}
             >
-              {secondaryItems.map((item) => (
-                <NavLink
-                  href={item.href}
-                  key={item.href}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+              {group.items.map((item) => {
+                const active = isSecondaryNavigationItemActive(
+                  pathname,
+                  item.href,
+                );
+                return (
+                  <NavLink
+                    href={item.href}
+                    key={item.href}
+                    disabled={item.disabled}
+                    aria-current={active ? "page" : undefined}
+                    className={`border ${active
+                      ? "border-emerald-200/40 bg-emerald-400/15 text-emerald-100 hover:border-emerald-100/60 hover:bg-emerald-300/20 hover:text-emerald-50"
+                      : "border-transparent"
+                    } ${item.disabled ? "cursor-not-allowed opacity-50" : ""}`}
+                  >
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </nav>
-          ) : null}
+          ))}
         </div>
 
         <div className="col-start-3 flex min-w-0 items-center justify-end gap-2 max-[980px]:col-start-2 max-[980px]:row-start-1">

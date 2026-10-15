@@ -1,3 +1,5 @@
+import { TRAJECTORY_POINT_OUTLINE } from "../trajectoryViewerConfig";
+
 export const FORMAL_TRAJECTORY_MODE_COLORS = [
   "#6ee7b7",
   "#fde68a",
@@ -24,7 +26,7 @@ export function formalTrajectoryModeColors(trajectory) {
   );
 }
 
-function finiteTrajectoryPoint(point) {
+export function finiteTrajectoryPoint(point) {
   return point?.valid === true
     && [point.x_mm, point.y_mm, point.z_mm].every((value) => (
       value !== null
@@ -65,8 +67,11 @@ function pointDetails(point) {
   ];
 }
 
-export function buildFormalTrajectoryPlot(trajectory) {
-  const colorByMode = formalTrajectoryModeColors(trajectory);
+export function buildFormalTrajectoryPlot(
+  trajectory,
+  { showLines = true, showPoints = true, modeColors } = {},
+) {
+  const colorByMode = modeColors || formalTrajectoryModeColors(trajectory);
   const traces = [];
   let validCount = 0;
 
@@ -137,7 +142,8 @@ export function buildFormalTrajectoryPlot(trajectory) {
     traces.push({
       uid: `trajectory-mode:${modeId}`,
       type: "scatter3d",
-      mode: "lines+markers",
+      mode: showLines && showPoints ? "lines+markers" : showLines ? "lines" : "markers",
+      visible: showLines || showPoints,
       name: modeId,
       x,
       y,
@@ -149,6 +155,7 @@ export function buildFormalTrajectoryPlot(trajectory) {
         color: markerColors,
         size: markerSizes,
         symbol: markerSymbols,
+        line: { ...TRAJECTORY_POINT_OUTLINE },
       },
       hovertemplate: "模式 %{customdata[0]}<br>輪次 %{customdata[1]}<br>時間 %{customdata[2]}<br>X %{x:.3f} mm<br>Y %{y:.3f} mm<br>Z %{z:.3f} mm<br>信心 %{customdata[3]}・%{customdata[4]}<extra></extra>",
     });
@@ -159,11 +166,17 @@ export function buildFormalTrajectoryPlot(trajectory) {
       uid: "trajectory-world-origin",
       type: "scatter3d",
       mode: "markers",
+      visible: showPoints,
       name: "世界原點",
       x: [0],
       y: [0],
       z: [0],
-      marker: { color: "#ffffff", size: 7, symbol: "diamond" },
+      marker: {
+        color: "#ffffff",
+        size: 7,
+        symbol: "diamond",
+        line: { ...TRAJECTORY_POINT_OUTLINE },
+      },
       hovertemplate: "世界原點・X 0 / Y 0 / Z 0 mm<extra></extra>",
     });
   }

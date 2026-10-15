@@ -13,7 +13,10 @@ from app.analysis.pose_alignment.model_review import model_preview_reference, pr
 from app.api.analysis_routes import router
 from app.core.exceptions import AnalysisError
 from app.core.state import get_context
-from app.models.analysis_models import CameraPoseResult, RoundModelResult
+from app.database.connection import Database
+from app.database.schema import initialize_schema
+from app.models.analysis_models import AnalysisRound, AnalysisRun, CameraPoseResult, RoundModelResult
+from app.repositories.analysis_repository import AnalysisRepository
 from app.services.analysis_service import AnalysisService
 
 
@@ -77,7 +80,8 @@ def preview_service(tmp_path):
         requested.append((analysis_id, round_key))
         return [camera]
 
-    service.repository = SimpleNamespace(list_round_models=lambda _: [model], list_camera_poses=poses)
+    service.repository = SimpleNamespace(list_round_models=lambda _: [model], list_camera_poses=poses,
+        get_round_model=lambda analysis_id, round_key: model if (analysis_id, round_key) == (model.analysis_id, model.round_key) else None)
     return service, model, requested
 
 
@@ -118,3 +122,58 @@ def test_preview_keeps_pot_in_the_trained_foreground_scene(preview_service, fore
     reference = service.get_round_model_preview(model.analysis_id, model.round_key)
     expected = model.model_path if foreground_only and foreground_kind == "plant_and_pot" else model.plant_model_path
     assert reference["gaussian_path"] == expected
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_trajectory_preview_reads_registration_without_tracking_or_modifying_models(preview_service, registered):
+    service, model, requested = preview_service
+    model.model_quality = {"immutable_reference": True, "coordinate_unit": "relative",
+                           "initial_camera_pose": np.eye(4).tolist()}
+    transform = {"scale": 100, "rotation": np.eye(3).tolist(), "translation": [0, 0, 0]}
+    service._stereo_pose_signature = lambda _: "calibration-signature"
+    service._saved_step = lambda *_: {"quality": {"model_to_world": transform}} if registered else None
+    service._model_tip_annotation = lambda *_args, **_kwargs: pytest.fail("Overlay reads must not track or persist tips")
+    service.repository.list_round_models = lambda _: pytest.fail("Overlay reads must query only their own round")
+    root = service._artifacts(None).root
+    before = {file: (file.stat().st_mtime_ns, file.read_bytes()) for file in root.rglob("*") if file.is_file()}
+    application = FastAPI()
+    application.include_router(router)
+    application.dependency_overrides[get_context] = lambda: SimpleNamespace(analysis_service=service)
+    with TestClient(application) as client:
+        response = client.get(f"/api/analysis/{model.analysis_id}/round-model-preview",
+                              params={"round_key": model.round_key, "for_trajectory": "true"})
+    assert response.status_code == 200
+    result = response.json()
+    assert "model_tip" not in result
+    assert result["model_to_world"] == (transform if registered else None)
+    assert bool(result.get("gaussian_path")) is registered
+    assert bool(result.get("overlay_unavailable")) is not registered
+    assert bool(requested) is registered
+    assert {file: (file.stat().st_mtime_ns, file.read_bytes()) for file in root.rglob("*") if file.is_file()} == before
+
+
+def test_single_round_model_lookup_is_read_only_and_scoped_to_analysis(tmp_path):
+    database = Database(tmp_path / "lookup.sqlite3")
+    try:
+        initialize_schema(database)
+        repository = AnalysisRepository(database)
+        expected = []
+        for analysis_id in ("analysis-a", "analysis-b"):
+            repository.create(AnalysisRun(analysis_id=analysis_id, record_id=None, method_name="rotating",
+                method_version="test", git_commit="test", parameters={}, created_at="2026-10-13T00:00:00Z",
+                updated_at="2026-10-13T00:00:00Z", created_by="pytest", output_path=analysis_id, status="draft"))
+            round_item = AnalysisRound(analysis_id=analysis_id, round_key="shared-key", record_id="record",
+                mode_id="mode-1", round_id="round.02", status="completed")
+            repository.replace_rounds_and_views(analysis_id, [round_item], [])
+            model = RoundModelResult(analysis_id=analysis_id, round_key=round_item.round_key,
+                model_id=f"{analysis_id}-model", backend="gsplat_3dgs", backend_version="test",
+                status="completed", model_path=f"{analysis_id}/gaussians.ply")
+            repository.upsert_round_model(model)
+            expected.append(model)
+        changes = database.connection.total_changes
+        assert [repository.get_round_model(item.analysis_id, item.round_key) for item in expected] == expected
+        assert repository.get_round_model("analysis-a", "missing-round") is None
+        assert repository.get_round_model("missing-analysis", "shared-key") is None
+        assert database.connection.total_changes == changes
+    finally:
+        database.close()

@@ -439,6 +439,7 @@ Established variants:
 
 - `default`: translucent neutral surface; stronger white border/fill on hover.
 - `primary`: solid emerald surface with dark emerald text; lighter emerald on hover.
+- `warning`: solid orange surface with dark orange text; lighter orange on hover, for explicit repair actions on unresolved analysis failures or alignment.
 - `danger`: rose surface for destructive or stopping actions only.
 - `ghost`: transparent neutral action with a subtle white hover fill.
 - `dangerGhost`: transparent neutral destructive action that changes to a subtle rose fill and rose text only on hover.
@@ -586,7 +587,7 @@ The login form uses the same background, panel, field, button, radius, and typog
 
 `features/ControlPanel/ControlPanel.js` is the GOAL-01 capture-system composition boundary and is mounted only by `/capture`. It coordinates capture data, connection state, notifications, settings disclosure state, and the five capture-page regions: `ImagePreview` (`攝影機`), `SystemStatus`, `Schedule`, `Control`, and `RecordsStorage`. Keep feature-specific markup and transformations out of it, and do not mount these capture controls in `/analysis` or `/models`.
 
-`features/MainNavigation/MainNavigation.js` owns the application-level `[捕捉] [分析] [校正] [模型]` route navigation, connection status, emergency stop, logout, and capture-page secondary navigation. It is mounted once by the root layout, derives the five capture anchors from the `/capture` pathname, and consumes the shared socket context rather than accepting page-owned runtime props. Other routes render only the route navigation and global actions. Icon-only actions need accessible labels and must use existing button language.
+`features/MainNavigation/MainNavigation.js` owns the application-level `[捕捉] [分析] [校正] [模型]` route navigation, connection status, emergency stop, logout, and page secondary navigation. The brand sits at the left, immediately followed by primary navigation and then secondary navigation; global actions stay at the right. Below 980px, the navigation groups move together to the second row and scroll horizontally without wrapping into extra rows. It is mounted once by the root layout, derives the five capture anchors from `/capture`, and consumes the shared socket context. Analysis always shows one fixed group containing `總覽` and `新增分析`; opening an existing record adds a separate group containing `分析紀錄` and `分析結果`, with both links scoped to that record. Overview and creation never show this record group. `MainNavigationProvider` receives analysis readiness and operation locks through `useAnalysisSecondaryNavigation`; route-scoped owner cleanup prevents previous pages from replacing the next page's navigation. Icon-only actions need accessible labels and must use existing button language.
 
 ### 7.2 Schedule
 
@@ -708,7 +709,7 @@ The selected Round displays its actual Gaussian model through `AnalysisRunModelP
 
 The legacy `/analysis/[analysisId]/review` route redirects to the existing Round workspace, selecting the requested `round_key` or filtering to `tip_filter=missing`. Do not introduce a second whole-run tip-confirmation step. The workspace's `顯示輪次` selector keeps all Rounds available while limiting the correction queue to processed Rounds without a confirmed image or metric tip; explicitly invalid manual corrections remain skipped. Missing metric registration alone never adds a confirmed image tip to this queue. Result pages resolve the latest corrections, show confirmed-tip and metric counts independently, and render top/side image trajectories in undistorted pixel coordinates with gaps and Round links. These plots must never substitute pixels or independent model coordinates for millimetre measurements. Show the metric trajectory only when valid metric points exist.
 
-Keep the user workflow as analysis followed by viewing results. All Round images, interactive models, tip edits, and Round measurement quality belong to the existing `AnalysisRunRoundOverview` workspace on the analysis page. `AnalysisRunRoundTipImage`, `AnalysisRunTipImage`, and `analysisRoundTipApiUtils` are owned by AnalysisRun; do not restore a standalone whole-run confirmation editor or load every image for review. The result page contains trajectory plots, mode summaries, export, refresh, and one `返回分析` action. It must not duplicate the model gallery, Round list, or tip editor. Saving a tip in the analysis workspace refreshes the same data and trajectory through the existing correction API.
+Keep the user workflow as analysis followed by viewing results. All Round images, interactive models, tip edits, and Round measurement quality belong to the existing `AnalysisRunRoundOverview` workspace on the analysis page. `AnalysisRunRoundTipImage`, `AnalysisRunTipImage`, and `analysisRoundTipApiUtils` are owned by AnalysisRun; do not restore a standalone whole-run confirmation editor or load every image for review. The result page contains trajectory plots, mode summaries, export, and refresh; `返回分析` belongs to the shared header's secondary navigation. It must not duplicate the model gallery, Round list, or tip editor. Saving a tip in the analysis workspace refreshes the same data and trajectory through the existing correction API.
 
 ## 8. Interaction and motion
 
@@ -1079,11 +1080,15 @@ AnalysisRun 的每輪尖端編輯集中於 `AnalysisRunRoundTipEditor`：同一�
 
 每輪尖端操作集中在影像與模型下方同一個位置：一般模式只有「修改尖端」或「標記尖端」，編輯模式改為「儲存尖端」，不另提供結束標記按鈕。儲存及畫面更新成功後自動結束編輯；驗證失敗、儲存失敗或結果不確定時保留編輯內容與錯誤恢復操作。第一輪仍使用「確認尖端並開始追蹤」。
 
-分析紀錄頁的導覽按鈕位於 `PanelHeader`：依序為「重新讀取」、「查看結果」、「返回分析」。結果可用時才顯示「查看結果」，保留原有操作鎖定規則；`AnalysisRunActions` 不重複顯示結果導覽按鈕。
+分析頁次導覽固定顯示「總覽／新增分析」。僅在開啟既有紀錄時，另顯示一組「分析紀錄／分析結果」，兩項都指向目前紀錄。分析清單每筆原有的「查看分析／查看結果／查看進度」等選擇按鈕保留，直接開啟該筆資料，不改成先選取再從 header 開啟。尚無可用結果或操作鎖定時，「分析結果」保持停用。重新讀取、開始／暫停分析、儲存與匯出仍留在內容區。
 
-結果頁的工具依序為「重新讀取」、「匯出結果」、「返回分析」，返回按鈕固定在工具列最後，使用向左箭頭返回該筆分析。暫停的分析使用「繼續分析」，失敗或取消的分析使用「重試未完成項目」，不把接續工作標成從頭開始。主要導覽在 980px 以下由外層容器跨欄放在第二列，與右上操作分開；品牌下方標示使用目前路由所屬功能名稱。
+結果頁的內容工具依序為「重新讀取」、「匯出結果」，紀錄次導覽的「分析紀錄」返回該筆分析，固定次導覽的「總覽」返回清單。暫停的分析使用「繼續分析」，失敗或取消的分析使用「重試未完成項目」，不把接續工作標成從頭開始。品牌下方標示使用目前路由所屬功能名稱。所有結果圖表的點採用 `TRAJECTORY_POINT_OUTLINE` 的深色邊框；三維 marker.line 與 SVG 點一致，SVG 邊框不隨圖表縮放變細，模式顏色、人工修正白色、首尾符號與缺失輪次中斷均保留。
 
 結果頁的三維軌跡由 `useFormalTrajectoryPlot` 保持同一個 Plotly 場景。背景資料更新與點數改變不銷毀圖表，保留旋轉、平移、縮放及圖例狀態；只有離開圖表、切換分析或明確重試時清理場景。繪圖、重設與清理依序執行，避免舊的非同步工作清掉新圖表。`formalTrajectoryRanges` 使用有效毫米座標與世界原點，為三軸提供相同跨度，並在最長跨度兩端各留 15% 空間；以立方框顯示，保留等比例量測，避免狹長座標框與點貼邊。
+
+三維軌跡工具列由 `FormalTrajectoryToolbar` 提供獨立的「軌跡（線）／點／模型」開關、模型透明度及播放、暫停、從頭播放、顯示全部與速度選擇。`useTrajectoryPlayback` 依有效量測時間逐點前進，保留已播放的點與缺失輪次中斷，模式顏色及完整毫米座標框維持穩定。播放中的模型只顯示當輪，暫停後保留當輪模型；總覽則疊加已完成且具有世界定位的各輪模型。`useTrajectoryModelOverlay` 僅在模型開啟時透過 BFF 讀取 `round-model-preview?for_trajectory=true`，此讀取不追蹤尖端、不校正或修改資料，缺少毫米定位時直接回傳原因。顯示副本保留 Gaussian 形狀、不透明度及球諧色彩，使用有效 `model_to_world` 或明確的毫米世界座標，並同步 Plotly 原生的模型、視圖、投影矩陣；不猜測相對模型的位置。透明度影響模型而不影響軌跡與點，模型載入完成或失敗後才前進下一點；失敗及缺少定位不阻止後續播放。模型快取限制為 3 輪及 64 MiB，同時疊加限制為 200 萬 Gaussian，超量提供逐輪播放；關閉模型或離頁取消下載並釋放 WebGL、worker 與計時器。
+
+「高度時間軸」由 `FormalTrajectoryCharts` 保留指標選擇，`FormalTrajectoryMetricChart` 繪製圖表，`trajectoryMetricUtils` 負責系列與範圍。時間刻度使用共用 `formatElapsedPrecise`，完整呈現日、時、分、秒、毫秒，分行下方以小字顯示三位小數的秒數；毫米、秒等原始資料與匯出單位維持不變。`useTrajectoryChartSize` 依圖表容器尺寸設定 SVG viewBox，刻度維持實際 9px、秒數 8px、軸標題 10px，避免寬螢幕放大文字；窄螢幕減少 X 軸刻度且首尾向內對齊。無完整時間資料時整張圖明確使用輪次順序，不混合輪次與秒；時間軸下界不延伸到負秒。三維座標圖的刻度與軸標題也採用 9px／10px。
 
 - [ ] Search touched paths for stale references and duplicate implementations.
 - [ ] Run `git diff --check`.

@@ -6,9 +6,7 @@ import {
   FiArrowLeft,
   FiArrowRight,
   FiPlay,
-  FiRefreshCw,
 } from "react-icons/fi";
-import { PiHouseFill } from "react-icons/pi";
 
 import ActionRow from "@/components/actions/ActionRow";
 import Button from "@/components/buttons/Button";
@@ -18,6 +16,7 @@ import {
   PanelHeader,
 } from "@/components/panels/Panel";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
+import useAnalysisSecondaryNavigation from "@/features/MainNavigation/hooks/useAnalysisSecondaryNavigation";
 
 import { ANALYSIS_SETUP_STEPS } from "./analysisConfig";
 import AnalysisAvailableRecords from "./components/AnalysisAvailableRecords";
@@ -67,6 +66,9 @@ export default function AnalysisNew({
   );
   const hasOptions = sources.length > 0;
   const mutationLocked = Boolean(mutationPending) || mutationRequiresRefresh;
+  useAnalysisSecondaryNavigation({
+    navigationLocked: Boolean(mutationPending),
+  });
   const canAdvance = currentStep === 1
     ? Boolean(setup.recordId)
     : currentStep === 2
@@ -185,77 +187,13 @@ export default function AnalysisNew({
       );
     }
 
-    if (["validating", "pausing", "paused"].includes(createdRun.status)) {
-      return (
-        <Button
-          variant="primary"
-          onClick={() => router.push(`/analysis/${encodeURIComponent(createdRun.analysis_id)}`)}
-        >
-          <FiPlay
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          查看進度與暫停
-        </Button>
-      );
-    }
-
-    if ([
-      "processing",
-      "needs_review",
-      "reviewing",
-      "reconstructing",
-      "completed",
-      "partially_completed",
-    ].includes(createdRun.status)) {
-      return (
-        <Button
-          className="ml-auto"
-          variant="primary"
-          onClick={() => router.push("/analysis")}
-        >
-          <PiHouseFill
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          返回分析首頁
-        </Button>
-      );
-    }
-
-    return (
-      <Button
-        className="ml-auto"
-        variant="primary"
-        disabled={mutationLocked}
-        onClick={() => router.push(`/analysis/${encodeURIComponent(createdRun.analysis_id)}`)}
-      >
-        <FiPlay
-          className="size-4 shrink-0"
-          aria-hidden="true"
-        />
-        查看分析
-      </Button>
-    );
+    return null;
   }
 
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="新增分析">
-          <PanelHeader
-            title="新增分析"
-            action={(
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button onClick={() => router.push("/analysis")}>
-                  <PiHouseFill
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  返回分析首頁
-                </Button>
-              </div>
-            )}
-          />
+          <PanelHeader title="新增分析" />
 
           <div className="grid gap-5 p-5 max-sm:p-4">
             {loading && !hasOptions ? (
@@ -286,20 +224,8 @@ export default function AnalysisNew({
 
                 {renderStep()}
 
-                <ActionRow className="w-full">
-                  {mutationRequiresRefresh ? (
-                    <Button
-                      className="ml-auto"
-                      variant="primary"
-                      onClick={() => router.push("/analysis")}
-                    >
-                      <FiRefreshCw
-                        className="size-4 shrink-0"
-                        aria-hidden="true"
-                      />
-                      返回並確認狀態
-                    </Button>
-                  ) : (
+                {!mutationRequiresRefresh ? (
+                  <ActionRow className="w-full">
                     <>
                       {currentStep > 1 && !createdRun ? (
                         <Button
@@ -329,8 +255,8 @@ export default function AnalysisNew({
                         </Button>
                       ) : finalActions()}
                     </>
-                  )}
-                </ActionRow>
+                  </ActionRow>
+                ) : null}
               </>
             ) : null}
           </div>

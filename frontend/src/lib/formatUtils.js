@@ -26,6 +26,20 @@ function hasDisplayValue(value) {
     && value !== "";
 }
 
+export function formatElapsedPrecise(seconds) {
+  if (!hasDisplayValue(seconds) || !Number.isFinite(Number(seconds))) return "尚無資料";
+  // Round once in integer milliseconds so a carry from 59.9995 seconds also
+  // updates minutes, hours and days, without floating-point remainders.
+  const total = Math.round(Math.max(0, Number(seconds)) * 1000);
+  if (!Number.isSafeInteger(total)) return "尚無資料";
+  const days = Math.floor(total / 86_400_000);
+  const hours = String(Math.floor(total / 3_600_000) % 24).padStart(2, "0");
+  const minutes = String(Math.floor(total / 60_000) % 60).padStart(2, "0");
+  const wholeSeconds = String(Math.floor(total / 1000) % 60).padStart(2, "0");
+  const milliseconds = String(total % 1000).padStart(3, "0");
+  return `${days}日 ${hours}時 ${minutes}分 ${wholeSeconds}秒 ${milliseconds}毫秒`;
+}
+
 export function formatNumberWithUnit(
   value,
   unit,

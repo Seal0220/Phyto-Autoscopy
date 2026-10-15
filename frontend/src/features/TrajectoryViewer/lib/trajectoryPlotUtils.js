@@ -1,12 +1,31 @@
+import { TRAJECTORY_POINT_OUTLINE } from "../trajectoryViewerConfig";
+
 const AXIS_STYLE = {
   showbackground: true,
   backgroundcolor: "#0b1a14",
   gridcolor: "rgba(255,255,255,0.15)",
   linecolor: "#a3a3a3",
   tickcolor: "#a3a3a3",
-  tickfont: { color: "#a3a3a3", size: 11 },
+  tickfont: { color: "#a3a3a3", size: 9 },
   zerolinecolor: "rgba(110,231,183,0.55)",
 };
+
+export function trajectoryFrameTrace(ranges) {
+  // Fully transparent anchors keep Plotly's data-space transform finite even
+  // when both measured lines and points are switched off. No hover or legend.
+  return {
+    uid: "trajectory-frame-bounds",
+    type: "scatter3d",
+    mode: "markers",
+    x: ranges.x,
+    y: ranges.y,
+    z: ranges.z,
+    opacity: 0,
+    marker: { opacity: 0, size: 1, line: { ...TRAJECTORY_POINT_OUTLINE } },
+    showlegend: false,
+    hoverinfo: "skip",
+  };
+}
 
 export function defaultTrajectoryCamera() {
   return {
@@ -64,7 +83,7 @@ export function formalTrajectoryPlotLayout(
       uirevision: revision,
       ...Object.fromEntries(["x", "y", "z"].map((axis) => [
         `${axis}axis`,
-        { ...AXIS_STYLE, title: { text: `${axis.toUpperCase()}（mm）` }, range: ranges[axis], autorange: false },
+        { ...AXIS_STYLE, title: { text: `${axis.toUpperCase()}（mm）`, font: { size: 10 } }, range: ranges[axis], autorange: false },
       ])),
     },
     uirevision: revision,

@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { FiRefreshCw, FiTrendingUp } from "react-icons/fi";
-import { PiHouseFill } from "react-icons/pi";
+import { FiRefreshCw } from "react-icons/fi";
 
 import Button from "@/components/buttons/Button";
 import StatusCard from "@/components/cards/StatusCard";
@@ -15,6 +13,7 @@ import {
   StatusPill,
 } from "@/components/panels/Panel";
 import useNotificationsContext from "@/features/Notifications/hooks/useNotificationsContext";
+import useAnalysisSecondaryNavigation from "@/features/MainNavigation/hooks/useAnalysisSecondaryNavigation";
 
 import AnalysisRunActions from "./components/AnalysisRunActions";
 import AnalysisRunCheckpoints from "./components/AnalysisRunCheckpoints";
@@ -25,6 +24,7 @@ import AnalysisRunProcessingImages from "./components/AnalysisRunProcessingImage
 import AnalysisRunStereoReview from "./components/AnalysisRunStereoReview";
 import { needsStereoPoseReview } from "./lib/analysisStereoReviewUtils";
 import { analysisTipResults } from "./lib/analysisTipResultsUtils";
+import { analysisAutoRepairAvailability } from "./lib/analysisAutoRepairUtils";
 import useAnalysisRun from "./hooks/useAnalysisRun";
 import {
   analysisRunActionAvailability,
@@ -36,7 +36,6 @@ export default function AnalysisRun({
   initialRoundKey,
   initialTipFilter = "all",
 }) {
-  const router = useRouter();
   const { showNotification } = useNotificationsContext();
   const {
     run,
@@ -136,11 +135,17 @@ export default function AnalysisRun({
     (item) => item.round_key === initializingRound?.round_key,
   ).at(-1);
   const locked = Boolean(pendingAction) || mutationOutcomeUnknown;
+  const autoRepair = analysisAutoRepairAvailability(effectiveRun, formalData);
   const canOpenResults = effectiveRun && analysisRunActionAvailability(
     effectiveRun.status,
     effectiveRun.stage,
     hasResults,
   ).results;
+  useAnalysisSecondaryNavigation({
+    canOpenResults: Boolean(canOpenResults),
+    navigationLocked: Boolean(pendingAction),
+    resultsLocked: locked,
+  });
   const stereoReview = needsStereoPoseReview(effectiveRun);
   const [stereoReviewOpen, setStereoReviewOpen] = useState(false);
   useEffect(() => {
@@ -178,30 +183,6 @@ export default function AnalysisRun({
                     {loading ? "重新讀取中…" : "重新讀取"}
                   </Button>
                 ) : null}
-                {canOpenResults ? (
-                  <Button
-                    disabled={locked}
-                    onClick={() => router.push(
-                      `/analysis/${encodeURIComponent(analysisId)}/results`,
-                    )}
-                  >
-                    <FiTrendingUp
-                      className="size-4 shrink-0"
-                      aria-hidden="true"
-                    />
-                    查看結果
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={Boolean(pendingAction)}
-                  onClick={() => router.push("/analysis")}
-                >
-                  <PiHouseFill
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  返回分析
-                </Button>
               </div>
             )}
           />
@@ -293,6 +274,7 @@ export default function AnalysisRun({
                 ) : null}
 
                 <AnalysisRunActions
+                  autoRepair={autoRepair}
                   exportPending={exportPending}
                   locked={locked}
                   pendingAction={pendingAction}

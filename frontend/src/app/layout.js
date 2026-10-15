@@ -2,6 +2,7 @@ import "./globals.css";
 import localFont from "next/font/local";
 
 import MainNavigation from "@/features/MainNavigation/MainNavigation";
+import MainNavigationProvider from "@/features/MainNavigation/components/MainNavigationProvider";
 import NotificationsProvider from "@/features/Notifications/components/NotificationsProvider";
 import PhytoSocketProvider from "@/hooks/PhytoSocketProvider";
 import PageDataCacheProvider from "@/hooks/PageDataCacheProvider";
@@ -29,10 +30,12 @@ export default async function RootLayout({ children }) {
           {session ? (
             <PageDataCacheProvider key={session.actor}>
               <PhytoSocketProvider>
-                <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
-                  <MainNavigation />
-                  {children}
-                </main>
+                <MainNavigationProvider>
+                  <main className="min-h-screen bg-[#06100c] px-5 pb-8 max-sm:px-3">
+                    <MainNavigation />
+                    {children}
+                  </main>
+                </MainNavigationProvider>
               </PhytoSocketProvider>
             </PageDataCacheProvider>
           ) : children}

@@ -5,7 +5,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FiPlus,
   FiRefreshCw,
 } from "react-icons/fi";
 
@@ -86,13 +85,6 @@ export default function Analysis() {
     showNotification,
   ]);
 
-  function openNewAnalysis(recordId = "") {
-    const query = recordId
-      ? `?record=${encodeURIComponent(recordId)}`
-      : "";
-    router.push(`/analysis/new${query}`);
-  }
-
   return (
     <div className="mx-auto grid w-full max-w-7xl gap-4 pt-24 max-[980px]:pt-32">
         <Panel aria-label="分析總覽">
@@ -112,16 +104,6 @@ export default function Analysis() {
                     {loading ? "讀取中…" : "重新整理"}
                   </Button>
                 ) : null}
-                <Button
-                  variant="primary"
-                  onClick={() => openNewAnalysis()}
-                >
-                  <FiPlus
-                    className="size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  新增分析
-                </Button>
               </div>
             )}
           />

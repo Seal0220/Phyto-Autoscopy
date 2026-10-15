@@ -162,7 +162,7 @@ export function loadAnalysisProgress(
 }
 
 function analysisActionTimeout(action) {
-  if (["retry", "validate"].includes(action)) return 120_000;
+  if (["retry", "auto-repair", "validate"].includes(action)) return 120_000;
   if (action === "reconstruct") return 60_000;
   return 30_000;
 }

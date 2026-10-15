@@ -10,7 +10,7 @@ import InformationGrid from "@/components/data/InformationGrid";
 import SubsectionHeader from "@/components/headers/SubsectionHeader";
 import { StatusPill } from "@/components/panels/Panel";
 import { ANALYSIS_MODEL_STATUS_META } from "@/features/Analysis/analysisConfig";
-import { formatDisplayMessage, formatNumberWithUnit } from "@/lib/formatUtils";
+import { formatNumberWithUnit } from "@/lib/formatUtils";
 
 import { analysisRoundStatus } from "../lib/analysisRunUtils";
 import AnalysisRunModelPreview from "./AnalysisRunModelPreview";
@@ -103,11 +103,6 @@ export default function AnalysisRunRoundDetail({
             stackAtSmall
             wrapValues
           />
-          {round.failure_reason || model?.failure_reason || landmark?.failure_reason ? (
-            <p className={`m-0 break-words text-sm font-semibold ${measurementPending ? "text-neutral-300" : "text-rose-200"}`}>
-              {formatDisplayMessage(round.failure_reason || model?.failure_reason || landmark?.failure_reason)}
-            </p>
-          ) : null}
           {round.status === "waiting_tip_seed" ? (
             <p className="m-0 text-sm text-neutral-300">請在上方「目前處理影像」標記模型、俯視與側視尖端，確認後自動繼續。</p>
           ) : (

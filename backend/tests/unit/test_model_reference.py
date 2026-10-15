@@ -384,6 +384,10 @@ def test_manual_four_point_model_review_returns_reference_then_saves_metric_rig(
     record = json.loads((tmp_path / "pose_debug/stereo/manual_review.json").read_text(encoding="utf-8"))
     assert record["accepted"]
     assert record["validation"]["inlier_indices"] == [0, 1, 2, 3]
+    archived = json.loads((tmp_path / "pose_debug/stereo/accepted_alignment.json").read_text(encoding="utf-8"))
+    assert archived["request"] == record["request"]
+    assert archived["poses"] == saved["poses"]
+    assert archived["registration"]["quality"]["model_to_world"] == saved["quality"]["model_to_world"]
 
 
 @pytest.mark.parametrize("accepted", [False, True])

@@ -18,7 +18,7 @@ function analysisProxyTimeout(
   }
   if (
     method === "POST"
-    && ["retry", "stereo-review", "skip-stereo-review", "round-retry"].includes(path.at(-1))
+    && ["retry", "auto-repair", "stereo-review", "skip-stereo-review", "round-retry"].includes(path.at(-1))
   ) {
     return 120_000;
   }

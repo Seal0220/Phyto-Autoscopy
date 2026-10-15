@@ -83,6 +83,9 @@ test("三維圖表保留世界座標與缺失輪次，不跨模式連線", () =>
   assert.equal(traces[0].marker.color[2], "#ffffff");
   assert.equal(traces[0].marker.symbol[0], "circle-open");
   assert.equal(traces[0].marker.symbol[2], "circle");
+  assert.equal(traces[0].marker.line.color, "#07110d");
+  assert.equal(traces[0].marker.line.width, 1.5);
   assert.deepEqual(traces[1].x, [7]);
   assert.equal(traces.at(-1).name, "世界原點");
+  assert.equal(traces.at(-1).marker.line.width, 1.5);
 });

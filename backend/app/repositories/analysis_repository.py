@@ -780,6 +780,13 @@ class AnalysisRepository:
             for row in rows
         ]
 
+    def get_round_model(self, analysis_id: str, round_key: str) -> RoundModelResult | None:
+        row = self.database.fetchone(
+            "SELECT payload_json FROM analysis_round_models WHERE analysis_id=? AND round_key=?",
+            (analysis_id, round_key),
+        )
+        return RoundModelResult.model_validate(_json_load(row["payload_json"], {})) if row else None
+
     def upsert_tip_landmark(self, item: TipLandmark) -> None:
         self.database.execute(
             """

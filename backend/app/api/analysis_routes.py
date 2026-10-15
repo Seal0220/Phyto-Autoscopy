@@ -153,8 +153,11 @@ def list_analysis_round_models(
 def get_analysis_round_model_preview(
     analysis_id: str,
     round_key: str,
+    for_trajectory: bool = False,
     context: AppContext = Depends(get_context),
 ) -> dict:
+    if for_trajectory:
+        return context.analysis_service.get_round_model_preview(analysis_id, round_key, for_trajectory=True)
     return context.analysis_service.get_round_model_preview(analysis_id, round_key)
 
 
@@ -343,6 +346,14 @@ def retry_analysis_run(
     context: AppContext = Depends(get_context),
 ) -> AnalysisRun:
     return _action_response(context.analysis_service.retry(analysis_id))
+
+
+@router.post("/{analysis_id}/auto-repair", response_model=AnalysisRun)
+def auto_repair_analysis_run(
+    analysis_id: str,
+    context: AppContext = Depends(get_context),
+) -> AnalysisRun:
+    return _action_response(context.analysis_service.auto_repair(analysis_id))
 
 
 @router.get("/{analysis_id}/stereo-review")
